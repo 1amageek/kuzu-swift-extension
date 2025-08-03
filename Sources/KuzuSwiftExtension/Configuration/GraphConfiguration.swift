@@ -16,7 +16,7 @@ public struct GraphConfiguration: Sendable {
         public let maxConnections: Int
         public let minConnections: Int
         public let connectionTimeout: TimeInterval
-        public let extensions: Set<Extension>
+        public let extensions: Set<KuzuExtension>
         public let migrationPolicy: MigrationPolicy
         public let enableLogging: Bool
         
@@ -24,7 +24,7 @@ public struct GraphConfiguration: Sendable {
             maxConnections: Int = 10,
             minConnections: Int = 1,
             connectionTimeout: TimeInterval = 30,
-            extensions: Set<Extension> = [],
+            extensions: Set<KuzuExtension> = [],
             migrationPolicy: MigrationPolicy = .safeOnly,
             enableLogging: Bool = false
         ) {
@@ -37,22 +37,5 @@ public struct GraphConfiguration: Sendable {
         }
     }
     
-    public enum Extension: String, CaseIterable, Hashable, Sendable {
-        case httpfs
-        case json
-        case parquet
-        case postgres_scanner
-        case rdf
-        case s3
-        case vector
-        case fts
-        
-        var installCommand: String {
-            "INSTALL \(rawValue)"
-        }
-        
-        var loadCommand: String {
-            "LOAD EXTENSION \(rawValue)"
-        }
-    }
+    // Extension type has been moved to KuzuExtension.swift
 }

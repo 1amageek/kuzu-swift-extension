@@ -23,7 +23,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
-        .package(url: "https://github.com/kuzudb/kuzu-swift.git", from: "0.11.1")
+        .package(url: "https://github.com/kuzudb/kuzu-swift.git", from: "0.11.1"),
+        .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.2.1")
     ],
     targets: [
         // Main library target
@@ -31,7 +32,8 @@ let package = Package(
             name: "KuzuSwiftExtension",
             dependencies: [
                 "KuzuSwiftMacros",
-                .product(name: "Kuzu", package: "kuzu-swift")
+                .product(name: "Kuzu", package: "kuzu-swift"),
+                .product(name: "Algorithms", package: "swift-algorithms")
             ]
         ),
         

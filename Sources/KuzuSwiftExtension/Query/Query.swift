@@ -14,9 +14,9 @@ public protocol QueryComponent {
 
 public struct CypherFragment: Sendable {
     let query: String
-    let parameters: [String: any Encodable & Sendable]
+    let parameters: [String: any Sendable]
     
-    init(query: String, parameters: [String: any Encodable & Sendable] = [:]) {
+    init(query: String, parameters: [String: any Sendable] = [:]) {
         self.query = query
         self.parameters = parameters
     }

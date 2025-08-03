@@ -135,10 +135,3 @@ public enum MatchPattern {
     }
 }
 
-// Placeholder for Predicate
-public struct Predicate {
-    func toCypher() throws -> CypherFragment {
-        // TODO: Implement predicate compilation
-        CypherFragment(query: "true")
-    }
-}

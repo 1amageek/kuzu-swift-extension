@@ -12,31 +12,49 @@ public actor GraphContext {
     
     // MARK: - Raw Query Execution
     
-    public func raw(_ query: String, bindings: [String: any Encodable & Sendable] = [:]) async throws -> QueryResult {
-        // Convert parameters before entering the @Sendable closure
-        let sendableParams = try ParameterConverter.convert(bindings)
-        
+    public func raw(_ query: String, bindings: [String: any Sendable] = [:]) async throws -> QueryResult {
         return try await container.withConnection { connection in
-            if sendableParams.isEmpty {
+            if bindings.isEmpty {
                 return try connection.query(query)
             } else {
                 let statement = try connection.prepare(query)
-                let kuzuParams = ParameterConverter.toKuzuParameters(sendableParams)
+                // Convert Date and UUID to Kuzu-compatible types
+                let kuzuParams = bindings.mapValues { value -> Any? in
+                    switch value {
+                    case let date as Date:
+                        return date.timeIntervalSince1970
+                    case let uuid as UUID:
+                        return uuid.uuidString
+                    case is NSNull:
+                        return nil
+                    default:
+                        return value
+                    }
+                }
                 return try connection.execute(statement, kuzuParams)
             }
         }
     }
     
-    public func rawTransaction(_ query: String, bindings: [String: any Encodable & Sendable] = [:]) async throws -> QueryResult {
-        // Convert parameters before entering the @Sendable closure
-        let sendableParams = try ParameterConverter.convert(bindings)
-        
+    public func rawTransaction(_ query: String, bindings: [String: any Sendable] = [:]) async throws -> QueryResult {
         return try await container.withTransaction { connection in
-            if sendableParams.isEmpty {
+            if bindings.isEmpty {
                 return try connection.query(query)
             } else {
                 let statement = try connection.prepare(query)
-                let kuzuParams = ParameterConverter.toKuzuParameters(sendableParams)
+                // Convert Date and UUID to Kuzu-compatible types
+                let kuzuParams = bindings.mapValues { value -> Any? in
+                    switch value {
+                    case let date as Date:
+                        return date.timeIntervalSince1970
+                    case let uuid as UUID:
+                        return uuid.uuidString
+                    case is NSNull:
+                        return nil
+                    default:
+                        return value
+                    }
+                }
                 return try connection.execute(statement, kuzuParams)
             }
         }
@@ -44,54 +62,110 @@ public actor GraphContext {
     
     // MARK: - Query DSL
     
-    public func query<T>(@QueryBuilder _ builder: () -> Query) async throws -> T {
+    /// Executes a query and returns a single value
+    public func queryValue<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> T {
         let query = builder()
         let cypher = try CypherCompiler.compile(query)
-        // Convert SendableParameters back to [String: any Encodable & Sendable] for the raw method
-        var bindings: [String: any Encodable & Sendable] = [:]
-        for (key, value) in cypher.parameters {
-            // Extract the underlying value from ParameterValue
-            switch value {
-            case .string(let v): bindings[key] = v
-            case .int64(let v): bindings[key] = v
-            case .double(let v): bindings[key] = v
-            case .bool(let v): bindings[key] = v
-            case .timestamp(let v): bindings[key] = Date(timeIntervalSince1970: v)
-            case .uuid(let v): bindings[key] = v
-            case .vector(let v): bindings[key] = v
-            case .json(let v): bindings[key] = v
-            case .null: bindings[key] = nil as String?
-            }
-        }
-        let result = try await raw(cypher.query, bindings: bindings)
+        let result = try await raw(cypher.query, bindings: cypher.parameters)
         
-        // TODO: Implement result mapping
-        fatalError("Result mapping not yet implemented")
+        return try ResultMapper.value(result, at: column)
     }
     
-    public func transaction<T>(@QueryBuilder _ builder: () -> Query) async throws -> T {
+    /// Executes a query and returns an optional value
+    public func queryOptional<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> T? {
         let query = builder()
         let cypher = try CypherCompiler.compile(query)
-        // Convert SendableParameters back to [String: any Encodable & Sendable] for the rawTransaction method
-        var bindings: [String: any Encodable & Sendable] = [:]
-        for (key, value) in cypher.parameters {
-            // Extract the underlying value from ParameterValue
-            switch value {
-            case .string(let v): bindings[key] = v
-            case .int64(let v): bindings[key] = v
-            case .double(let v): bindings[key] = v
-            case .bool(let v): bindings[key] = v
-            case .timestamp(let v): bindings[key] = Date(timeIntervalSince1970: v)
-            case .uuid(let v): bindings[key] = v
-            case .vector(let v): bindings[key] = v
-            case .json(let v): bindings[key] = v
-            case .null: bindings[key] = nil as String?
-            }
-        }
-        let result = try await rawTransaction(cypher.query, bindings: bindings)
+        let result = try await raw(cypher.query, bindings: cypher.parameters)
         
-        // TODO: Implement result mapping
-        fatalError("Result mapping not yet implemented")
+        return try ResultMapper.optionalValue(result, at: column)
+    }
+    
+    /// Executes a query and returns an array of values
+    public func queryArray<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> [T] {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await raw(cypher.query, bindings: cypher.parameters)
+        
+        return try ResultMapper.column(result, at: column)
+    }
+    
+    /// Executes a query and returns a dictionary
+    public func queryRow(@QueryBuilder _ builder: () -> Query) async throws -> [String: Any] {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await raw(cypher.query, bindings: cypher.parameters)
+        
+        return try ResultMapper.row(result)
+    }
+    
+    /// Executes a query and returns an array of dictionaries
+    public func queryRows(@QueryBuilder _ builder: () -> Query) async throws -> [[String: Any]] {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await raw(cypher.query, bindings: cypher.parameters)
+        
+        return try ResultMapper.rows(result)
+    }
+    
+    /// Executes a query and decodes the result to a Codable type
+    public func query<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> Query) async throws -> T {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await raw(cypher.query, bindings: cypher.parameters)
+        
+        return try result.decode(type)
+    }
+    
+    /// Executes a query and decodes all results to an array of Codable types
+    public func queryArray<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> Query) async throws -> [T] {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await raw(cypher.query, bindings: cypher.parameters)
+        
+        return try result.decodeArray(type)
+    }
+    
+    /// Executes a query and returns the raw QueryResult
+    public func query(@QueryBuilder _ builder: () -> Query) async throws -> QueryResult {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        
+        return try await raw(cypher.query, bindings: cypher.parameters)
+    }
+    
+    /// Executes a query in a transaction and returns a single value
+    public func transactionValue<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> T {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await rawTransaction(cypher.query, bindings: cypher.parameters)
+        
+        return try ResultMapper.value(result, at: column)
+    }
+    
+    /// Executes a query in a transaction and returns an array of values
+    public func transactionArray<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> [T] {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await rawTransaction(cypher.query, bindings: cypher.parameters)
+        
+        return try ResultMapper.column(result, at: column)
+    }
+    
+    /// Executes a query in a transaction and decodes the result
+    public func transaction<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> Query) async throws -> T {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        let result = try await rawTransaction(cypher.query, bindings: cypher.parameters)
+        
+        return try result.decode(type)
+    }
+    
+    /// Executes a query in a transaction and returns the raw QueryResult
+    public func transaction(@QueryBuilder _ builder: () -> Query) async throws -> QueryResult {
+        let query = builder()
+        let cypher = try CypherCompiler.compile(query)
+        
+        return try await rawTransaction(cypher.query, bindings: cypher.parameters)
     }
     
     // MARK: - Schema Operations

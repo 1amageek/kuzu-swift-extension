@@ -12,7 +12,7 @@ public struct Create: QueryComponent {
     public static func node<T: _KuzuGraphModel>(
         _ type: T.Type,
         alias: String? = nil,
-        properties: [String: any Encodable & Sendable] = [:]
+        properties: [String: any Sendable] = [:]
     ) -> Create {
         let pattern = NodePattern(
             type: String(describing: type),
@@ -40,7 +40,7 @@ public struct Create: QueryComponent {
         from: String,
         to: String,
         alias: String? = nil,
-        properties: [String: any Encodable & Sendable] = [:]
+        properties: [String: any Sendable] = [:]
     ) -> Create {
         let pattern = EdgePattern(
             type: String(describing: type),
@@ -62,7 +62,7 @@ public struct Create: QueryComponent {
         }
     }
     
-    private static func extractProperties(from instance: Any) -> [String: any Encodable & Sendable] {
+    private static func extractProperties(from instance: Any) -> [String: any Sendable] {
         // TODO: Use Mirror or Codable to extract properties
         // For now, return empty dictionary
         return [:]
@@ -72,10 +72,10 @@ public struct Create: QueryComponent {
 struct NodePattern {
     let type: String
     let alias: String
-    let properties: [String: any Encodable & Sendable]
+    let properties: [String: any Sendable]
     
     func toCypher(prefix: String) throws -> CypherFragment {
-        var params: [String: any Encodable & Sendable] = [:]
+        var params: [String: any Sendable] = [:]
         var propStrings: [String] = []
         
         for (key, value) in properties {
@@ -96,10 +96,10 @@ struct EdgePattern {
     let from: String
     let to: String
     let alias: String
-    let properties: [String: any Encodable & Sendable]
+    let properties: [String: any Sendable]
     
     func toCypher(prefix: String) throws -> CypherFragment {
-        var params: [String: any Encodable & Sendable] = [:]
+        var params: [String: any Sendable] = [:]
         var propStrings: [String] = []
         
         for (key, value) in properties {

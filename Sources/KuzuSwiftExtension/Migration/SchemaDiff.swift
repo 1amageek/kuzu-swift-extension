@@ -1,4 +1,5 @@
 import Foundation
+import Algorithms
 
 public struct SchemaDiff {
     public let addedNodes: [NodeSchema]
@@ -27,8 +28,9 @@ public struct SchemaDiff {
         let droppedNodeNames = currentNodeNames.subtracting(targetNodeNames)
         let commonNodeNames = currentNodeNames.intersection(targetNodeNames)
         
-        let addedNodes = target.nodes.filter { addedNodeNames.contains($0.name) }
-        let droppedNodes = current.nodes.filter { droppedNodeNames.contains($0.name) }
+        // Use partitioned(by:) from Swift Algorithms for efficient separation
+        let (addedNodes, _) = target.nodes.partitioned(by: { !addedNodeNames.contains($0.name) })
+        let (droppedNodes, _) = current.nodes.partitioned(by: { !droppedNodeNames.contains($0.name) })
         
         var modifiedNodes: [(current: NodeSchema, target: NodeSchema)] = []
         for name in commonNodeNames {
@@ -48,8 +50,9 @@ public struct SchemaDiff {
         let droppedEdgeNames = currentEdgeNames.subtracting(targetEdgeNames)
         let commonEdgeNames = currentEdgeNames.intersection(targetEdgeNames)
         
-        let addedEdges = target.edges.filter { addedEdgeNames.contains($0.name) }
-        let droppedEdges = current.edges.filter { droppedEdgeNames.contains($0.name) }
+        // Use partitioned(by:) for edges as well
+        let (addedEdges, _) = target.edges.partitioned(by: { !addedEdgeNames.contains($0.name) })
+        let (droppedEdges, _) = current.edges.partitioned(by: { !droppedEdgeNames.contains($0.name) })
         
         var modifiedEdges: [(current: EdgeSchema, target: EdgeSchema)] = []
         for name in commonEdgeNames {
