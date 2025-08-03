@@ -1,0 +1,24 @@
+{
+  "originHash" : "b3be2941dd3c745dcbb972f1f795f95ca3fed98986cfb9c0ceea6a67eab2f904",
+  "pins" : [
+    {
+      "identity" : "kuzu-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/kuzu-swift",
+      "state" : {
+        "revision" : "800dcb1c34fc2e6f62dcbb9cb4473d68bf36f17a",
+        "version" : "0.11.1"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "0687f71944021d616d34d922343dcef086855920",
+        "version" : "600.0.1"
+      }
+    }
+  ],
+  "version" : 3
+}

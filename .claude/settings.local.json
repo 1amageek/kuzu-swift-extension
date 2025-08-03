@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api-docs.kuzudb.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(mkdir:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:docs.kuzudb.com)",
+      "Bash(swift build)",
+      "Bash(swift build:*)",
+      "Bash(swift package:*)",
+      "Bash(swift test:*)",
+      "Bash(export KUZU_USE_BINARY=1)",
+      "Bash(export KUZU_BINARY_URL=\"https://github.com/1amageek/kuzu-swift/releases/download/v0.11.1/Kuzu.xcframework.zip\")",
+      "Bash(export KUZU_BINARY_CHECKSUM=\"b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28eb2bf0de49c1f9\")"
+    ],
+    "deny": []
+  }
+}
