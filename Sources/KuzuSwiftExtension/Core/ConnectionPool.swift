@@ -1,65 +1,80 @@
 import Foundation
-import KuzuFramework
+import Kuzu
 
 actor ConnectionPool {
-    private var available: [Connection]
-    private var inUse: Set<ObjectIdentifier> = []
     private let database: Database
-    private let maxSize: Int
-    private var waitingContinuations: [CheckedContinuation<Connection, Error>] = []
+    private let maxConnections: Int
+    private let minConnections: Int
+    private let timeout: TimeInterval
     
-    init(database: Database, size: Int) throws {
+    private var availableConnections: [Connection] = []
+    private var activeConnections: Set<ObjectIdentifier> = []
+    private var waitingTasks: [CheckedContinuation<Connection, Error>] = []
+    
+    init(
+        database: Database,
+        maxConnections: Int,
+        minConnections: Int,
+        timeout: TimeInterval
+    ) async throws {
         self.database = database
-        self.maxSize = size
-        self.available = []
+        self.maxConnections = maxConnections
+        self.minConnections = minConnections
+        self.timeout = timeout
         
-        // Pre-create connections
-        for _ in 0..<size {
-            available.append(try Connection(database))
-        }
-    }
-    
-    func acquire() async throws -> Connection {
-        // If connection available, return it
-        if let connection = available.popLast() {
-            inUse.insert(ObjectIdentifier(connection))
-            return connection
-        }
-        
-        // If pool not exhausted, create new connection
-        if inUse.count < maxSize {
+        for _ in 0..<minConnections {
             let connection = try Connection(database)
-            inUse.insert(ObjectIdentifier(connection))
+            availableConnections.append(connection)
+        }
+    }
+    
+    func checkout() async throws -> Connection {
+        if let connection = availableConnections.popLast() {
+            activeConnections.insert(ObjectIdentifier(connection))
             return connection
         }
         
-        // Wait for available connection
-        return try await withCheckedThrowingContinuation { continuation in
-            waitingContinuations.append(continuation)
+        if activeConnections.count + availableConnections.count < maxConnections {
+            let connection = try Connection(database)
+            activeConnections.insert(ObjectIdentifier(connection))
+            return connection
         }
-    }
-    
-    func release(_ connection: Connection) {
-        inUse.remove(ObjectIdentifier(connection))
         
-        // If someone is waiting, give them the connection
-        if let continuation = waitingContinuations.first {
-            waitingContinuations.removeFirst()
-            inUse.insert(ObjectIdentifier(connection))
-            continuation.resume(returning: connection)
-        } else {
-            // Otherwise, return to available pool
-            available.append(connection)
-        }
-    }
-    
-    func withConnection<T>(_ block: (Connection) async throws -> T) async throws -> T {
-        let connection = try await acquire()
-        defer {
+        return try await withCheckedThrowingContinuation { continuation in
+            waitingTasks.append(continuation)
+            
             Task {
-                await release(connection)
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                if let index = waitingTasks.firstIndex(where: { $0 as AnyObject === continuation as AnyObject }) {
+                    waitingTasks.remove(at: index)
+                    continuation.resume(throwing: GraphError.connectionPoolExhausted)
+                }
             }
         }
-        return try await block(connection)
+    }
+    
+    func checkin(_ connection: Connection) {
+        let id = ObjectIdentifier(connection)
+        guard activeConnections.contains(id) else { return }
+        
+        activeConnections.remove(id)
+        
+        if let waitingTask = waitingTasks.first {
+            waitingTasks.removeFirst()
+            activeConnections.insert(id)
+            waitingTask.resume(returning: connection)
+        } else {
+            availableConnections.append(connection)
+        }
+    }
+    
+    func drain() async {
+        for continuation in waitingTasks {
+            continuation.resume(throwing: GraphError.connectionPoolExhausted)
+        }
+        waitingTasks.removeAll()
+        
+        availableConnections.removeAll()
+        activeConnections.removeAll()
     }
 }

@@ -1,76 +1,83 @@
 import Foundation
-import KuzuFramework
+import Kuzu
 
-public final class GraphContainer: Sendable {
-    private let databases: [String: Database]
-    private let connections: [String: ConnectionPool]
-    private let configurations: [String: GraphConfiguration]
+public actor GraphContainer {
+    private let configuration: GraphConfiguration
+    private let database: Database
+    private let connectionPool: ConnectionPool
+    private var isInitialized = false
     
-    public init(for schema: GraphSchema, _ configs: GraphConfiguration...) async throws {
-        var databases: [String: Database] = [:]
-        var connections: [String: ConnectionPool] = [:]
-        var configurations: [String: GraphConfiguration] = [:]
+    public init(configuration: GraphConfiguration) async throws {
+        self.configuration = configuration
         
-        for config in configs {
-            // Create database
-            let db: Database
-            if config.options.inMemory || config.url.absoluteString == ":memory:" {
-                db = try Database()
-            } else {
-                db = try Database(config.url.path)
-            }
-            databases[config.name] = db
-            
-            // Create connection pool
-            let pool = try ConnectionPool(database: db, size: config.options.connectionPoolSize)
-            connections[config.name] = pool
-            
-            // Install extensions
-            try await pool.withConnection { conn in
-                for ext in config.options.extensions {
-                    _ = try conn.query("INSTALL \(ext.rawValue);")
-                    _ = try conn.query("LOAD EXTENSION \(ext.rawValue);")
-                }
-            }
-            
-            // Apply schema migration
-            try await pool.withConnection { conn in
-                let migrationManager = MigrationManager(
-                    connection: conn,
-                    policy: config.options.migrationPolicy
+        self.database = try Database(configuration.databasePath)
+        
+        self.connectionPool = try await ConnectionPool(
+            database: database,
+            maxConnections: configuration.options.maxConnections,
+            minConnections: configuration.options.minConnections,
+            timeout: configuration.options.connectionTimeout
+        )
+        
+        try await initialize()
+    }
+    
+    private func initialize() async throws {
+        guard !isInitialized else { return }
+        
+        try await loadExtensions()
+        
+        isInitialized = true
+    }
+    
+    private func loadExtensions() async throws {
+        guard !configuration.options.extensions.isEmpty else { return }
+        
+        let connection = try await connectionPool.checkout()
+        defer { Task { await connectionPool.checkin(connection) } }
+        
+        for ext in configuration.options.extensions {
+            do {
+                _ = try connection.query(ext.installCommand)
+                _ = try connection.query(ext.loadCommand)
+            } catch {
+                throw GraphError.extensionLoadFailed(
+                    extension: ext.rawValue,
+                    reason: error.localizedDescription
                 )
-                try await migrationManager.migrate(schema: config.schema)
             }
-            
-            configurations[config.name] = config
         }
+    }
+    
+    public func withConnection<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
+        let connection = try await connectionPool.checkout()
+        defer { Task { await connectionPool.checkin(connection) } }
         
-        self.databases = databases
-        self.connections = connections
-        self.configurations = configurations
+        return try block(connection)
     }
     
-    public convenience init(for schema: GraphSchema, configuration: GraphConfiguration) async throws {
-        try await self.init(for: schema, configuration)
-    }
-    
-    public func context(for name: String) -> GraphContext? {
-        guard let pool = connections[name],
-              let config = configurations[name] else {
-            return nil
+    public func withTransaction<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
+        let connection = try await connectionPool.checkout()
+        defer { Task { await connectionPool.checkin(connection) } }
+        
+        _ = try connection.query("BEGIN TRANSACTION")
+        
+        do {
+            let result = try block(connection)
+            _ = try connection.query("COMMIT")
+            return result
+        } catch {
+            _ = try? connection.query("ROLLBACK")
+            throw GraphError.transactionFailed(reason: error.localizedDescription)
         }
-        return GraphContext(connectionPool: pool, configuration: config)
     }
     
-    public var defaultContext: GraphContext {
-        guard let firstKey = configurations.keys.first,
-              let context = context(for: firstKey) else {
-            fatalError("No configurations available")
-        }
-        return context
+    public func close() async {
+        await connectionPool.drain()
     }
     
-    public var contextNames: [String] {
-        Array(configurations.keys)
+    deinit {
+        // Note: Cannot await in deinit
+        // Caller should explicitly call close() before releasing the container
     }
 }

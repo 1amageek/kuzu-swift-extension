@@ -18,26 +18,26 @@ let package = Package(
             name: "KuzuSwiftExtension",
             targets: ["KuzuSwiftExtension"]),
         .library(
-            name: "KuzuSwiftExtensionMacros",
-            targets: ["KuzuSwiftExtensionMacros"]),
+            name: "KuzuSwiftMacros",
+            targets: ["KuzuSwiftMacros"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
-        .package(url: "https://github.com/1amageek/kuzu-swift.git", from: "0.11.1")
+        .package(url: "https://github.com/kuzudb/kuzu-swift.git", from: "0.11.1")
     ],
     targets: [
         // Main library target
         .target(
             name: "KuzuSwiftExtension",
             dependencies: [
-                "KuzuSwiftExtensionMacros",
+                "KuzuSwiftMacros",
                 .product(name: "Kuzu", package: "kuzu-swift")
             ]
         ),
         
         // Macro implementations
         .macro(
-            name: "KuzuSwiftExtensionMacrosPlugin",
+            name: "KuzuSwiftMacrosPlugin",
             dependencies: [
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax")
@@ -46,8 +46,8 @@ let package = Package(
         
         // Macro declarations and exports
         .target(
-            name: "KuzuSwiftExtensionMacros",
-            dependencies: ["KuzuSwiftExtensionMacrosPlugin"]
+            name: "KuzuSwiftMacros",
+            dependencies: ["KuzuSwiftMacrosPlugin"]
         ),
         
         // Test targets
@@ -56,9 +56,9 @@ let package = Package(
             dependencies: ["KuzuSwiftExtension"]
         ),
         .testTarget(
-            name: "KuzuSwiftExtensionMacrosTests",
+            name: "KuzuSwiftMacrosTests",
             dependencies: [
-                "KuzuSwiftExtensionMacrosPlugin",
+                "KuzuSwiftMacrosPlugin",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ]
         ),

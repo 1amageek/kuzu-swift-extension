@@ -1,8 +1,9 @@
-// Main module exports
+import Foundation
+import Kuzu
 
-@_exported import Foundation
-@_exported import KuzuSwiftExtensionMacros
+// Re-export macros
+public import KuzuSwiftMacros
 
-// Re-export all public types
-public typealias GraphNode = KuzuSwiftExtensionMacros.GraphNode
-public typealias GraphEdge = KuzuSwiftExtensionMacros.GraphEdge
+public enum KuzuSwiftExtension {
+    public static let version = "0.1.0"
+}

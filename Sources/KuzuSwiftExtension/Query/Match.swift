@@ -1,31 +1,144 @@
 import Foundation
 
-public struct Match<T: _KuzuGraphModel> {
-    internal var clause: MatchClause
+public struct Match: QueryComponent {
+    let patterns: [MatchPattern]
     
-    public init(_ type: T.Type, as variable: String? = nil) {
-        self.clause = MatchClause(variable: variable, type: type)
+    private init(patterns: [MatchPattern]) {
+        self.patterns = patterns
     }
     
-    public func `where`<Value>(_ keyPath: KeyPath<T, Value>, _ predicate: Predicate<Value>) -> Self {
-        var newClause = clause
-        newClause.predicates.append(WhereCondition(keyPath: keyPath, predicate: predicate))
-        return Match(clause: newClause)
+    public static func node<T: _KuzuGraphModel>(
+        _ type: T.Type,
+        alias: String? = nil,
+        where predicate: Predicate? = nil
+    ) -> Match {
+        let pattern = MatchPattern.node(
+            type: String(describing: type),
+            alias: alias ?? String(describing: type).lowercased(),
+            predicate: predicate
+        )
+        return Match(patterns: [pattern])
     }
     
-    public func `where`(_ condition: Bool) -> Self {
-        guard condition else { return self }
-        // This is a simplified version - in production, we'd handle boolean conditions properly
-        return self
+    public static func pattern(_ patterns: MatchPattern...) -> Match {
+        Match(patterns: patterns)
     }
     
-    internal init(clause: MatchClause) {
-        self.clause = clause
+    public func toCypher() throws -> CypherFragment {
+        var fragments: [CypherFragment] = []
+        
+        for pattern in patterns {
+            fragments.append(try pattern.toCypher())
+        }
+        
+        let merged = fragments.reduce(CypherFragment(query: "MATCH", parameters: [:])) { result, fragment in
+            if result.query == "MATCH" {
+                return CypherFragment(
+                    query: "MATCH " + fragment.query,
+                    parameters: fragment.parameters
+                )
+            } else {
+                return result.merged(with: CypherFragment(query: ", " + fragment.query, parameters: fragment.parameters))
+            }
+        }
+        
+        return merged
     }
 }
 
-// Convenience methods for common patterns
-public extension Match {
-    // This would need proper implementation with runtime property lookup
-    // For now, removed to avoid compilation issues
+public enum MatchPattern {
+    case node(type: String, alias: String, predicate: Predicate?)
+    case edge(type: String, from: String, to: String, alias: String, predicate: Predicate?)
+    case path(from: String, to: String, edgeType: String?, minHops: Int?, maxHops: Int?, alias: String)
+    
+    public static func node<T: _KuzuGraphModel>(
+        _ type: T.Type,
+        alias: String? = nil
+    ) -> MatchPattern {
+        .node(
+            type: String(describing: type),
+            alias: alias ?? String(describing: type).lowercased(),
+            predicate: nil
+        )
+    }
+    
+    public static func edge<T: _KuzuGraphModel>(
+        _ type: T.Type,
+        from: String,
+        to: String,
+        alias: String? = nil
+    ) -> MatchPattern {
+        .edge(
+            type: String(describing: type),
+            from: from,
+            to: to,
+            alias: alias ?? String(describing: type).lowercased(),
+            predicate: nil
+        )
+    }
+    
+    public static func path(
+        from: String,
+        to: String,
+        via edgeType: String? = nil,
+        hops: ClosedRange<Int>? = nil,
+        alias: String
+    ) -> MatchPattern {
+        .path(
+            from: from,
+            to: to,
+            edgeType: edgeType,
+            minHops: hops?.lowerBound,
+            maxHops: hops?.upperBound,
+            alias: alias
+        )
+    }
+    
+    func toCypher() throws -> CypherFragment {
+        switch self {
+        case .node(let type, let alias, let predicate):
+            let nodePattern = "(\(alias):\(type))"
+            if let predicate = predicate {
+                let predicateFragment = try predicate.toCypher()
+                return CypherFragment(
+                    query: nodePattern + " WHERE " + predicateFragment.query,
+                    parameters: predicateFragment.parameters
+                )
+            }
+            return CypherFragment(query: nodePattern)
+            
+        case .edge(let type, let from, let to, let alias, let predicate):
+            let edgePattern = "(\(from))-[\(alias):\(type)]->(\(to))"
+            if let predicate = predicate {
+                let predicateFragment = try predicate.toCypher()
+                return CypherFragment(
+                    query: edgePattern + " WHERE " + predicateFragment.query,
+                    parameters: predicateFragment.parameters
+                )
+            }
+            return CypherFragment(query: edgePattern)
+            
+        case .path(let from, let to, let edgeType, let minHops, let maxHops, let alias):
+            var hopsClause = ""
+            if let min = minHops, let max = maxHops {
+                hopsClause = "*\(min)..\(max)"
+            } else if let min = minHops {
+                hopsClause = "*\(min).."
+            } else if let max = maxHops {
+                hopsClause = "*..\(max)"
+            }
+            
+            let edgeClause = edgeType.map { ":\($0)" } ?? ""
+            let pathPattern = "\(alias) = (\(from))-[\(edgeClause)\(hopsClause)]->(\(to))"
+            return CypherFragment(query: pathPattern)
+        }
+    }
+}
+
+// Placeholder for Predicate
+public struct Predicate {
+    func toCypher() throws -> CypherFragment {
+        // TODO: Implement predicate compilation
+        CypherFragment(query: "true")
+    }
 }

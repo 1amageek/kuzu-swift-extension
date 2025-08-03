@@ -1,12 +1,12 @@
 {
-  "originHash" : "b3be2941dd3c745dcbb972f1f795f95ca3fed98986cfb9c0ceea6a67eab2f904",
+  "originHash" : "0367ecf9b5bd6762fec6b510f0ee2f88de4f1e2d55c678265393f23547171a61",
   "pins" : [
     {
       "identity" : "kuzu-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/1amageek/kuzu-swift",
+      "location" : "https://github.com/kuzudb/kuzu-swift.git",
       "state" : {
-        "revision" : "800dcb1c34fc2e6f62dcbb9cb4473d68bf36f17a",
+        "revision" : "1652aafc7a0b207874a5b9bc3e931d5f3f77e44b",
         "version" : "0.11.1"
       }
     },
