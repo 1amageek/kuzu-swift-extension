@@ -28,37 +28,159 @@ public struct MigrationManager {
         var nodes: [NodeSchema] = []
         var edges: [EdgeSchema] = []
         
-        // Query node tables
-        let nodeTablesQuery = """
-            CALL table_info('NODE_TABLE') RETURN *
-        """
+        // Use modern Kuzu API (>= 0.10)
+        // First, get all tables using SHOW TABLES
+        let showTablesQuery = "SHOW TABLES"
         
         do {
-            let nodeResult = try await context.raw(nodeTablesQuery, bindings: [:])
-            while nodeResult.hasNextQueryResult() {
-                let next = try nodeResult.getNextQueryResult()
-                // TODO: Parse node table info
+            let tablesResult = try await context.raw(showTablesQuery, bindings: [:])
+            let tables = try tablesResult.mapRows()
+            
+            for tableRow in tables {
+                guard let tableName = tableRow["name"] as? String else { continue }
+                
+                // Get detailed schema for each table using DESCRIBE
+                let describeQuery = "DESCRIBE \(tableName)"
+                let schemaResult = try await context.raw(describeQuery, bindings: [:])
+                let schemaRows = try schemaResult.mapRows()
+                
+                // Parse the schema information
+                let tableInfo = try parseTableSchema(
+                    tableName: tableName,
+                    tableRow: tableRow,
+                    schemaRows: schemaRows
+                )
+                
+                switch tableInfo.tableType {
+                case .node:
+                    nodes.append(NodeSchema(
+                        name: tableName,
+                        columns: tableInfo.columns.map { Column(name: $0.name, type: $0.type, constraints: $0.constraints) },
+                        ddl: tableInfo.ddl
+                    ))
+                case .edge:
+                    edges.append(EdgeSchema(
+                        name: tableName,
+                        from: tableInfo.fromType ?? "",
+                        to: tableInfo.toType ?? "",
+                        columns: tableInfo.columns.map { Column(name: $0.name, type: $0.type, constraints: $0.constraints) },
+                        ddl: tableInfo.ddl
+                    ))
+                }
             }
         } catch {
-            // No existing tables
-        }
-        
-        // Query rel tables
-        let relTablesQuery = """
-            CALL table_info('REL_TABLE') RETURN *
-        """
-        
-        do {
-            let relResult = try await context.raw(relTablesQuery, bindings: [:])
-            while relResult.hasNextQueryResult() {
-                let next = try relResult.getNextQueryResult()
-                // TODO: Parse rel table info
-            }
-        } catch {
-            // No existing tables
+            // If SHOW TABLES fails, it might be an older version or empty database
+            // Return empty schema
+            return GraphSchema(nodes: nodes, edges: edges)
         }
         
         return GraphSchema(nodes: nodes, edges: edges)
+    }
+    
+    private struct TableInfo {
+        enum TableType {
+            case node
+            case edge
+        }
+        
+        let tableType: TableType
+        let ddl: String
+        let columns: [(name: String, type: String, constraints: [String])]
+        let fromType: String?
+        let toType: String?
+    }
+    
+    private func parseTableSchema(
+        tableName: String,
+        tableRow: [String: Any],
+        schemaRows: [[String: Any]]
+    ) throws -> TableInfo {
+        var columns: [(name: String, type: String, constraints: [String])] = []
+        var tableType: TableInfo.TableType = .node
+        var fromType: String?
+        var toType: String?
+        
+        // Determine table type from SHOW TABLES result
+        if let type = tableRow["type"] as? String {
+            tableType = type.uppercased().contains("REL") ? .edge : .node
+        }
+        
+        // For edge tables, extract source and target from the table row
+        if tableType == .edge {
+            fromType = tableRow["src"] as? String
+            toType = tableRow["dst"] as? String
+        }
+        
+        // Parse column information from DESCRIBE output
+        for row in schemaRows {
+            guard let columnName = row["property"] as? String ?? row["column"] as? String,
+                  let dataType = row["type"] as? String else {
+                continue
+            }
+            
+            var constraints: [String] = []
+            
+            // Check for primary key constraint
+            if let isPrimary = row["primary"] as? Bool, isPrimary {
+                constraints.append("PRIMARY KEY")
+            }
+            
+            // Check for other constraints
+            if let isUnique = row["unique"] as? Bool, isUnique {
+                constraints.append("UNIQUE")
+            }
+            
+            if let isNotNull = row["not_null"] as? Bool, isNotNull {
+                constraints.append("NOT NULL")
+            }
+            
+            columns.append((
+                name: columnName,
+                type: dataType,
+                constraints: constraints
+            ))
+        }
+        
+        // Reconstruct DDL based on parsed information
+        let ddl = reconstructDDL(
+            tableName: tableName,
+            tableType: tableType,
+            columns: columns,
+            fromType: fromType,
+            toType: toType
+        )
+        
+        return TableInfo(
+            tableType: tableType,
+            ddl: ddl,
+            columns: columns,
+            fromType: fromType,
+            toType: toType
+        )
+    }
+    
+    private func reconstructDDL(
+        tableName: String,
+        tableType: TableInfo.TableType,
+        columns: [(name: String, type: String, constraints: [String])],
+        fromType: String?,
+        toType: String?
+    ) -> String {
+        let columnDefs = columns.map { column in
+            var def = "\(column.name) \(column.type)"
+            if !column.constraints.isEmpty {
+                def += " " + column.constraints.joined(separator: " ")
+            }
+            return def
+        }.joined(separator: ", ")
+        
+        switch tableType {
+        case .node:
+            return "CREATE NODE TABLE \(tableName) (\(columnDefs))"
+        case .edge:
+            let fromTo = (fromType != nil && toType != nil) ? " FROM \(fromType!) TO \(toType!)" : ""
+            return "CREATE REL TABLE \(tableName)\(fromTo) (\(columnDefs))"
+        }
     }
     
     private func validateMigration(diff: SchemaDiff) throws {

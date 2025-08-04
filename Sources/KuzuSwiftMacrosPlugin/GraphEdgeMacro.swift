@@ -12,22 +12,24 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            throw DiagnosticError(
-                message: "@GraphEdge can only be applied to structs",
-                diagnosticID: MessageID(domain: "KuzuSwiftMacros", id: "invalid-type"),
-                severity: .error
+            let diagnostic = Diagnostic(
+                node: declaration,
+                message: GraphEdgeDiagnostic.mustBeAppliedToStruct
             )
+            context.diagnose(diagnostic)
+            return []
         }
         
         guard case .argumentList(let arguments) = node.arguments,
               arguments.count >= 2,
               let fromArg = arguments.first,
               let toArg = arguments.dropFirst().first else {
-            throw DiagnosticError(
-                message: "@GraphEdge requires 'from' and 'to' type parameters",
-                diagnosticID: MessageID(domain: "KuzuSwiftMacros", id: "missing-parameters"),
-                severity: .error
+            let diagnostic = Diagnostic(
+                node: node,
+                message: GraphEdgeDiagnostic.missingParameters
             )
+            context.diagnose(diagnostic)
+            return []
         }
         
         let fromType = fromArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -40,6 +42,7 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
         
         var columns: [(name: String, type: String, constraints: [String])] = []
         var ddlColumns: [String] = []
+        var idProperties: [(name: String, location: SyntaxProtocol)] = []
         
         for member in members {
             guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
@@ -62,6 +65,7 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
                 switch attrName {
                 case "ID":
                     constraints.append("PRIMARY KEY")
+                    idProperties.append((name: propertyName, location: variableDecl))
                 case "Index":
                     constraints.append("INDEX")
                 case "Timestamp":
@@ -78,6 +82,25 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
                 columnDef += " PRIMARY KEY"
             }
             ddlColumns.append(columnDef)
+        }
+        
+        // Validate ID properties - edges can have zero or one ID property
+        if idProperties.count > 1 {
+            // Create notes for all ID properties
+            let notes = idProperties.map { (propertyName, location) in
+                Note(
+                    node: Syntax(location),
+                    message: MacroExpansionNoteMessage("Property '\(propertyName)' is marked with @ID")
+                )
+            }
+            
+            let diagnostic = Diagnostic(
+                node: structDecl.name,
+                message: GraphNodeDiagnostic.duplicatePrimaryKey,
+                notes: notes
+            )
+            context.diagnose(diagnostic)
+            return []
         }
         
         let ddl = "CREATE REL TABLE \(structName) (FROM \(fromType) TO \(toType), \(ddlColumns.joined(separator: ", ")))"
@@ -104,7 +127,7 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        let extensionDecl = try ExtensionDeclSyntax(
+        let extensionDecl = ExtensionDeclSyntax(
             extendedType: type,
             inheritanceClause: InheritanceClauseSyntax {
                 InheritedTypeSyntax(

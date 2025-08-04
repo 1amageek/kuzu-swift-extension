@@ -16,12 +16,34 @@ public struct ParameterNameGenerator {
     public static func generate(using strategy: Strategy) -> String {
         switch strategy {
         case .semantic(let alias, let property):
-            return "\(alias)_\(property)"
+            let sanitizedAlias = sanitizeName(alias)
+            let sanitizedProperty = sanitizeName(property)
+            return "\(sanitizedAlias)_\(sanitizedProperty)"
             
         case .uuid(let prefix):
+            let sanitizedPrefix = sanitizeName(prefix)
             let uuid = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            return "\(prefix)_\(uuid)"
+            return "\(sanitizedPrefix)_\(uuid)"
         }
+    }
+    
+    /// Sanitizes a name by replacing non-alphanumeric characters with underscores
+    private static func sanitizeName(_ name: String) -> String {
+        // Replace any character that is not alphanumeric or underscore with an underscore
+        let pattern = "[^a-zA-Z0-9_]"
+        let sanitized = name.replacingOccurrences(
+            of: pattern,
+            with: "_",
+            options: .regularExpression
+        )
+        
+        // Ensure the name doesn't start with a number (prepend underscore if needed)
+        if let firstChar = sanitized.first, firstChar.isNumber {
+            return "_" + sanitized
+        }
+        
+        // Return empty string as "param" if the result is empty
+        return sanitized.isEmpty ? "param" : sanitized
     }
     
     /// Convenience method for generating UUID-based parameter names

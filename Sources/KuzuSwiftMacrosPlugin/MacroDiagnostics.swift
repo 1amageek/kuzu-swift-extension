@@ -1,4 +1,40 @@
 import SwiftDiagnostics
+import SwiftSyntax
+import SwiftSyntaxMacros
+
+// MARK: - Common Diagnostic Types
+
+/// A generic note message for macro expansions
+public struct MacroExpansionNoteMessage: NoteMessage {
+    public let message: String
+    
+    public init(_ message: String) {
+        self.message = message
+    }
+    
+    public var noteID: MessageID {
+        MessageID(domain: "KuzuSwiftMacros", id: "note")
+    }
+}
+
+/// A generic error message for macro expansions
+public struct MacroExpansionErrorMessage: DiagnosticMessage {
+    public let message: String
+    
+    public init(_ message: String) {
+        self.message = message
+    }
+    
+    public var diagnosticID: MessageID {
+        MessageID(domain: "KuzuSwiftMacros", id: "custom-error")
+    }
+    
+    public var severity: DiagnosticSeverity {
+        .error
+    }
+}
+
+// MARK: - Specific Diagnostic Types
 
 enum GraphNodeDiagnostic: String, DiagnosticMessage {
     case mustBeAppliedToStruct = "graph-node-must-be-struct"

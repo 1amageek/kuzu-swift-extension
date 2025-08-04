@@ -1,9 +1,23 @@
 import Foundation
 import Kuzu
 
-// Ensure Kuzu types are Sendable for safe concurrent usage
-// Note: This assumes kuzu-swift's Connection and Database are thread-safe
-// If they are not, additional synchronization would be required
+// MARK: - Sendable Conformance
+//
+// Safety Note: Connection and Database are marked as @unchecked Sendable because
+// the underlying kuzu-swift types are assumed to be thread-safe based on Kuzu's
+// C++ library guarantees for connection pooling scenarios.
+//
+// Key assumptions:
+// 1. Kuzu's C++ Database class is thread-safe for read operations
+// 2. Kuzu's C++ Connection instances are independent and can be used from different threads
+// 3. Connection operations don't share mutable state between instances
+//
+// If these assumptions are incorrect, additional synchronization would be required,
+// such as wrapping operations in a serial DispatchQueue or using locks.
+//
+// References:
+// - Kuzu Documentation: https://docs.kuzudb.com/
+// - Issue tracking: https://github.com/kuzudb/kuzu/issues
 extension Connection: @unchecked Sendable {}
 extension Database: @unchecked Sendable {}
 
@@ -61,8 +75,14 @@ actor ConnectionPool {
                 do {
                     try await clock.sleep(for: .seconds(timeout))
                     await handleTimeout(for: continuation)
+                } catch is CancellationError {
+                    // Task was cancelled - this is expected when connection becomes available
+                    // before timeout. The continuation will be resumed by checkin().
+                    return
                 } catch {
-                    // Task was cancelled, ignore
+                    // Unexpected error during sleep - should not happen with clock.sleep
+                    // Log for debugging if needed
+                    return
                 }
             }
             

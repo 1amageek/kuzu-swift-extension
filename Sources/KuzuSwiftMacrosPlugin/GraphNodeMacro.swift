@@ -12,11 +12,12 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            throw DiagnosticError(
-                message: "@GraphNode can only be applied to structs",
-                diagnosticID: MessageID(domain: "KuzuSwiftMacros", id: "invalid-type"),
-                severity: .error
+            let diagnostic = Diagnostic(
+                node: declaration,
+                message: GraphNodeDiagnostic.mustBeAppliedToStruct
             )
+            context.diagnose(diagnostic)
+            return []
         }
         
         let structName = structDecl.name.text
@@ -24,6 +25,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         
         var columns: [(name: String, type: String, constraints: [String])] = []
         var ddlColumns: [String] = []
+        var idProperties: [(name: String, location: SyntaxProtocol)] = []
         
         for member in members {
             guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
@@ -46,6 +48,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                 switch attrName {
                 case "ID":
                     constraints.append("PRIMARY KEY")
+                    idProperties.append((name: propertyName, location: variableDecl))
                 case "Index":
                     constraints.append("INDEX")
                 case "Vector":
@@ -85,6 +88,34 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             }
         }
         
+        // Validate ID properties
+        if idProperties.isEmpty {
+            let diagnostic = Diagnostic(
+                node: structDecl.name,
+                message: GraphNodeDiagnostic.missingIDProperty
+            )
+            context.diagnose(diagnostic)
+            return []
+        }
+        
+        if idProperties.count > 1 {
+            // Create notes for all ID properties
+            let notes = idProperties.map { (propertyName, location) in
+                Note(
+                    node: Syntax(location),
+                    message: MacroExpansionNoteMessage("Property '\(propertyName)' is marked with @ID")
+                )
+            }
+            
+            let diagnostic = Diagnostic(
+                node: structDecl.name,
+                message: GraphNodeDiagnostic.duplicatePrimaryKey,
+                notes: notes
+            )
+            context.diagnose(diagnostic)
+            return []
+        }
+        
         let ddl = "CREATE NODE TABLE \(structName) (\(ddlColumns.joined(separator: ", ")))"
         
         let columnsArray = columns.map { column in
@@ -109,7 +140,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        let extensionDecl = try ExtensionDeclSyntax(
+        let extensionDecl = ExtensionDeclSyntax(
             extendedType: type,
             inheritanceClause: InheritanceClauseSyntax {
                 InheritedTypeSyntax(
@@ -145,10 +176,4 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         
         return typeMapping[swiftType] ?? "STRING"
     }
-}
-
-struct DiagnosticError: Error {
-    let message: String
-    let diagnosticID: MessageID
-    let severity: DiagnosticSeverity
 }

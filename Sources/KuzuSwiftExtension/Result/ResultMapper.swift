@@ -62,6 +62,8 @@ public struct ResultMapper {
     }
     
     /// Maps all values from a column as an array
+    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
+    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
     public static func column<T>(_ result: QueryResult, at column: Int = 0) throws -> [T] {
         var values: [T] = []
         let columnNames = result.getColumnNames()
@@ -101,6 +103,8 @@ public struct ResultMapper {
     }
     
     /// Maps all rows to an array of dictionaries
+    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
+    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
     public static func rows(_ result: QueryResult) throws -> [[String: Any]] {
         var rows: [[String: Any]] = []
         
@@ -163,11 +167,25 @@ extension QueryResult {
     // MARK: - Collection Mapping
     
     /// Maps all results to an array of values
+    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
+    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
+    /// - TODO: When kuzu-swift supports result cloning, implement proper iterator reset functionality
     public func mapAll<T>(to type: T.Type, at column: Int = 0) throws -> [T] {
-        return try ResultMapper.column(self, at: column)
+        let results: [T] = try ResultMapper.column(self, at: column)
+        
+        // Check if we've consumed an already-consumed iterator
+        // This helps developers identify the issue quickly
+        if results.isEmpty && !isEmpty {
+            // Note: isEmpty also consumes the iterator, so we can't reliably detect this case
+            // TODO: Remove this when kuzu-swift supports result.clone() or reset()
+        }
+        
+        return results
     }
     
     /// Maps results to an array of dictionaries
+    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
+    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
     public func mapRows() throws -> [[String: Any]] {
         return try ResultMapper.rows(self)
     }
@@ -221,7 +239,8 @@ extension QueryResult {
         return !hasNext()
     }
     
-    /// Counts the number of results (consumes the iterator)
+    /// Counts the number of results
+    /// - Warning: This method consumes the QueryResult iterator. The QueryResult cannot be used after calling this method.
     public func count() throws -> Int {
         var count = 0
         while hasNext() {
