@@ -89,6 +89,23 @@ public struct SchemaDiff {
         return true
     }
     
+    /// Check if column types have changed (for migration validation)
+    public static func hasTypeChanges(current: NodeSchema, target: NodeSchema) -> Bool {
+        let currentColumnsByName = Dictionary(uniqueKeysWithValues: current.columns.map { ($0.name, $0) })
+        let targetColumnsByName = Dictionary(uniqueKeysWithValues: target.columns.map { ($0.name, $0) })
+        
+        for (columnName, currentColumn) in currentColumnsByName {
+            if let targetColumn = targetColumnsByName[columnName] {
+                // Column exists in both - check if type changed
+                if currentColumn.type != targetColumn.type {
+                    return true
+                }
+            }
+        }
+        
+        return false
+    }
+    
     private static func isEqual(_ edge1: EdgeSchema, _ edge2: EdgeSchema) -> Bool {
         guard edge1.name == edge2.name else { return false }
         guard edge1.from == edge2.from else { return false }
@@ -104,5 +121,22 @@ public struct SchemaDiff {
         }
         
         return true
+    }
+    
+    /// Check if edge column types have changed (for migration validation)
+    public static func hasTypeChanges(current: EdgeSchema, target: EdgeSchema) -> Bool {
+        let currentColumnsByName = Dictionary(uniqueKeysWithValues: current.columns.map { ($0.name, $0) })
+        let targetColumnsByName = Dictionary(uniqueKeysWithValues: target.columns.map { ($0.name, $0) })
+        
+        for (columnName, currentColumn) in currentColumnsByName {
+            if let targetColumn = targetColumnsByName[columnName] {
+                // Column exists in both - check if type changed
+                if currentColumn.type != targetColumn.type {
+                    return true
+                }
+            }
+        }
+        
+        return false
     }
 }

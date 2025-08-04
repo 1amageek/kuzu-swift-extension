@@ -199,6 +199,24 @@ public struct MigrationManager {
                 )
             }
             
+            // Check for type changes in modified nodes
+            for (currentNode, targetNode) in diff.modifiedNodes {
+                if SchemaDiff.hasTypeChanges(current: currentNode, target: targetNode) {
+                    throw GraphError.migrationFailed(
+                        reason: "Column type change detected in node '\(currentNode.name)' but migration policy is .safeOnly. Type changes require .allowDestructive policy."
+                    )
+                }
+            }
+            
+            // Check for type changes in modified edges
+            for (currentEdge, targetEdge) in diff.modifiedEdges {
+                if SchemaDiff.hasTypeChanges(current: currentEdge, target: targetEdge) {
+                    throw GraphError.migrationFailed(
+                        reason: "Column type change detected in edge '\(currentEdge.name)' but migration policy is .safeOnly. Type changes require .allowDestructive policy."
+                    )
+                }
+            }
+            
         case .allowDestructive:
             // All changes allowed
             break

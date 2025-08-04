@@ -1,38 +1,76 @@
 # Kuzu Swift Extension
 
-**SQLite並みに簡単に使えるグラフデータベース** - Swift開発者のための型安全なグラフDB拡張ライブラリ
+**Graph database as easy as SQLite** - A type-safe graph database extension library for Swift developers
 
 ![Swift 6.1+](https://img.shields.io/badge/Swift-6.1+-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20iOS%20|%20tvOS%20|%20watchOS-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-## 特徴
+## Features
 
-- ✨ **ゼロコンフィグ** - `GraphDatabase.shared` で即座に開始
-- 🎯 **SwiftDataライクなAPI** - `save()`, `fetch()`, `delete()` の直感的なメソッド
-- 🔄 **自動スキーマ管理** - モデルを定義するだけでDDLを自動生成
-- 🏗️ **型安全** - Swiftマクロによるコンパイル時のエラー検出
-- 🚀 **モダンSwift** - async/await完全対応
+- ✨ **Zero Configuration** - Start immediately with `GraphDatabase.shared`
+- 🎯 **SwiftData-like API** - Intuitive methods: `save()`, `fetch()`, `delete()`
+- 🔄 **Automatic Schema Management** - Auto-generates DDL from your models
+- 🏗️ **Type Safety** - Compile-time error detection with Swift macros
+- 🚀 **Modern Swift** - Full async/await support
 
-## インストール
+## Installation
 
 ### Swift Package Manager
 
-Xcodeでプロジェクトを開き、File → Add Package Dependencies で以下のURLを追加：
+In Xcode, go to File → Add Package Dependencies and add:
 
 ```
 https://github.com/1amageek/kuzu-swift-extension
 ```
 
-または `Package.swift` に追加：
+Or add to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/1amageek/kuzu-swift-extension", from: "0.2.0")
+dependencies: [
+    .package(url: "https://github.com/1amageek/kuzu-swift-extension", from: "0.2.0")
+]
 ```
 
-## 一行目から動く！クイックスタート
+Then add the dependency to your target:
 
-### 1. モデル定義（Todo.swift）
+```swift
+.target(
+    name: "YourApp",
+    dependencies: [
+        .product(name: "KuzuSwiftExtension", package: "kuzu-swift-extension"),
+        .product(name: "KuzuSwiftMacros", package: "kuzu-swift-extension")
+    ]
+)
+```
+
+Minimal configuration example:
+
+```swift
+// swift-tools-version: 6.1
+import PackageDescription
+
+let package = Package(
+    name: "MyGraphApp",
+    platforms: [.macOS(.v14), .iOS(.v17)],
+    dependencies: [
+        .package(url: "https://github.com/1amageek/kuzu-swift-extension", from: "0.2.0")
+    ],
+    targets: [
+        .executableTarget(
+            name: "MyGraphApp",
+            dependencies: [
+                .product(name: "KuzuSwiftExtension", package: "kuzu-swift-extension"),
+                .product(name: "KuzuSwiftMacros", package: "kuzu-swift-extension")
+            ]
+        )
+    ]
+)
+```
+
+## Quick Start - Works from the First Line!
+
+### 1. Define Your Model (Todo.swift)
 
 ```swift
 import KuzuSwiftExtension
@@ -46,38 +84,38 @@ struct Todo: Codable {
 }
 ```
 
-### 2. 使い方（3行で動く！）
+### 2. Usage (Works in 3 Lines!)
 
 ```swift
-// グラフDBの初期化（ファイルパス自動設定）
+// Initialize graph DB (automatic file path configuration)
 let graph = try await GraphDatabase.shared.context()
 
-// Todoを保存
-let todo = Todo(title: "買い物")
+// Save a Todo
+let todo = Todo(title: "Buy groceries")
 try await graph.save(todo)
 
-// 全件取得
+// Fetch all todos
 let todos = try await graph.fetch(Todo.self)
-print(todos) // [Todo(id: ..., title: "買い物", done: false)]
+print(todos) // [Todo(id: ..., title: "Buy groceries", done: false)]
 ```
 
-### 3. もう少し実践的な例
+### 3. More Practical Example
 
 ```swift
 import SwiftUI
 import KuzuSwiftExtension
 
-// SwiftUIで使う場合
+// Using with SwiftUI
 struct ContentView: View {
     @State private var todos: [Todo] = []
     @State private var newTodoTitle = ""
     
     var body: some View {
         VStack {
-            // Todo入力
+            // Todo input
             HStack {
-                TextField("新しいTodo", text: $newTodoTitle)
-                Button("追加") {
+                TextField("New Todo", text: $newTodoTitle)
+                Button("Add") {
                     Task {
                         let todo = Todo(title: newTodoTitle)
                         let graph = try await GraphDatabase.shared.context()
@@ -88,7 +126,7 @@ struct ContentView: View {
                 }
             }
             
-            // Todoリスト
+            // Todo list
             List(todos, id: \.id) { todo in
                 HStack {
                     Text(todo.title)
@@ -116,30 +154,30 @@ struct ContentView: View {
 }
 ```
 
-## より高度な使い方
+## Advanced Usage
 
-### SwiftDataライクなCRUD操作
+### SwiftData-like CRUD Operations
 
 ```swift
 let graph = try await GraphDatabase.shared.context()
 
-// 1件取得
+// Fetch one
 if let todo = try await graph.fetchOne(Todo.self, id: todoId) {
     print(todo)
 }
 
-// 条件検索
+// Query with conditions
 let completedTodos = try await graph.fetch(Todo.self, where: "done", equals: true)
 
-// 削除
+// Delete
 try await graph.delete(todo)
 try await graph.deleteAll(Todo.self)
 
-// カウント
+// Count
 let count = try await graph.count(Todo.self)
 ```
 
-### リレーションシップ（フォロー機能）
+### Relationships (Follow Feature)
 
 ```swift
 @GraphNode 
@@ -153,7 +191,7 @@ struct Follows: Codable {
     @Timestamp var since: Date = Date()
 }
 
-// フォロー関係を作成
+// Create follow relationship
 let alice = User(name: "Alice")
 let bob = User(name: "Bob")
 
@@ -165,25 +203,25 @@ try await graph.createRelationship(
 )
 ```
 
-## 従来の高度な機能
+## Traditional Advanced Features
 
-### プロパティアノテーション
+### Property Annotations
 
 ```swift
 @GraphNode
 struct Document: Codable {
     @ID var id: UUID = UUID()
     @Index var title: String
-    @FTS var content: String  // 全文検索
-    @Vector(dimensions: 1536) var embedding: [Double]  // ベクトル検索
-    @Timestamp var createdAt: Date = Date()  // 自動タイムスタンプ
+    @FTS var content: String  // Full-text search
+    @Vector(dimensions: 1536) var embedding: [Double]  // Vector search
+    @Timestamp var createdAt: Date = Date()  // Automatic timestamp
 }
 ```
 
-### 複雑なクエリ（Query DSL）
+### Complex Queries (Query DSL)
 
 ```swift
-// 共通の興味を持つユーザーを検索
+// Find users with common interests
 let result = try await graph.query {
     Match.node(User.self, alias: "u1")
     Match.node(Interest.self, alias: "i")
@@ -196,10 +234,10 @@ let result = try await graph.query {
 }
 ```
 
-### 生のCypherクエリ
+### Raw Cypher Queries
 
 ```swift
-// パラメータバインディング付きCypher実行
+// Execute Cypher with parameter binding
 let result = try await graph.raw(
     """
     MATCH (u:User {name: $name})-[:FOLLOWS]->(f:User)
@@ -209,10 +247,10 @@ let result = try await graph.raw(
 )
 ```
 
-### トランザクション
+### Transactions
 
 ```swift
-// トランザクション内での操作
+// Operations within a transaction
 try await graph.transaction { ctx in
     let charlie = User(name: "Charlie")
     try await ctx.save(charlie)
@@ -225,36 +263,36 @@ try await graph.transaction { ctx in
 }
 ```
 
-### スキーマの自動マイグレーション
+### Automatic Schema Migration
 
 ```swift
-// モデルを登録しておけば、初回起動時に自動でスキーマ作成
+// Register models for automatic schema creation on first launch
 GraphDatabase.shared.register(models: [
     Todo.self,
     User.self,
     Follows.self
 ])
 
-// 手動でマイグレーション実行も可能
+// Manual migration is also possible
 let graph = try await GraphDatabase.shared.context()
 try await graph.createSchema(for: [Todo.self])
 ```
 
-## なぜグラフデータベース？
+## Why Graph Database?
 
-- **関係性の表現が自然** - フォロー、いいね、友達関係などを直感的にモデル化
-- **高速なグラフ探索** - 共通の友達、推薦、最短経路などの計算が高速
-- **柔軟なスキーマ** - ノードやエッジに自由にプロパティを追加可能
+- **Natural Relationship Modeling** - Intuitively model follows, likes, friendships
+- **Fast Graph Traversal** - Quickly compute mutual friends, recommendations, shortest paths
+- **Flexible Schema** - Freely add properties to nodes and edges
 
-## 要件
+## Requirements
 
 - Swift 6.1+
 - macOS 14+, iOS 17+, tvOS 17+, watchOS 10+
 
-## ライセンス
+## License
 
 MIT License
 
-## 謝辞
+## Acknowledgments
 
-[Kuzu](https://kuzudb.com) グラフデータベースと[Swift bindings](https://github.com/kuzudb/kuzu-swift)の素晴らしいプロジェクトの上に構築されています。
+Built on the excellent [Kuzu](https://kuzudb.com) graph database and its [Swift bindings](https://github.com/kuzudb/kuzu-swift).
