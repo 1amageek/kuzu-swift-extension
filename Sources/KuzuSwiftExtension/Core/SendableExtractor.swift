@@ -3,6 +3,19 @@ import Foundation
 /// Extracts Sendable values from Swift objects, handling property wrappers and type conversions
 public enum SendableExtractor {
     
+    // MARK: - Private Properties
+    
+    /// Creates an ISO8601 formatter for converting Date to Kuzu TIMESTAMP format
+    private static func createISO8601Formatter() -> ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [
+            .withInternetDateTime,
+            .withFractionalSeconds
+        ]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }
+    
     // MARK: - Public API
     
     /// Extracts a Sendable value from any Swift value
@@ -96,7 +109,7 @@ public enum SendableExtractor {
             
         // Types requiring conversion for Kuzu
         case let v as Date:
-            return v.timeIntervalSince1970
+            return createISO8601Formatter().string(from: v)
         case let v as UUID:
             return v.uuidString
             

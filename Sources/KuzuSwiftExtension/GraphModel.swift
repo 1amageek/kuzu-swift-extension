@@ -31,7 +31,14 @@ public extension GraphContext {
         if exists {
             // Update existing
             let setClause = columns.dropFirst()
-                .map { "n.\($0.name) = $\($0.name)" }
+                .map { column in
+                    // Check if this is a TIMESTAMP column
+                    if column.type == "TIMESTAMP" {
+                        return "n.\(column.name) = CAST($\(column.name) AS TIMESTAMP)"
+                    } else {
+                        return "n.\(column.name) = $\(column.name)"
+                    }
+                }
                 .joined(separator: ", ")
             
             if !setClause.isEmpty {
@@ -47,7 +54,14 @@ public extension GraphContext {
         } else {
             // Insert new
             let propertyList = columns
-                .map { "\($0.name): $\($0.name)" }
+                .map { column in
+                    // Check if this is a TIMESTAMP column
+                    if column.type == "TIMESTAMP" {
+                        return "\(column.name): CAST($\(column.name) AS TIMESTAMP)"
+                    } else {
+                        return "\(column.name): $\(column.name)"
+                    }
+                }
                 .joined(separator: ", ")
             
             let createQuery = """
@@ -199,7 +213,15 @@ public extension GraphContext {
         // Execute batch insert
         for (index, bindings) in allBindings.enumerated() {
             let propertyList = columns
-                .map { "\($0.name): $\($0.name)_\(index)" }
+                .map { column in
+                    let paramName = "\(column.name)_\(index)"
+                    // Check if this is a TIMESTAMP column
+                    if column.type == "TIMESTAMP" {
+                        return "\(column.name): CAST($\(paramName) AS TIMESTAMP)"
+                    } else {
+                        return "\(column.name): $\(paramName)"
+                    }
+                }
                 .joined(separator: ", ")
             
             var renamedBindings: [String: any Sendable] = [:]
@@ -246,7 +268,15 @@ public extension GraphContext {
         }
         
         let edgePropertyList = edgeColumns
-            .map { "\($0.name): $edge_\($0.name)" }
+            .map { column in
+                let paramName = "edge_\(column.name)"
+                // Check if this is a TIMESTAMP column
+                if column.type == "TIMESTAMP" {
+                    return "\(column.name): CAST($\(paramName) AS TIMESTAMP)"
+                } else {
+                    return "\(column.name): $\(paramName)"
+                }
+            }
             .joined(separator: ", ")
         
         let query = """

@@ -15,6 +15,23 @@ final class GraphDatabaseTests: XCTestCase {
     override func tearDown() async throws {
         // Reset GraphDatabase state
         try? await GraphDatabase.shared.close()
+        
+        // Remove database file to ensure clean state for next test
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!
+        
+        #if os(macOS)
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.app.kuzu"
+        let appDir = appSupport.appendingPathComponent(bundleID)
+        #else
+        let appDir = appSupport.appendingPathComponent(".kuzu")
+        #endif
+        
+        let dbPath = appDir.appendingPathComponent("graph.kuzu")
+        try? FileManager.default.removeItem(at: dbPath)
+        
         try await super.tearDown()
     }
     

@@ -13,6 +13,7 @@ public final class GraphDatabase {
     
     private var context: GraphContext?
     private var registeredModels: [any _KuzuGraphModel.Type] = []
+    private var migrationPolicy: MigrationPolicy = .safeOnly
     
     private init() {
         setupLifecycleHandlers()
@@ -30,9 +31,13 @@ public final class GraphDatabase {
         
         let context = try await GraphContext(configuration: configuration)
         
-        // Auto-create schema if database is new
-        if Self.isDatabaseNew(at: configuration.databasePath) {
-            try await context.createSchemaForRegisteredModels(registeredModels)
+        // Apply schema for registered models using MigrationManager
+        if !registeredModels.isEmpty {
+            let migrationManager = MigrationManager(
+                context: context,
+                policy: migrationPolicy
+            )
+            try await migrationManager.migrate(types: registeredModels)
         }
         
         self.context = context
@@ -45,12 +50,18 @@ public final class GraphDatabase {
         registeredModels.append(contentsOf: models)
     }
     
+    /// Configure migration policy
+    public func configure(migrationPolicy: MigrationPolicy) {
+        self.migrationPolicy = migrationPolicy
+    }
+    
     /// Close the database (called automatically on app termination)
     public func close() async throws {
         if let context = self.context {
             await context.close()
         }
         self.context = nil
+        self.registeredModels.removeAll()
     }
     
     // MARK: - Private Helpers
@@ -79,10 +90,6 @@ public final class GraphDatabase {
         )
         
         return appDir.appendingPathComponent("graph.kuzu").path
-    }
-    
-    private static func isDatabaseNew(at path: String) -> Bool {
-        !FileManager.default.fileExists(atPath: path)
     }
     
     private func setupLifecycleHandlers() {
@@ -135,13 +142,5 @@ public final class GraphDatabase {
             // No explicit flush needed - Kuzu handles this internally
             // This method exists for API completeness and future enhancements
         }
-    }
-}
-
-// MARK: - Auto-discovery of GraphNode types
-extension GraphContext {
-    func createSchemaForRegisteredModels(_ models: [any _KuzuGraphModel.Type]) async throws {
-        guard !models.isEmpty else { return }
-        try await createSchema(for: models)
     }
 }

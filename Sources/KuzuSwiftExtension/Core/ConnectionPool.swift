@@ -33,6 +33,7 @@ actor ConnectionPool {
     private var waitingTasks: [WaitingTask] = []
     
     private struct WaitingTask {
+        let id = UUID()
         let continuation: CheckedContinuation<Connection, Error>
         let timeoutTask: Task<Void, Never>
         
@@ -71,38 +72,48 @@ actor ConnectionPool {
         }
         
         return try await withCheckedThrowingContinuation { continuation in
+            // Create a mutable variable to store the task
+            var waitingTask: WaitingTask!
+            
             let timeoutTask = Task {
                 do {
                     try await clock.sleep(for: .seconds(timeout))
-                    await handleTimeout(for: continuation)
+                    print("ConnectionPool: Timeout reached after \(timeout) seconds")
+                    await handleTimeout(for: waitingTask.id)
                 } catch is CancellationError {
                     // Task was cancelled - this is expected when connection becomes available
                     // before timeout. The continuation will be resumed by checkin().
+                    print("ConnectionPool: Timeout task cancelled")
                     return
                 } catch {
                     // Unexpected error during sleep - should not happen with clock.sleep
                     // Log for debugging if needed
+                    print("ConnectionPool: Unexpected error in timeout task: \(error)")
                     return
                 }
             }
             
-            let waitingTask = WaitingTask(
+            waitingTask = WaitingTask(
                 continuation: continuation,
                 timeoutTask: timeoutTask
             )
             waitingTasks.append(waitingTask)
+            print("ConnectionPool: Added waiting task with id \(waitingTask.id)")
         }
     }
     
-    private func handleTimeout(for continuation: CheckedContinuation<Connection, Error>) async {
-        if let index = waitingTasks.firstIndex(where: { 
-            $0.continuation as AnyObject === continuation as AnyObject 
-        }) {
+    private func handleTimeout(for taskId: UUID) async {
+        print("ConnectionPool: handleTimeout called for task \(taskId), waitingTasks count: \(waitingTasks.count)")
+        if let index = waitingTasks.firstIndex(where: { $0.id == taskId }) {
+            print("ConnectionPool: Found waiting task at index \(index)")
             let task = waitingTasks.remove(at: index)
             task.cancel()
-            continuation.resume(throwing: GraphError.connectionTimeout(duration: timeout))
+            task.continuation.resume(throwing: GraphError.connectionTimeout(duration: timeout))
+        } else {
+            print("ConnectionPool: No matching waiting task found for id \(taskId)")
         }
     }
+    
     
     func checkin(_ connection: Connection) {
         let id = ObjectIdentifier(connection)

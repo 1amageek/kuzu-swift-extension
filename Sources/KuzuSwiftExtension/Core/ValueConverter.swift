@@ -3,38 +3,71 @@ import Foundation
 /// Converts values between Swift types and Kuzu-compatible types
 public enum ValueConverter {
     
+    // MARK: - Private Properties
+    
+    private static let maxRecursionDepth = 10
+    
+    /// Creates an ISO8601 formatter for converting Date to/from Kuzu TIMESTAMP format
+    private static func createISO8601Formatter() -> ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [
+            .withInternetDateTime,
+            .withFractionalSeconds
+        ]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }
+    
     // MARK: - Swift to Kuzu Conversion
     
     /// Converts a Swift value to a Kuzu-compatible value
     /// - Parameter value: The Swift value to convert
     /// - Returns: The Kuzu-compatible value, or nil if the value cannot be converted
     public static func toKuzuValue(_ value: Any) -> Any? {
+        return toKuzuValueWithDepth(value, depth: 0)
+    }
+    
+    /// Internal conversion method with recursion depth tracking
+    private static func toKuzuValueWithDepth(_ value: Any, depth: Int) -> Any? {
+        // Prevent infinite recursion
+        guard depth < maxRecursionDepth else {
+            print("[ValueConverter] Warning: Maximum recursion depth reached. Returning original value.")
+            return value
+        }
+        
+        // Handle nil first - check for nil using Mirror to avoid type casting issues
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            // Safely unwrap optional using Mirror
+            if let (_, unwrapped) = mirror.children.first {
+                // Recursive call with incremented depth
+                return toKuzuValueWithDepth(unwrapped, depth: depth + 1)
+            } else {
+                // This is Optional.none
+                return nil
+            }
+        }
+        
+        // Handle specific types
         switch value {
-        // Date conversion: Date → TimeInterval (seconds since epoch)
+        // Date conversion: Date → ISO-8601 string for Kuzu TIMESTAMP
         case let date as Date:
-            return date.timeIntervalSince1970
+            return createISO8601Formatter().string(from: date)
             
         // UUID conversion: UUID → String
         case let uuid as UUID:
             return uuid.uuidString
             
-        // Null handling
-        case is NSNull:
+        // Null handling - use direct type check instead of 'is'
+        case _ as NSNull:
             return nil
             
-        // Optional handling
-        case Optional<Any>.none:
-            return nil
-            
-        case Optional<Any>.some(let wrapped):
-            return toKuzuValue(wrapped)
-            
-        // Collections
+        // Collections with depth tracking
         case let array as [Any]:
-            return array.map { toKuzuValue($0) }
+            return array.map { toKuzuValueWithDepth($0, depth: depth + 1) }
             
         case let dict as [String: Any]:
-            return dict.mapValues { toKuzuValue($0) }
+            return dict.mapValues { toKuzuValueWithDepth($0, depth: depth + 1) }
             
         // Pass through other values
         default:
@@ -62,7 +95,19 @@ public enum ValueConverter {
         
         // Type-specific conversions
         switch (value, type) {
-        // Date conversion: TimeInterval → Date
+        // Date conversion: ISO-8601 string → Date
+        case (let dateString as String, is Date.Type):
+            // Try ISO8601 formatter first
+            if let date = createISO8601Formatter().date(from: dateString) {
+                return date as? T
+            }
+            // Fallback to basic format without fractional seconds
+            let basicFormatter = ISO8601DateFormatter()
+            basicFormatter.formatOptions = [.withInternetDateTime]
+            basicFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+            return basicFormatter.date(from: dateString) as? T
+            
+        // Legacy support: TimeInterval → Date (for backward compatibility)
         case (let timestamp as Double, is Date.Type):
             return Date(timeIntervalSince1970: timestamp) as? T
             
