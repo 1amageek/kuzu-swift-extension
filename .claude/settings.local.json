@@ -30,7 +30,8 @@
       "Bash(xcrun swiftc:*)",
       "Bash(git tag:*)",
       "Bash(git push:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

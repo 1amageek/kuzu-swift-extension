@@ -2,7 +2,7 @@ import Foundation
 import KuzuSwiftExtension
 
 @GraphNode
-public struct Todo: Codable {
+public struct Todo {
     @ID public var id: UUID
     public var title: String
     public var done: Bool

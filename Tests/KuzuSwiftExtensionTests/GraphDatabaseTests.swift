@@ -4,7 +4,7 @@ import KuzuSwiftExtension
 
 // Test model for GraphDatabase tests
 @GraphNode
-struct TestTodo: Codable, GraphModel {
+struct TestTodo {
     @ID var id: UUID = UUID()
     var title: String
     var completed: Bool = false
@@ -20,8 +20,8 @@ final class GraphDatabaseTests: XCTestCase {
     
     func testSharedInstance() async throws {
         // Verify singleton behavior
-        let instance1 = GraphDatabase.shared
-        let instance2 = GraphDatabase.shared
+        let instance1 = await GraphDatabase.shared
+        let instance2 = await GraphDatabase.shared
         XCTAssertTrue(instance1 === instance2)
     }
     
@@ -37,7 +37,7 @@ final class GraphDatabaseTests: XCTestCase {
     
     func testModelRegistration() async throws {
         // Register models
-        GraphDatabase.shared.register(models: [TestTodo.self])
+        await GraphDatabase.shared.register(models: [TestTodo.self])
         
         // Context should auto-create schema for registered models
         let context = try await GraphDatabase.shared.context()
@@ -64,7 +64,7 @@ final class GraphDatabaseTests: XCTestCase {
     
     func testCloseAndReopen() async throws {
         // Register model
-        GraphDatabase.shared.register(models: [TestTodo.self])
+        await GraphDatabase.shared.register(models: [TestTodo.self])
         
         // Create and save data
         let context1 = try await GraphDatabase.shared.context()

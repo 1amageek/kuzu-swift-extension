@@ -9,13 +9,14 @@ public enum SendableExtractor {
     /// - Parameter value: The value to extract from
     /// - Returns: A Sendable value, or nil if extraction fails
     public static func extract(from value: Any) -> (any Sendable)? {
-        // Handle Optional unwrapping first
-        if case Optional<Any>.some(let wrapped) = value {
-            return extract(from: wrapped)
-        }
-        
-        if case Optional<Any>.none = value {
-            return nil
+        // Handle Optional unwrapping using Mirror to avoid type casting issues
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            if let (_, some) = mirror.children.first {
+                return extract(from: some)
+            } else {
+                return nil
+            }
         }
         
         // Try to unwrap property wrappers

@@ -20,6 +20,9 @@ let package = Package(
         .library(
             name: "KuzuSwiftMacros",
             targets: ["KuzuSwiftMacros"]),
+        .library(
+            name: "KuzuSwiftProtocols",
+            targets: ["KuzuSwiftProtocols"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
@@ -27,11 +30,18 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.2.1")
     ],
     targets: [
+        // Protocol definitions
+        .target(
+            name: "KuzuSwiftProtocols",
+            dependencies: []
+        ),
+        
         // Main library target
         .target(
             name: "KuzuSwiftExtension",
             dependencies: [
                 "KuzuSwiftMacros",
+                "KuzuSwiftProtocols",
                 .product(name: "Kuzu", package: "kuzu-swift"),
                 .product(name: "Algorithms", package: "swift-algorithms")
             ]
@@ -49,7 +59,10 @@ let package = Package(
         // Macro declarations and exports
         .target(
             name: "KuzuSwiftMacros",
-            dependencies: ["KuzuSwiftMacrosPlugin"]
+            dependencies: [
+                "KuzuSwiftMacrosPlugin",
+                "KuzuSwiftProtocols"
+            ]
         ),
         
         // Test targets

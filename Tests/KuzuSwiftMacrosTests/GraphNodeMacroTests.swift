@@ -19,18 +19,18 @@ final class GraphNodeMacroTests: XCTestCase {
             """,
             expandedSource: """
             struct User {
-                @ID var id: String
-                @Index var name: String
+                var id: String
+                var name: String
                 var email: String?
                 var age: Int
-                @Timestamp var createdAt: Date
+                var createdAt: Date
             
                 static let _kuzuDDL: String = "CREATE NODE TABLE User (id STRING PRIMARY KEY, name STRING, email STRING, age INT64, createdAt TIMESTAMP)"
             
                 static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "name", type: "STRING", constraints: ["INDEX"]), (name: "email", type: "STRING", constraints: []), (name: "age", type: "INT64", constraints: []), (name: "createdAt", type: "TIMESTAMP", constraints: [])]
             }
             
-            extension User: _KuzuGraphModel {
+            extension User: GraphNodeModel {
             }
             """,
             macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Index": IndexMacro.self, "Timestamp": TimestampMacro.self]
@@ -49,16 +49,16 @@ final class GraphNodeMacroTests: XCTestCase {
             """,
             expandedSource: """
             struct Document {
-                @ID var id: String
+                var id: String
                 var content: String
-                @Vector(dimensions: 1536) var embedding: [Double]
+                var embedding: [Double]
             
                 static let _kuzuDDL: String = "CREATE NODE TABLE Document (id STRING PRIMARY KEY, content STRING, embedding DOUBLE[1536])"
             
                 static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "content", type: "STRING", constraints: []), (name: "embedding", type: "DOUBLE[1536]", constraints: [])]
             }
             
-            extension Document: _KuzuGraphModel {
+            extension Document: GraphNodeModel {
             }
             """,
             macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Vector": VectorMacro.self]

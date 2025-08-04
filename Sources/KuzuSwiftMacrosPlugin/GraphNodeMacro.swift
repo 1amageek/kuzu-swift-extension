@@ -140,11 +140,17 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        // Check if the declaration is a struct
+        guard declaration.is(StructDeclSyntax.self) else {
+            // Don't generate extension for non-struct types
+            return []
+        }
+        
         let extensionDecl = ExtensionDeclSyntax(
             extendedType: type,
             inheritanceClause: InheritanceClauseSyntax {
                 InheritedTypeSyntax(
-                    type: TypeSyntax("_KuzuGraphModel")
+                    type: TypeSyntax("GraphNodeModel")
                 )
             }
         ) {}

@@ -4,7 +4,7 @@ import KuzuSwiftExtension
 
 // Test model
 @GraphNode
-struct TestUser: Codable, GraphModel {
+struct TestUser {
     @ID var id: UUID = UUID()
     var name: String
     var age: Int
@@ -12,7 +12,7 @@ struct TestUser: Codable, GraphModel {
 }
 
 @GraphNode
-struct TestPost: Codable, GraphModel {
+struct TestPost {
     @ID var id: UUID = UUID()
     var title: String
     var content: String
@@ -20,7 +20,7 @@ struct TestPost: Codable, GraphModel {
 }
 
 @GraphEdge(from: TestUser.self, to: TestPost.self)
-struct AuthoredBy: Codable {
+struct AuthoredBy {
     @Timestamp var authoredAt: Date = Date()
 }
 
@@ -204,7 +204,7 @@ final class GraphModelTests: XCTestCase {
                 "postId": savedPost.id
             ])
         
-        let count = try result.fetchOne(Int.self) ?? 0
+        let count = try result.mapFirst(to: Int.self, at: 0) ?? 0
         XCTAssertEqual(count, 1)
     }
     

@@ -1,23 +1,13 @@
 import Foundation
 import Kuzu
-
-// MARK: - GraphModel Protocol for ORM-like operations
-public protocol GraphModel: _KuzuGraphModel, Codable {
-    static var modelName: String { get }
-}
-
-public extension GraphModel {
-    static var modelName: String {
-        String(describing: Self.self)
-    }
-}
+@_exported import KuzuSwiftProtocols
 
 // MARK: - Simple CRUD Operations
 public extension GraphContext {
     
     /// Save a model instance (insert or update)
     @discardableResult
-    func save<T: GraphModel>(_ model: T) async throws -> T {
+    func save<T: GraphNodeModel>(_ model: T) async throws -> T {
         let columns = T._kuzuColumns
         
         // Extract properties using the same pattern as Create.node
@@ -74,7 +64,7 @@ public extension GraphContext {
     
     /// Save multiple model instances
     @discardableResult
-    func save<T: GraphModel>(_ models: [T]) async throws -> [T] {
+    func save<T: GraphNodeModel>(_ models: [T]) async throws -> [T] {
         var results: [T] = []
         for model in models {
             let saved = try await save(model)
@@ -84,7 +74,7 @@ public extension GraphContext {
     }
     
     /// Fetch all instances of a model type
-    func fetch<T: GraphModel>(_ type: T.Type) async throws -> [T] {
+    func fetch<T: GraphNodeModel>(_ type: T.Type) async throws -> [T] {
         let query = """
             MATCH (n:\(type.modelName))
             RETURN n
@@ -94,7 +84,7 @@ public extension GraphContext {
     }
     
     /// Fetch instances matching a simple equality predicate
-    func fetch<T: GraphModel>(
+    func fetch<T: GraphNodeModel>(
         _ type: T.Type,
         where property: String,
         equals value: any Sendable
@@ -109,7 +99,7 @@ public extension GraphContext {
     }
     
     /// Fetch a single instance by ID
-    func fetchOne<T: GraphModel>(_ type: T.Type, id: any Sendable) async throws -> T? {
+    func fetchOne<T: GraphNodeModel>(_ type: T.Type, id: any Sendable) async throws -> T? {
         guard let idColumn = type._kuzuColumns.first else {
             throw GraphError.invalidConfiguration(message: "Model must have at least one column")
         }
@@ -128,7 +118,7 @@ public extension GraphContext {
     }
     
     /// Delete a model instance
-    func delete<T: GraphModel>(_ model: T) async throws {
+    func delete<T: GraphNodeModel>(_ model: T) async throws {
         guard let idColumn = T._kuzuColumns.first else {
             throw GraphError.invalidConfiguration(message: "Model must have at least one column")
         }
@@ -146,27 +136,27 @@ public extension GraphContext {
     }
     
     /// Delete multiple model instances
-    func delete<T: GraphModel>(_ models: [T]) async throws {
+    func delete<T: GraphNodeModel>(_ models: [T]) async throws {
         for model in models {
             try await delete(model)
         }
     }
     
     /// Delete all instances of a model type
-    func deleteAll<T: GraphModel>(_ type: T.Type) async throws {
+    func deleteAll<T: GraphNodeModel>(_ type: T.Type) async throws {
         let deleteQuery = "MATCH (n:\(type.modelName)) DELETE n"
         _ = try await raw(deleteQuery)
     }
     
     /// Count instances of a model type
-    func count<T: GraphModel>(_ type: T.Type) async throws -> Int {
+    func count<T: GraphNodeModel>(_ type: T.Type) async throws -> Int {
         let countQuery = "MATCH (n:\(type.modelName)) RETURN count(n)"
         let result = try await raw(countQuery)
         return try result.mapFirstRequired(to: Int.self, at: 0)
     }
     
     /// Count instances matching a simple equality predicate
-    func count<T: GraphModel>(
+    func count<T: GraphNodeModel>(
         _ type: T.Type,
         where property: String,
         equals value: any Sendable
@@ -192,7 +182,7 @@ public extension GraphContext {
     }
     
     /// Batch insert with better performance
-    func batchInsert<T: GraphModel>(_ models: [T]) async throws {
+    func batchInsert<T: GraphNodeModel>(_ models: [T]) async throws {
         guard !models.isEmpty else { return }
         
         let columns = T._kuzuColumns
@@ -230,7 +220,7 @@ public extension GraphContext {
 public extension GraphContext {
     
     /// Create a relationship between two nodes
-    func createRelationship<From: GraphModel, To: GraphModel, Edge: _KuzuGraphModel>(
+    func createRelationship<From: GraphNodeModel, To: GraphNodeModel, Edge: _KuzuGraphModel>(
         from source: From,
         to target: To,
         edge: Edge

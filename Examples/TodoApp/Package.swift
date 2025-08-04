@@ -17,7 +17,8 @@ let package = Package(
         .executableTarget(
             name: "TodoCLI",
             dependencies: [
-                .product(name: "KuzuSwiftExtension", package: "kuzu-swift-extension")
+                .product(name: "KuzuSwiftExtension", package: "kuzu-swift-extension"),
+                "TodoCore"
             ]
         ),
         .target(

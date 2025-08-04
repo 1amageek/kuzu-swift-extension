@@ -17,7 +17,7 @@ final class GraphEdgeMacroTests: XCTestCase {
             """,
             expandedSource: """
             struct Authored {
-                @ID var id: String
+                var id: String
                 var authoredAt: Date
                 var role: String?
             
@@ -26,7 +26,7 @@ final class GraphEdgeMacroTests: XCTestCase {
                 static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "authoredAt", type: "TIMESTAMP", constraints: []), (name: "role", type: "STRING", constraints: [])]
             }
             
-            extension Authored: _KuzuGraphModel {
+            extension Authored: GraphEdgeModel {
             }
             """,
             macros: ["GraphEdge": GraphEdgeMacro.self, "ID": IDMacro.self]

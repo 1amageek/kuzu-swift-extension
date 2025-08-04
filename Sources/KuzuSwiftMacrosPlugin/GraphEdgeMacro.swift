@@ -127,11 +127,24 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        // Check if the declaration is a struct
+        guard declaration.is(StructDeclSyntax.self) else {
+            // Don't generate extension for non-struct types
+            return []
+        }
+        
+        // Check if the macro has the required parameters
+        guard case .argumentList(let arguments) = node.arguments,
+              arguments.count >= 2 else {
+            // Don't generate extension if parameters are missing
+            return []
+        }
+        
         let extensionDecl = ExtensionDeclSyntax(
             extendedType: type,
             inheritanceClause: InheritanceClauseSyntax {
                 InheritedTypeSyntax(
-                    type: TypeSyntax("_KuzuGraphModel")
+                    type: TypeSyntax("GraphEdgeModel")
                 )
             }
         ) {}
