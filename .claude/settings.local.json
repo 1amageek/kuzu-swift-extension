@@ -27,7 +27,10 @@
       "Bash(echo:*)",
       "Bash(fi)",
       "Bash(ls:*)",
-      "Bash(xcrun swiftc:*)"
+      "Bash(xcrun swiftc:*)",
+      "Bash(git tag:*)",
+      "Bash(git push:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }
