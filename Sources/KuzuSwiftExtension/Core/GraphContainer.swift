@@ -34,41 +34,59 @@ public actor GraphContainer {
         guard !configuration.options.extensions.isEmpty else { return }
         
         let connection = try await connectionPool.checkout()
-        defer { Task { await connectionPool.checkin(connection) } }
         
-        for ext in configuration.options.extensions {
-            do {
-                _ = try connection.query(ext.installCommand)
-                _ = try connection.query(ext.loadCommand)
-            } catch {
-                throw GraphError.extensionLoadFailed(
-                    extension: ext.rawValue,
-                    reason: error.localizedDescription
-                )
+        do {
+            for ext in configuration.options.extensions {
+                do {
+                    _ = try connection.query(ext.installCommand)
+                    _ = try connection.query(ext.loadCommand)
+                } catch {
+                    await connectionPool.checkin(connection)
+                    throw GraphError.extensionLoadFailed(
+                        extension: ext.rawValue,
+                        reason: error.localizedDescription
+                    )
+                }
             }
+            await connectionPool.checkin(connection)
+        } catch {
+            // Connection already checked in if extension load failed
+            throw error
         }
     }
     
     public func withConnection<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
         let connection = try await connectionPool.checkout()
-        defer { Task { await connectionPool.checkin(connection) } }
         
-        return try block(connection)
+        do {
+            let result = try block(connection)
+            await connectionPool.checkin(connection)
+            return result
+        } catch {
+            await connectionPool.checkin(connection)
+            throw error
+        }
     }
     
     public func withTransaction<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
         let connection = try await connectionPool.checkout()
-        defer { Task { await connectionPool.checkin(connection) } }
-        
-        _ = try connection.query("BEGIN TRANSACTION")
         
         do {
-            let result = try block(connection)
-            _ = try connection.query("COMMIT")
-            return result
+            _ = try connection.query("BEGIN TRANSACTION")
+            
+            do {
+                let result = try block(connection)
+                _ = try connection.query("COMMIT")
+                await connectionPool.checkin(connection)
+                return result
+            } catch {
+                _ = try? connection.query("ROLLBACK")
+                await connectionPool.checkin(connection)
+                throw GraphError.transactionFailed(reason: error.localizedDescription)
+            }
         } catch {
-            _ = try? connection.query("ROLLBACK")
-            throw GraphError.transactionFailed(reason: error.localizedDescription)
+            await connectionPool.checkin(connection)
+            throw error
         }
     }
     
