@@ -104,18 +104,10 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        let conformance = ExtensionDeclSyntax(
-            extendedType: type,
-            inheritanceClause: InheritanceClauseSyntax(
-                inheritedTypes: InheritedTypeListSyntax {
-                    InheritedTypeSyntax(type: TypeSyntax("_KuzuGraphModel"))
-                }
-            ),
-            memberBlock: MemberBlockSyntax(
-                members: MemberBlockItemListSyntax([])
-            )
-        )
-        return [conformance]
+        let decl: DeclSyntax = """
+            extension \(type.trimmed): _KuzuGraphModel {}
+            """
+        return [decl.cast(ExtensionDeclSyntax.self)]
     }
     
     private static func mapSwiftTypeToKuzuType(_ swiftType: String) -> String {

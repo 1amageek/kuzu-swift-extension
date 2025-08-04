@@ -119,45 +119,17 @@ public struct ResultMapper {
     // MARK: - Private Helpers
     
     private static func cast<T>(_ value: Any, to type: T.Type, field: String? = nil) throws -> T {
-        // Direct casting for common types
+        // Try using ValueConverter first
+        if let converted = ValueConverter.fromKuzuValue(value, to: type) {
+            return converted
+        }
+        
+        // Fallback to direct casting
         if let casted = value as? T {
             return casted
         }
         
-        // Special handling for numeric conversions
-        if T.self == Int.self {
-            if let int64 = value as? Int64 {
-                return Int(int64) as! T
-            }
-            if let int32 = value as? Int32 {
-                return Int(int32) as! T
-            }
-            if let double = value as? Double {
-                return Int(double) as! T
-            }
-        }
-        
-        if T.self == Int64.self {
-            if let int = value as? Int {
-                return Int64(int) as! T
-            }
-            if let int32 = value as? Int32 {
-                return Int64(int32) as! T
-            }
-        }
-        
-        if T.self == Double.self {
-            if let int = value as? Int {
-                return Double(int) as! T
-            }
-            if let int64 = value as? Int64 {
-                return Double(int64) as! T
-            }
-            if let float = value as? Float {
-                return Double(float) as! T
-            }
-        }
-        
+        // If T is String, convert any value to string
         if T.self == String.self {
             return String(describing: value) as! T
         }

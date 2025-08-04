@@ -170,14 +170,8 @@ public class KuzuDecoder {
     
     /// Cleans a single value for JSON serialization
     private func cleanValue(_ value: Any) -> Any {
-        // Convert Kuzu-specific types to JSON-compatible types
+        // Handle special cases first
         switch value {
-        case let int64 as Int64:
-            return Int(int64)
-        case let int32 as Int32:
-            return Int(int32)
-        case let float as Float:
-            return Double(float)
         case let date as Date:
             // Convert dates based on strategy
             switch configuration.dateDecodingStrategy {
@@ -198,14 +192,13 @@ public class KuzuDecoder {
             case .custom:
                 return data.base64EncodedString()
             }
-        case let uuid as UUID:
-            return uuid.uuidString
         case let array as [Any]:
             return array.map { cleanValue($0) }
         case let dict as [String: Any]:
             return cleanDictionary(dict as [String: Any?])
         default:
-            return value
+            // Use ValueConverter for standard conversions
+            return ValueConverter.toKuzuValue(value) ?? value
         }
     }
 }

@@ -1,9 +1,9 @@
 import Foundation
 
 public struct Query {
-    internal let components: [QueryComponent]
+    public let components: [QueryComponent]
     
-    internal init(components: [QueryComponent]) {
+    public init(components: [QueryComponent]) {
         self.components = components
     }
 }
@@ -13,10 +13,10 @@ public protocol QueryComponent {
 }
 
 public struct CypherFragment: Sendable {
-    let query: String
-    let parameters: [String: any Sendable]
+    public let query: String
+    public let parameters: [String: any Sendable]
     
-    init(query: String, parameters: [String: any Sendable] = [:]) {
+    public init(query: String, parameters: [String: any Sendable] = [:]) {
         self.query = query
         self.parameters = parameters
     }

@@ -85,7 +85,7 @@ public struct PropertyAssignment {
     func toCypher() throws -> CypherFragment {
         switch value {
         case .literal(let val):
-            let paramName = "param_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            let paramName = ParameterNameGenerator.generateUUID()
             return CypherFragment(
                 query: "\(property.cypher) = $\(paramName)",
                 parameters: [paramName: val]
@@ -101,21 +101,21 @@ public struct PropertyAssignment {
             return CypherFragment(query: "\(property.cypher) = NULL")
             
         case .increment(let amount):
-            let paramName = "param_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            let paramName = ParameterNameGenerator.generateUUID()
             return CypherFragment(
                 query: "\(property.cypher) = \(property.cypher) + $\(paramName)",
                 parameters: [paramName: amount]
             )
             
         case .decrement(let amount):
-            let paramName = "param_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            let paramName = ParameterNameGenerator.generateUUID()
             return CypherFragment(
                 query: "\(property.cypher) = \(property.cypher) - $\(paramName)",
                 parameters: [paramName: amount]
             )
             
         case .append(let value):
-            let paramName = "param_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            let paramName = ParameterNameGenerator.generateUUID()
             return CypherFragment(
                 query: "\(property.cypher) = \(property.cypher) + $\(paramName)",
                 parameters: [paramName: value]

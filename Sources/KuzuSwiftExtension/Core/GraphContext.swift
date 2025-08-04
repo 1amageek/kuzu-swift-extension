@@ -18,19 +18,8 @@ public actor GraphContext {
                 return try connection.query(query)
             } else {
                 let statement = try connection.prepare(query)
-                // Convert Date and UUID to Kuzu-compatible types
-                let kuzuParams = bindings.mapValues { value -> Any? in
-                    switch value {
-                    case let date as Date:
-                        return date.timeIntervalSince1970
-                    case let uuid as UUID:
-                        return uuid.uuidString
-                    case is NSNull:
-                        return nil
-                    default:
-                        return value
-                    }
-                }
+                // Convert values to Kuzu-compatible types
+                let kuzuParams = ValueConverter.toKuzuValues(bindings)
                 return try connection.execute(statement, kuzuParams)
             }
         }
@@ -42,19 +31,8 @@ public actor GraphContext {
                 return try connection.query(query)
             } else {
                 let statement = try connection.prepare(query)
-                // Convert Date and UUID to Kuzu-compatible types
-                let kuzuParams = bindings.mapValues { value -> Any? in
-                    switch value {
-                    case let date as Date:
-                        return date.timeIntervalSince1970
-                    case let uuid as UUID:
-                        return uuid.uuidString
-                    case is NSNull:
-                        return nil
-                    default:
-                        return value
-                    }
-                }
+                // Convert values to Kuzu-compatible types
+                let kuzuParams = ValueConverter.toKuzuValues(bindings)
                 return try connection.execute(statement, kuzuParams)
             }
         }

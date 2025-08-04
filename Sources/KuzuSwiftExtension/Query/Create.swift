@@ -63,9 +63,45 @@ public struct Create: QueryComponent {
     }
     
     private static func extractProperties(from instance: Any) -> [String: any Sendable] {
-        // TODO: Use Mirror or Codable to extract properties
-        // For now, return empty dictionary
-        return [:]
+        let mirror = Mirror(reflecting: instance)
+        let type = Swift.type(of: instance)
+        
+        // Get macro-generated column metadata if available
+        guard let modelType = type as? any _KuzuGraphModel.Type else {
+            // Fallback to simple Mirror extraction without metadata validation
+            return extractPropertiesWithoutMetadata(from: mirror)
+        }
+        
+        let columns = modelType._kuzuColumns
+        var properties: [String: any Sendable] = [:]
+        
+        // Extract properties using Mirror and validate against metadata
+        for child in mirror.children {
+            guard let propertyName = child.label else { continue }
+            
+            // Check if this property is in the model's column definition
+            if columns.contains(where: { $0.name == propertyName }) {
+                if let sendableValue = SendableExtractor.extract(from: child.value) {
+                    properties[propertyName] = sendableValue
+                }
+            }
+        }
+        
+        return properties
+    }
+    
+    private static func extractPropertiesWithoutMetadata(from mirror: Mirror) -> [String: any Sendable] {
+        var properties: [String: any Sendable] = [:]
+        
+        for child in mirror.children {
+            guard let propertyName = child.label else { continue }
+            
+            if let sendableValue = SendableExtractor.extract(from: child.value) {
+                properties[propertyName] = sendableValue
+            }
+        }
+        
+        return properties
     }
 }
 
@@ -79,7 +115,7 @@ struct NodePattern {
         var propStrings: [String] = []
         
         for (key, value) in properties {
-            let paramName = "\(alias)_\(key)"
+            let paramName = ParameterNameGenerator.generateSemantic(alias: alias, property: key)
             params[paramName] = value
             propStrings.append("\(key): $\(paramName)")
         }
@@ -103,7 +139,7 @@ struct EdgePattern {
         var propStrings: [String] = []
         
         for (key, value) in properties {
-            let paramName = "\(alias)_\(key)"
+            let paramName = ParameterNameGenerator.generateSemantic(alias: alias, property: key)
             params[paramName] = value
             propStrings.append("\(key): $\(paramName)")
         }

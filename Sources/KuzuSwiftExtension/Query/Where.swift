@@ -4,18 +4,18 @@ import Foundation
 public struct Where: QueryComponent {
     let predicate: Predicate
     
-    private init(predicate: Predicate) {
+    public init(_ predicate: Predicate) {
         self.predicate = predicate
     }
     
     /// Creates a WHERE clause with the given predicate
     public static func condition(_ predicate: Predicate) -> Where {
-        Where(predicate: predicate)
+        Where(predicate)
     }
     
     /// Creates a WHERE clause using a builder
     public static func condition(_ builder: () -> Predicate) -> Where {
-        Where(predicate: builder())
+        Where(builder())
     }
     
     public func toCypher() throws -> CypherFragment {
