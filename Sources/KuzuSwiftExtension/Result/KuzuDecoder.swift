@@ -409,6 +409,10 @@ private struct _KuzuKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContain
             return Double(int) as? T
         case (let float as Float, is Double.Type):
             return Double(float) as? T
+        case (let double as Double, is Float.Type):
+            return Float(double) as? T
+        case (let int as Int, is Float.Type):
+            return Float(int) as? T
         default:
             return nil
         }
@@ -618,6 +622,14 @@ private struct _KuzuSingleValueDecodingContainer: SingleValueDecodingContainer {
             if let value = Double(float) as? T {
                 return value
             }
+        case (let double as Double, is Float.Type):
+            if let value = Float(double) as? T {
+                return value
+            }
+        case (let int as Int, is Float.Type):
+            if let value = Float(int) as? T {
+                return value
+            }
         default:
             break
         }
@@ -790,6 +802,14 @@ private struct _KuzuUnkeyedDecodingContainer: UnkeyedDecodingContainer {
             }
         case (let float as Float, is Double.Type):
             if let value = Double(float) as? T {
+                return value
+            }
+        case (let double as Double, is Float.Type):
+            if let value = Float(double) as? T {
+                return value
+            }
+        case (let int as Int, is Float.Type):
+            if let value = Float(int) as? T {
                 return value
             }
         default:

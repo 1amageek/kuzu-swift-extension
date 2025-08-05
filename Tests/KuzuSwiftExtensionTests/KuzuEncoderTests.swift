@@ -31,7 +31,9 @@ final class KuzuEncoderTests: XCTestCase {
         
         let model2 = TestModel(optionalString: nil)
         let encoded2 = try encoder.encode(model2)
-        XCTAssertTrue(encoded2["optionalString"] is NSNull)
+        // Note: Swift's default Codable behavior omits nil optionals rather than encoding them as NSNull
+        // This is standard behavior and matches JSONEncoder's default behavior
+        XCTAssertNil(encoded2["optionalString"])
     }
     
     // MARK: - Collection Tests

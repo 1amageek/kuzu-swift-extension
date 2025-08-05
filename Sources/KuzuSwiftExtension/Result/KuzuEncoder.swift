@@ -48,6 +48,22 @@ public struct KuzuEncoder: Sendable {
             return [:]
         }
         
+        // Handle _StorageRef containers by extracting their array
+        if container is _StorageRef {
+            throw EncodingError.invalidValue(
+                value,
+                EncodingError.Context(
+                    codingPath: [],
+                    debugDescription: "Top-level \(T.self) encoded to an array, not a dictionary."
+                )
+            )
+        }
+        
+        // Handle _DictStorageRef containers by extracting their dictionary
+        if let dictStorageRef = container as? _DictStorageRef {
+            return dictStorageRef.dict
+        }
+        
         guard let dictionary = container as? [String: any Sendable] else {
             throw EncodingError.invalidValue(
                 value,
@@ -81,6 +97,16 @@ public struct KuzuEncoder: Sendable {
         // Handle nil/NSNull
         if value is NSNull {
             return nil
+        }
+        
+        // Handle _StorageRef containers by extracting their array
+        if let storageRef = value as? _StorageRef {
+            return storageRef.array.map { encodeValue($0) }
+        }
+        
+        // Handle _DictStorageRef containers by extracting their dictionary
+        if let dictStorageRef = value as? _DictStorageRef {
+            return dictStorageRef.dict.mapValues { encodeValue($0) }
         }
         
         // Handle arrays and dictionaries recursively
@@ -120,7 +146,7 @@ private class _KuzuEncoder: Encoder {
             configuration: configuration,
             codingPath: codingPath
         )
-        self.container = container.storage
+        self.container = container.storageRef
         return KeyedEncodingContainer(container)
     }
     
@@ -129,14 +155,15 @@ private class _KuzuEncoder: Encoder {
             configuration: configuration,
             codingPath: codingPath
         )
-        self.container = container.storage
+        self.container = container.storageRef
         return container
     }
     
     func singleValueContainer() -> SingleValueEncodingContainer {
         let container = _KuzuSingleValueEncodingContainer(
             configuration: configuration,
-            codingPath: codingPath
+            codingPath: codingPath,
+            encoder: self
         )
         return container
     }
@@ -147,10 +174,17 @@ private class _KuzuEncoder: Encoder {
 private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
     let configuration: KuzuEncoder.Configuration
     var codingPath: [CodingKey]
-    var storage: [String: any Sendable] = [:]
+    let storageRef: _DictStorageRef
+    var storage: [String: any Sendable] { storageRef.dict }
+    
+    init(configuration: KuzuEncoder.Configuration, codingPath: [CodingKey]) {
+        self.configuration = configuration
+        self.codingPath = codingPath
+        self.storageRef = _DictStorageRef()
+    }
     
     mutating func encodeNil(forKey key: Key) throws {
-        storage[keyString(for: key)] = NSNull()
+        storageRef[keyString(for: key)] = NSNull()
     }
     
     mutating func encode<T>(_ value: T, forKey key: Key) throws where T: Encodable {
@@ -158,50 +192,50 @@ private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContain
         
         // Handle Date with strategy
         if let date = value as? Date {
-            storage[keyString] = try encodeDate(date)
+            storageRef[keyString] = try encodeDate(date)
             return
         }
         
         // Handle Data with strategy
         if let data = value as? Data {
-            storage[keyString] = try encodeData(data)
+            storageRef[keyString] = try encodeData(data)
             return
         }
         
         // Handle primitive types directly
         switch value {
         case let string as String:
-            storage[keyString] = string
+            storageRef[keyString] = string
         case let int as Int:
-            storage[keyString] = int
+            storageRef[keyString] = int
         case let int8 as Int8:
-            storage[keyString] = int8
+            storageRef[keyString] = int8
         case let int16 as Int16:
-            storage[keyString] = int16
+            storageRef[keyString] = int16
         case let int32 as Int32:
-            storage[keyString] = int32
+            storageRef[keyString] = int32
         case let int64 as Int64:
-            storage[keyString] = int64
+            storageRef[keyString] = int64
         case let uint as UInt:
-            storage[keyString] = uint
+            storageRef[keyString] = uint
         case let uint8 as UInt8:
-            storage[keyString] = uint8
+            storageRef[keyString] = uint8
         case let uint16 as UInt16:
-            storage[keyString] = uint16
+            storageRef[keyString] = uint16
         case let uint32 as UInt32:
-            storage[keyString] = uint32
+            storageRef[keyString] = uint32
         case let uint64 as UInt64:
-            storage[keyString] = uint64
+            storageRef[keyString] = uint64
         case let float as Float:
-            storage[keyString] = float
+            storageRef[keyString] = float
         case let double as Double:
-            storage[keyString] = double
+            storageRef[keyString] = double
         case let bool as Bool:
-            storage[keyString] = bool
+            storageRef[keyString] = bool
         case let uuid as UUID:
-            storage[keyString] = uuid.uuidString
+            storageRef[keyString] = uuid.uuidString
         case let url as URL:
-            storage[keyString] = url.absoluteString
+            storageRef[keyString] = url.absoluteString
         default:
             // For complex Encodable types
             let encoder = _KuzuEncoder(configuration: configuration)
@@ -209,7 +243,14 @@ private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContain
             try value.encode(to: encoder)
             
             if let container = encoder.container {
-                storage[keyString] = container
+                // Handle _StorageRef containers by extracting their array
+                if let nestedStorageRef = container as? _StorageRef {
+                    storageRef[keyString] = nestedStorageRef.array
+                } else if let dictStorageRef = container as? _DictStorageRef {
+                    storageRef[keyString] = dictStorageRef.dict
+                } else {
+                    storageRef[keyString] = container
+                }
             }
         }
     }
@@ -277,7 +318,7 @@ private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContain
             configuration: configuration,
             codingPath: codingPath + [key]
         )
-        storage[keyString(for: key)] = container.storage
+        storageRef[keyString(for: key)] = container.storage
         return KeyedEncodingContainer(container)
     }
     
@@ -286,7 +327,7 @@ private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContain
             configuration: configuration,
             codingPath: codingPath + [key]
         )
-        storage[keyString(for: key)] = container.storage
+        storageRef[keyString(for: key)] = container.storage
         return container
     }
     
@@ -308,60 +349,67 @@ private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContain
 private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer {
     let configuration: KuzuEncoder.Configuration
     var codingPath: [CodingKey]
-    var count: Int { storage.count }
-    var storage: [any Sendable] = []
+    let storageRef: _StorageRef
+    var count: Int { storageRef.count }
+    var storage: [any Sendable] { storageRef.array }
+    
+    init(configuration: KuzuEncoder.Configuration, codingPath: [CodingKey]) {
+        self.configuration = configuration
+        self.codingPath = codingPath
+        self.storageRef = _StorageRef()
+    }
     
     mutating func encodeNil() throws {
-        storage.append(NSNull())
+        storageRef.append(NSNull())
     }
     
     mutating func encode<T>(_ value: T) throws where T: Encodable {
         // Handle Date with strategy
         if let date = value as? Date {
-            storage.append(try encodeDate(date))
+            storageRef.append(try encodeDate(date))
             return
         }
         
         // Handle Data with strategy
         if let data = value as? Data {
-            storage.append(try encodeData(data))
+            storageRef.append(try encodeData(data))
             return
         }
         
         // Handle primitive types directly
         switch value {
         case let string as String:
-            storage.append(string)
+            storageRef.append(string)
         case let int as Int:
-            storage.append(int)
+            storageRef.append(int)
         case let int8 as Int8:
-            storage.append(int8)
+            storageRef.append(int8)
         case let int16 as Int16:
-            storage.append(int16)
+            storageRef.append(int16)
         case let int32 as Int32:
-            storage.append(int32)
+            storageRef.append(int32)
         case let int64 as Int64:
-            storage.append(int64)
+            storageRef.append(int64)
         case let uint as UInt:
-            storage.append(uint)
+            storageRef.append(uint)
         case let uint8 as UInt8:
-            storage.append(uint8)
+            storageRef.append(uint8)
         case let uint16 as UInt16:
-            storage.append(uint16)
+            storageRef.append(uint16)
         case let uint32 as UInt32:
-            storage.append(uint32)
+            storageRef.append(uint32)
         case let uint64 as UInt64:
-            storage.append(uint64)
+            storageRef.append(uint64)
         case let float as Float:
-            storage.append(float)
+            storageRef.append(float)
         case let double as Double:
-            storage.append(double)
+            storageRef.append(double)
         case let bool as Bool:
-            storage.append(bool)
+            storageRef.append(bool)
         case let uuid as UUID:
-            storage.append(uuid.uuidString)
+            storageRef.append(uuid.uuidString)
         case let url as URL:
-            storage.append(url.absoluteString)
+            storageRef.append(url.absoluteString)
         default:
             // For complex Encodable types
             let encoder = _KuzuEncoder(configuration: configuration)
@@ -369,7 +417,14 @@ private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer {
             try value.encode(to: encoder)
             
             if let container = encoder.container {
-                storage.append(container)
+                // Handle _StorageRef containers by extracting their array
+                if let nestedStorageRef = container as? _StorageRef {
+                    storageRef.append(nestedStorageRef.array)
+                } else if let dictStorageRef = container as? _DictStorageRef {
+                    storageRef.append(dictStorageRef.dict)
+                } else {
+                    storageRef.append(container)
+                }
             }
         }
     }
@@ -404,7 +459,7 @@ private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer {
             configuration: configuration,
             codingPath: codingPath + [_KuzuKey(index: count)]
         )
-        storage.append(container.storage)
+        storageRef.append(container.storage)
         return KeyedEncodingContainer(container)
     }
     
@@ -413,7 +468,7 @@ private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer {
             configuration: configuration,
             codingPath: codingPath + [_KuzuKey(index: count)]
         )
-        storage.append(container.storage)
+        storageRef.append(container.storageRef)
         return container
     }
     
@@ -430,21 +485,25 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer {
     let configuration: KuzuEncoder.Configuration
     var codingPath: [CodingKey]
     var storage: (any Sendable)?
+    weak var encoder: _KuzuEncoder?
     
     mutating func encodeNil() throws {
         storage = NSNull()
+        encoder?.container = storage
     }
     
     mutating func encode<T>(_ value: T) throws where T: Encodable {
         // Handle Date with strategy
         if let date = value as? Date {
             storage = try encodeDate(date)
+            encoder?.container = storage
             return
         }
         
         // Handle Data with strategy
         if let data = value as? Data {
             storage = try encodeData(data)
+            encoder?.container = storage
             return
         }
         
@@ -452,8 +511,10 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer {
         switch value {
         case let string as String:
             storage = string
+            encoder?.container = storage
         case let int as Int:
             storage = int
+            encoder?.container = storage
         case let int8 as Int8:
             storage = int8
         case let int16 as Int16:
@@ -478,8 +539,10 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer {
             storage = double
         case let bool as Bool:
             storage = bool
+            encoder?.container = storage
         case let uuid as UUID:
             storage = uuid.uuidString
+            encoder?.container = storage
         case let url as URL:
             storage = url.absoluteString
         default:
@@ -489,6 +552,7 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer {
             try value.encode(to: encoder)
             storage = encoder.container
         }
+        self.encoder?.container = storage
     }
     
     private func encodeDate(_ date: Date) throws -> any Sendable {
@@ -518,6 +582,53 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer {
 }
 
 // MARK: - Helper Types
+
+private final class _StorageRef: @unchecked Sendable {
+    private var _array: [any Sendable] = []
+    private let lock = NSLock()
+    
+    var array: [any Sendable] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _array
+    }
+    
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _array.count
+    }
+    
+    func append(_ element: any Sendable) {
+        lock.lock()
+        defer { lock.unlock() }
+        _array.append(element)
+    }
+}
+
+private final class _DictStorageRef: @unchecked Sendable {
+    private var _dict: [String: any Sendable] = [:]
+    private let lock = NSLock()
+    
+    var dict: [String: any Sendable] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _dict
+    }
+    
+    subscript(key: String) -> (any Sendable)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _dict[key]
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _dict[key] = newValue
+        }
+    }
+}
 
 private struct _KuzuKey: CodingKey {
     var stringValue: String
