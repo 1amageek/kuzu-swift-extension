@@ -112,10 +112,10 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
         
         return [
             """
-            static let _kuzuDDL: String = "\(raw: ddl)"
+            public static let _kuzuDDL: String = "\(raw: ddl)"
             """,
             """
-            static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
+            public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
             """
         ]
     }

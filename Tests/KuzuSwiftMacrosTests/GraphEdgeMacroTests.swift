@@ -21,9 +21,9 @@ final class GraphEdgeMacroTests: XCTestCase {
                 var authoredAt: Date
                 var role: String?
             
-                static let _kuzuDDL: String = "CREATE REL TABLE Authored (FROM User TO Post, id STRING PRIMARY KEY, authoredAt TIMESTAMP, role STRING)"
+                public static let _kuzuDDL: String = "CREATE REL TABLE Authored (FROM User TO Post, id STRING PRIMARY KEY, authoredAt TIMESTAMP, role STRING)"
             
-                static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "authoredAt", type: "TIMESTAMP", constraints: []), (name: "role", type: "STRING", constraints: [])]
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "authoredAt", type: "TIMESTAMP", constraints: []), (name: "role", type: "STRING", constraints: [])]
             }
             
             extension Authored: GraphEdgeModel {
