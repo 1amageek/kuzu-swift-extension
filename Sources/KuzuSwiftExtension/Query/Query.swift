@@ -12,7 +12,7 @@ public protocol QueryComponent {
     func toCypher() throws -> CypherFragment
 }
 
-public struct CypherFragment: Sendable {
+public struct CypherFragment {
     public let query: String
     public let parameters: [String: any Sendable]
     

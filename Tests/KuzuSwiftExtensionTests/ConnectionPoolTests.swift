@@ -58,7 +58,6 @@ final class ConnectionPoolTests: XCTestCase {
     }
     
     func testConnectionPoolTimeout() async throws {
-        print("testConnectionPoolTimeout: Starting test")
         let pool = try await ConnectionPool(
             database: database,
             maxConnections: 1,
@@ -66,34 +65,26 @@ final class ConnectionPoolTests: XCTestCase {
             timeout: 0.5 // 500ms timeout
         )
         
-        print("testConnectionPoolTimeout: Pool created with 0.5s timeout")
-        
         // Checkout the only connection
         let connection = try await pool.checkout()
-        print("testConnectionPoolTimeout: First connection checked out")
         
         // Try to checkout another connection, should timeout
-        print("testConnectionPoolTimeout: Attempting second checkout (should timeout)")
         do {
             _ = try await pool.checkout()
             XCTFail("Expected timeout error")
         } catch let error as GraphError {
-            print("testConnectionPoolTimeout: Got GraphError: \(error)")
             if case .connectionTimeout(let duration) = error {
                 XCTAssertEqual(duration, 0.5)
             } else {
                 XCTFail("Expected connectionTimeout error, got \(error)")
             }
         } catch {
-            print("testConnectionPoolTimeout: Got unexpected error: \(error)")
             XCTFail("Expected GraphError.connectionTimeout, got \(error)")
         }
         
-        print("testConnectionPoolTimeout: Starting cleanup")
         // Cleanup
         await pool.checkin(connection)
         await pool.drain()
-        print("testConnectionPoolTimeout: Test completed")
     }
     
     func testConnectionPoolCancellation() async throws {

@@ -4,10 +4,14 @@ import Kuzu
 public actor GraphContext {
     private let container: GraphContainer
     private let configuration: GraphConfiguration
+    private let encoder: KuzuEncoder
+    private let decoder: KuzuDecoder
     
     public init(configuration: GraphConfiguration = GraphConfiguration()) async throws {
         self.configuration = configuration
         self.container = try await GraphContainer(configuration: configuration)
+        self.encoder = KuzuEncoder(configuration: configuration.encodingConfiguration)
+        self.decoder = KuzuDecoder(configuration: configuration.decodingConfiguration)
     }
     
     // MARK: - Raw Query Execution
@@ -18,8 +22,8 @@ public actor GraphContext {
                 return try connection.query(query)
             } else {
                 let statement = try connection.prepare(query)
-                // Convert values to Kuzu-compatible types
-                let kuzuParams = ValueConverter.toKuzuValues(bindings)
+                // Convert values to Kuzu-compatible types using KuzuEncoder
+                let kuzuParams = try encoder.encodeParameters(bindings)
                 return try connection.execute(statement, kuzuParams)
             }
         }
@@ -31,8 +35,8 @@ public actor GraphContext {
                 return try connection.query(query)
             } else {
                 let statement = try connection.prepare(query)
-                // Convert values to Kuzu-compatible types
-                let kuzuParams = ValueConverter.toKuzuValues(bindings)
+                // Convert values to Kuzu-compatible types using KuzuEncoder
+                let kuzuParams = try encoder.encodeParameters(bindings)
                 return try connection.execute(statement, kuzuParams)
             }
         }

@@ -123,19 +123,59 @@ public struct ResultMapper {
     // MARK: - Private Helpers
     
     private static func cast<T>(_ value: Any, to type: T.Type, field: String? = nil) throws -> T {
-        // Try using ValueConverter first
-        if let converted = ValueConverter.fromKuzuValue(value, to: type) {
-            return converted
-        }
-        
-        // Fallback to direct casting
+        // Direct casting for most types
         if let casted = value as? T {
             return casted
         }
         
-        // If T is String, convert any value to string
-        if T.self == String.self {
+        // Special handling for type conversions
+        switch (value, type) {
+        // Date conversions
+        case (let double as Double, is Date.Type):
+            return Date(timeIntervalSince1970: double) as! T
+        case (let int as Int, is Date.Type):
+            return Date(timeIntervalSince1970: Double(int)) as! T
+        case (let int64 as Int64, is Date.Type):
+            return Date(timeIntervalSince1970: Double(int64)) as! T
+        case (let string as String, is Date.Type):
+            // Try to parse ISO8601 date string
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: string) {
+                return date as! T
+            }
+            
+        // UUID conversions
+        case (let string as String, is UUID.Type):
+            if let uuid = UUID(uuidString: string) {
+                return uuid as! T
+            }
+            
+        // Numeric conversions
+        case (let int as Int, is Int64.Type):
+            return Int64(int) as! T
+        case (let int64 as Int64, is Int.Type):
+            return Int(int64) as! T
+        case (let int as Int, is Double.Type):
+            return Double(int) as! T
+        case (let float as Float, is Double.Type):
+            return Double(float) as! T
+        case (let double as Double, is Float.Type):
+            return Float(double) as! T
+            
+        // String conversions
+        case (_, is String.Type):
             return String(describing: value) as! T
+            
+        // NSNull handling
+        case (is NSNull, _):
+            throw ResultMappingError.nullValueForNonOptionalType(
+                field: field ?? "unknown",
+                type: String(describing: T.self)
+            )
+            
+        default:
+            break
         }
         
         throw ResultMappingError.typeMismatch(

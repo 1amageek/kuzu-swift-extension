@@ -55,6 +55,19 @@ swift package generate-documentation
 swift package update
 ```
 
+## Build Notes
+
+### Build Time Optimization
+
+The kuzu-swift dependency contains a large C++ codebase that takes significant time to compile. To optimize development workflow:
+
+1. **Initial Build**: The first build will take several minutes due to compiling the Kuzu C++ library
+2. **Incremental Builds**: Subsequent builds are faster as only changed Swift files need recompilation
+3. **Test Execution**: 
+   - Run specific test suites to avoid full rebuilds: `swift test --filter TestClassName`
+   - For rapid iteration, consider using Xcode which caches build artifacts more efficiently
+4. **CI/CD**: Allow sufficient time for builds in CI pipelines (typically 5-10 minutes for full build)
+
 ## Development Notes
 
 ### Macro Development
@@ -83,6 +96,15 @@ swift package update
 - Integration tests with in-memory Kuzu database
 - Query DSL compilation tests
 - Migration scenario tests
+
+### Test Execution Notes
+
+Due to the large C++ codebase in kuzu-swift, running tests can be time-consuming:
+
+1. **Full Test Suite**: Can take 5-10 minutes on first run
+2. **Specific Test Classes**: Use `swift test --filter TestClassName` to run only specific test classes
+3. **Individual Tests**: Use `swift test --filter TestClassName/testMethodName` for even more granular testing
+4. **Recommended Workflow**: During development, run only the relevant test class or method to save time
 
 ## Important Implementation Details
 

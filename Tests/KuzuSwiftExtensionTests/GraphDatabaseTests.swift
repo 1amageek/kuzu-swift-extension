@@ -32,6 +32,9 @@ final class GraphDatabaseTests: XCTestCase {
         let dbPath = appDir.appendingPathComponent("graph.kuzu")
         try? FileManager.default.removeItem(at: dbPath)
         
+        // Also remove the entire directory to ensure complete cleanup
+        try? FileManager.default.removeItem(at: appDir)
+        
         try await super.tearDown()
     }
     
@@ -68,6 +71,10 @@ final class GraphDatabaseTests: XCTestCase {
     func testDefaultPathCreation() async throws {
         // This test verifies that the default path is created correctly
         // The actual path will vary by platform
+        
+        // Register the model first
+        await GraphDatabase.shared.register(models: [TestTodo.self])
+        
         let context = try await GraphDatabase.shared.context()
         
         // Should be able to save data

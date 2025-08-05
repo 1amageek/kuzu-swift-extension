@@ -3,13 +3,19 @@ import Foundation
 public struct GraphConfiguration: Sendable {
     public let databasePath: String
     public let options: Options
+    public let encodingConfiguration: KuzuEncoder.Configuration
+    public let decodingConfiguration: KuzuDecoder.Configuration
     
     public init(
         databasePath: String = ":memory:",
-        options: Options = Options()
+        options: Options = Options(),
+        encodingConfiguration: KuzuEncoder.Configuration = KuzuEncoder.Configuration(),
+        decodingConfiguration: KuzuDecoder.Configuration = KuzuDecoder.Configuration()
     ) {
         self.databasePath = databasePath
         self.options = options
+        self.encodingConfiguration = encodingConfiguration
+        self.decodingConfiguration = decodingConfiguration
     }
     
     public struct Options: Sendable {

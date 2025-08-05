@@ -22,11 +22,12 @@ public struct Create: QueryComponent {
         return Create(node: pattern)
     }
     
-    public static func node<T: _KuzuGraphModel>(
+    public static func node<T: _KuzuGraphModel & Encodable>(
         _ instance: T,
         alias: String? = nil
-    ) -> Create {
-        let properties = extractProperties(from: instance)
+    ) throws -> Create {
+        let encoder = KuzuEncoder()
+        let properties = try encoder.encode(instance)
         let pattern = NodePattern(
             type: String(describing: T.self),
             alias: alias ?? String(describing: T.self).lowercased(),
@@ -62,47 +63,6 @@ public struct Create: QueryComponent {
         }
     }
     
-    private static func extractProperties(from instance: Any) -> [String: any Sendable] {
-        let mirror = Mirror(reflecting: instance)
-        let type = Swift.type(of: instance)
-        
-        // Get macro-generated column metadata if available
-        guard let modelType = type as? any _KuzuGraphModel.Type else {
-            // Fallback to simple Mirror extraction without metadata validation
-            return extractPropertiesWithoutMetadata(from: mirror)
-        }
-        
-        let columns = modelType._kuzuColumns
-        var properties: [String: any Sendable] = [:]
-        
-        // Extract properties using Mirror and validate against metadata
-        for child in mirror.children {
-            guard let propertyName = child.label else { continue }
-            
-            // Check if this property is in the model's column definition
-            if columns.contains(where: { $0.name == propertyName }) {
-                if let sendableValue = SendableExtractor.extract(from: child.value) {
-                    properties[propertyName] = sendableValue
-                }
-            }
-        }
-        
-        return properties
-    }
-    
-    private static func extractPropertiesWithoutMetadata(from mirror: Mirror) -> [String: any Sendable] {
-        var properties: [String: any Sendable] = [:]
-        
-        for child in mirror.children {
-            guard let propertyName = child.label else { continue }
-            
-            if let sendableValue = SendableExtractor.extract(from: child.value) {
-                properties[propertyName] = sendableValue
-            }
-        }
-        
-        return properties
-    }
 }
 
 struct NodePattern {
