@@ -162,6 +162,10 @@ public struct ResultMapper {
             return Double(float) as! T
         case (let double as Double, is Float.Type):
             return Float(double) as! T
+        case (let int as Int, is Float.Type):
+            return Float(int) as! T
+        case (let int64 as Int64, is Float.Type):
+            return Float(int64) as! T
             
         // String conversions
         case (_, is String.Type):

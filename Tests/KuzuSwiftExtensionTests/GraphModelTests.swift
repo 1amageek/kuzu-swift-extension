@@ -204,7 +204,7 @@ final class GraphModelTests: XCTestCase {
                 "postId": savedPost.id
             ])
         
-        let count = try result.mapFirst(to: Int.self, at: 0) ?? 0
+        let count = try result.mapFirst(to: Int64.self, at: 0) ?? 0
         XCTAssertEqual(count, 1)
     }
     

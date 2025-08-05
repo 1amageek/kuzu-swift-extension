@@ -118,6 +118,11 @@ public struct KuzuEncoder: Sendable {
             return dict.mapValues { encodeValue($0) }
         }
         
+        // Handle UUID
+        if let uuid = value as? UUID {
+            return uuid.uuidString
+        }
+        
         // All other values pass through
         return value
     }
