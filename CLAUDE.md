@@ -42,8 +42,11 @@ swift build
 # Run tests
 swift test
 
-# Run a specific test
-swift test --filter TestName
+# Run a specific test class
+swift test --filter TestClassName
+
+# Run a specific test method
+swift test --filter TestClassName/testMethodName
 
 # Build for release
 swift build -c release
@@ -53,6 +56,15 @@ swift package generate-documentation
 
 # Update dependencies
 swift package update
+
+# Run lint (if configured)
+npm run lint
+
+# Run type check (if configured)
+npm run typecheck
+
+# Run SwiftLint or similar tools
+swift run swiftlint
 ```
 
 ## Build Notes
@@ -67,6 +79,16 @@ The kuzu-swift dependency contains a large C++ codebase that takes significant t
    - Run specific test suites to avoid full rebuilds: `swift test --filter TestClassName`
    - For rapid iteration, consider using Xcode which caches build artifacts more efficiently
 4. **CI/CD**: Allow sufficient time for builds in CI pipelines (typically 5-10 minutes for full build)
+
+### Common Build Issues
+
+- **Memory Usage**: The C++ compilation can use significant memory. Ensure at least 8GB RAM available.
+- **Binary Downloads**: Set environment variables for pre-built binaries if available:
+  ```bash
+  export KUZU_USE_BINARY=1
+  export KUZU_BINARY_URL="https://github.com/1amageek/kuzu-swift/releases/download/v0.11.1/Kuzu.xcframework.zip"
+  export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28eb2bf0de49c1f9"
+  ```
 
 ## Development Notes
 
@@ -121,3 +143,53 @@ Due to the large C++ codebase in kuzu-swift, running tests can be time-consuming
 ### Extension Management
 - Vector/FTS extensions loaded via `GraphConfiguration.options.extensions`
 - Automatic `INSTALL`/`LOAD` on container initialization
+
+### Type Conversions
+
+The library handles type conversions between Swift and Kuzu in several places:
+
+#### KuzuEncoder (Swift → Kuzu)
+- UUID → String (via `uuid.uuidString`)
+- Date → Timestamp (ISO8601 or epoch-based)
+- Data → Base64 String or custom encoding
+- Arrays and Dictionaries are recursively encoded
+
+#### KuzuDecoder (Kuzu → Swift)
+Supports flexible numeric conversions:
+- Int64 ↔ Int
+- Double → Float
+- Int → Float
+- Int64 → Float
+- Automatic handling of Kuzu's numeric types
+
+#### ResultMapper (Query Results → Swift)
+Similar conversions as KuzuDecoder, particularly important for:
+- `count()` functions return Int64 from Kuzu
+- Numeric type flexibility for query results
+
+### Common Issues and Solutions
+
+1. **UUID Parameter Errors**
+   - Error: `valueConversionFailed("Unsupported Swift type UUID")`
+   - Solution: KuzuEncoder.encodeValue converts UUID to String automatically
+
+2. **Count Query Type Mismatch**
+   - Error: `typeMismatch(expected: "Optional<Int>", actual: "Int64")`
+   - Solution: Use `Int64` for count results: `result.mapFirst(to: Int64.self)`
+
+3. **Array/Dictionary Encoding**
+   - Issue: Arrays and dictionaries returning nil when encoded
+   - Solution: Use reference-based storage wrappers (_StorageRef, _DictStorageRef)
+
+4. **Numeric Type Conversions**
+   - Issue: Type mismatches between Swift numeric types and Kuzu
+   - Solution: Both KuzuDecoder and ResultMapper support bidirectional conversions
+
+### Code Quality Tools
+
+When making changes, ensure code quality by running:
+- Lint checks (if configured in the project)
+- Type checking for Swift code
+- Test coverage for new functionality
+
+The project should pass all quality checks before committing changes.
