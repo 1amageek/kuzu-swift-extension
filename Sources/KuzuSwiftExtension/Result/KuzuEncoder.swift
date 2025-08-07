@@ -125,10 +125,7 @@ public struct KuzuEncoder: Sendable {
         
         // Handle Date - Kuzu expects ISO-8601 formatted string for TIMESTAMP
         if let date = value as? Date {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            return formatter.string(from: date)
+            return TypeConversion.formatISO8601Date(date)
         }
         
         // All other values pass through
@@ -137,6 +134,36 @@ public struct KuzuEncoder: Sendable {
 }
 
 // MARK: - Internal Encoder Implementation
+
+// MARK: - Internal Protocol for Encoding Containers
+
+internal protocol KuzuEncodingContainer {
+    var configuration: KuzuEncoder.Configuration { get }
+}
+
+extension KuzuEncodingContainer {
+    func encodeDate(_ date: Date) throws -> any Sendable {
+        switch configuration.dateEncodingStrategy {
+        case .iso8601:
+            return TypeConversion.formatISO8601Date(date)
+        case .secondsSince1970:
+            return date.timeIntervalSince1970
+        case .millisecondsSince1970:
+            return date.timeIntervalSince1970 * 1000
+        case .custom(let converter):
+            return try converter(date)
+        }
+    }
+    
+    func encodeData(_ data: Data) throws -> any Sendable {
+        switch configuration.dataEncodingStrategy {
+        case .base64:
+            return data.base64EncodedString()
+        case .custom(let converter):
+            return try converter(data)
+        }
+    }
+}
 
 private class _KuzuEncoder: Encoder {
     let configuration: KuzuEncoder.Configuration
@@ -184,7 +211,7 @@ private class _KuzuEncoder: Encoder {
 
 // MARK: - KeyedEncodingContainer Implementation
 
-private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContainerProtocol {
+private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContainerProtocol, KuzuEncodingContainer {
     let configuration: KuzuEncoder.Configuration
     var codingPath: [CodingKey]
     let storageRef: _DictStorageRef
@@ -268,30 +295,6 @@ private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContain
         }
     }
     
-    private func encodeDate(_ date: Date) throws -> any Sendable {
-        switch configuration.dateEncodingStrategy {
-        case .iso8601:
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            return formatter.string(from: date)
-        case .secondsSince1970:
-            return date.timeIntervalSince1970
-        case .millisecondsSince1970:
-            return date.timeIntervalSince1970 * 1000
-        case .custom(let converter):
-            return try converter(date)
-        }
-    }
-    
-    private func encodeData(_ data: Data) throws -> any Sendable {
-        switch configuration.dataEncodingStrategy {
-        case .base64:
-            return data.base64EncodedString()
-        case .custom(let converter):
-            return try converter(data)
-        }
-    }
     
     private func keyString(for key: Key) -> String {
         switch configuration.keyEncodingStrategy {
@@ -359,7 +362,7 @@ private struct _KuzuKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContain
 
 // MARK: - UnkeyedEncodingContainer Implementation
 
-private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer {
+private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer, KuzuEncodingContainer {
     let configuration: KuzuEncoder.Configuration
     var codingPath: [CodingKey]
     let storageRef: _StorageRef
@@ -442,30 +445,6 @@ private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer {
         }
     }
     
-    private func encodeDate(_ date: Date) throws -> any Sendable {
-        switch configuration.dateEncodingStrategy {
-        case .iso8601:
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            return formatter.string(from: date)
-        case .secondsSince1970:
-            return date.timeIntervalSince1970
-        case .millisecondsSince1970:
-            return date.timeIntervalSince1970 * 1000
-        case .custom(let converter):
-            return try converter(date)
-        }
-    }
-    
-    private func encodeData(_ data: Data) throws -> any Sendable {
-        switch configuration.dataEncodingStrategy {
-        case .base64:
-            return data.base64EncodedString()
-        case .custom(let converter):
-            return try converter(data)
-        }
-    }
     
     mutating func nestedContainer<NestedKey>(keyedBy keyType: NestedKey.Type) -> KeyedEncodingContainer<NestedKey> where NestedKey: CodingKey {
         let container = _KuzuKeyedEncodingContainer<NestedKey>(
@@ -494,7 +473,7 @@ private struct _KuzuUnkeyedEncodingContainer: UnkeyedEncodingContainer {
 
 // MARK: - SingleValueEncodingContainer Implementation
 
-private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer {
+private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer, KuzuEncodingContainer {
     let configuration: KuzuEncoder.Configuration
     var codingPath: [CodingKey]
     var storage: (any Sendable)?
@@ -568,30 +547,6 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer {
         self.encoder?.container = storage
     }
     
-    private func encodeDate(_ date: Date) throws -> any Sendable {
-        switch configuration.dateEncodingStrategy {
-        case .iso8601:
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            return formatter.string(from: date)
-        case .secondsSince1970:
-            return date.timeIntervalSince1970
-        case .millisecondsSince1970:
-            return date.timeIntervalSince1970 * 1000
-        case .custom(let converter):
-            return try converter(date)
-        }
-    }
-    
-    private func encodeData(_ data: Data) throws -> any Sendable {
-        switch configuration.dataEncodingStrategy {
-        case .base64:
-            return data.base64EncodedString()
-        case .custom(let converter):
-            return try converter(data)
-        }
-    }
 }
 
 // MARK: - Helper Types

@@ -254,6 +254,72 @@ extension QueryResult {
     }
 }
 
+// MARK: - Internal Protocol for Decoding Containers
+
+internal protocol KuzuDecodingContainer {
+    var configuration: KuzuDecoder.Configuration { get }
+    var codingPath: [CodingKey] { get }
+}
+
+extension KuzuDecodingContainer {
+    func convertToDate(_ value: Any) throws -> Date {
+        switch configuration.dateDecodingStrategy {
+        case .iso8601:
+            if let dateString = value as? String {
+                if let date = TypeConversion.parseISO8601Date(dateString) {
+                    return date
+                }
+            }
+        case .secondsSince1970:
+            if let timestamp = value as? Double {
+                return Date(timeIntervalSince1970: timestamp)
+            } else if let timestamp = value as? Int {
+                return Date(timeIntervalSince1970: Double(timestamp))
+            }
+        case .millisecondsSince1970:
+            if let timestamp = value as? Double {
+                return Date(timeIntervalSince1970: timestamp / 1000)
+            } else if let timestamp = value as? Int {
+                return Date(timeIntervalSince1970: Double(timestamp) / 1000)
+            }
+        case .custom(let converter):
+            return try converter(value)
+        }
+        
+        throw DecodingError.typeMismatch(
+            Date.self,
+            DecodingError.Context(
+                codingPath: codingPath,
+                debugDescription: "Cannot convert \(value) to Date"
+            )
+        )
+    }
+    
+    func convertToData(_ value: Any) throws -> Data {
+        switch configuration.dataDecodingStrategy {
+        case .base64:
+            if let base64String = value as? String,
+               let data = Data(base64Encoded: base64String) {
+                return data
+            }
+        case .custom(let converter):
+            return try converter(value)
+        }
+        
+        throw DecodingError.typeMismatch(
+            Data.self,
+            DecodingError.Context(
+                codingPath: codingPath,
+                debugDescription: "Cannot convert \(value) to Data"
+            )
+        )
+    }
+    
+    func convertNumericType<T>(_ value: Any, to type: T.Type) -> T? {
+        return TypeConversion.convert(value, to: type)
+    }
+}
+
 // MARK: - Internal Codable-based Decoder Implementation
 
 /// Internal decoder that implements the Decoder protocol
@@ -303,7 +369,7 @@ private class _KuzuDecoder: Decoder {
 
 // MARK: - KeyedDecodingContainer Implementation
 
-private struct _KuzuKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
+private struct _KuzuKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContainerProtocol, KuzuDecodingContainer {
     let dictionary: [String: Any]
     let configuration: KuzuDecoder.Configuration
     var codingPath: [CodingKey]
@@ -369,115 +435,24 @@ private struct _KuzuKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContain
     }
     
     private func convertSpecialTypes<T>(_ value: Any, to type: T.Type) throws -> T? {
-        // UUID conversion
-        if type == UUID.self {
-            if let uuidString = value as? String,
-               let uuid = UUID(uuidString: uuidString) {
-                return uuid as? T
-            }
-        }
-        
-        // Date conversion
+        // Date conversion using protocol extension
         if type == Date.self {
             if let date = try? convertToDate(value) {
                 return date as? T
             }
         }
         
-        // Data conversion
+        // Data conversion using protocol extension
         if type == Data.self {
             if let data = try? convertToData(value) {
                 return data as? T
             }
         }
         
-        // Try type-specific conversions
-        switch (value, type) {
-        case (let double as Double, is Date.Type):
-            return Date(timeIntervalSince1970: double) as? T
-        case (let int as Int, is Date.Type):
-            return Date(timeIntervalSince1970: Double(int)) as? T
-        case (let int64 as Int64, is Date.Type):
-            return Date(timeIntervalSince1970: Double(int64)) as? T
-        case (let string as String, is UUID.Type):
-            return UUID(uuidString: string) as? T
-        case (let int as Int, is Int64.Type):
-            return Int64(int) as? T
-        case (let int64 as Int64, is Int.Type):
-            return Int(int64) as? T
-        case (let int as Int, is Double.Type):
-            return Double(int) as? T
-        case (let float as Float, is Double.Type):
-            return Double(float) as? T
-        case (let double as Double, is Float.Type):
-            return Float(double) as? T
-        case (let int as Int, is Float.Type):
-            return Float(int) as? T
-        default:
-            return nil
-        }
+        // Use shared numeric/UUID conversion helper
+        return convertNumericType(value, to: type)
     }
     
-    private func convertToDate(_ value: Any) throws -> Date {
-        switch configuration.dateDecodingStrategy {
-        case .iso8601:
-            if let dateString = value as? String {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let date = formatter.date(from: dateString) {
-                    return date
-                }
-                // Try without fractional seconds
-                formatter.formatOptions = [.withInternetDateTime]
-                if let date = formatter.date(from: dateString) {
-                    return date
-                }
-            }
-        case .secondsSince1970:
-            if let timestamp = value as? Double {
-                return Date(timeIntervalSince1970: timestamp)
-            } else if let timestamp = value as? Int {
-                return Date(timeIntervalSince1970: Double(timestamp))
-            }
-        case .millisecondsSince1970:
-            if let timestamp = value as? Double {
-                return Date(timeIntervalSince1970: timestamp / 1000)
-            } else if let timestamp = value as? Int {
-                return Date(timeIntervalSince1970: Double(timestamp) / 1000)
-            }
-        case .custom(let converter):
-            return try converter(value)
-        }
-        
-        throw DecodingError.typeMismatch(
-            Date.self,
-            DecodingError.Context(
-                codingPath: codingPath,
-                debugDescription: "Cannot convert \(value) to Date"
-            )
-        )
-    }
-    
-    private func convertToData(_ value: Any) throws -> Data {
-        switch configuration.dataDecodingStrategy {
-        case .base64:
-            if let base64String = value as? String {
-                if let data = Data(base64Encoded: base64String) {
-                    return data
-                }
-            }
-        case .custom(let converter):
-            return try converter(value)
-        }
-        
-        throw DecodingError.typeMismatch(
-            Data.self,
-            DecodingError.Context(
-                codingPath: codingPath,
-                debugDescription: "Cannot convert \(value) to Data"
-            )
-        )
-    }
     
     func nestedContainer<NestedKey>(keyedBy type: NestedKey.Type, forKey key: Key) throws -> KeyedDecodingContainer<NestedKey> where NestedKey: CodingKey {
         guard let dict = dictionary[key.stringValue] as? [String: Any] else {
@@ -541,7 +516,7 @@ private struct _KuzuKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContain
 
 // MARK: - SingleValueDecodingContainer Implementation
 
-private struct _KuzuSingleValueDecodingContainer: SingleValueDecodingContainer {
+private struct _KuzuSingleValueDecodingContainer: SingleValueDecodingContainer, KuzuDecodingContainer {
     let dictionary: [String: Any]
     let configuration: KuzuDecoder.Configuration
     var codingPath: [CodingKey]
@@ -563,20 +538,14 @@ private struct _KuzuSingleValueDecodingContainer: SingleValueDecodingContainer {
     }
     
     private func decodeValue<T>(_ value: Any, as type: T.Type) throws -> T where T: Decodable {
-        // Handle special types
-        if type == UUID.self {
-            if let uuidString = value as? String,
-               let uuid = UUID(uuidString: uuidString) {
-                return uuid as! T
-            }
-        }
-        
+        // Try Date conversion using protocol extension
         if type == Date.self {
             if let date = try? convertToDate(value) {
                 return date as! T
             }
         }
         
+        // Try Data conversion using protocol extension
         if type == Data.self {
             if let data = try? convertToData(value) {
                 return data as! T
@@ -588,50 +557,9 @@ private struct _KuzuSingleValueDecodingContainer: SingleValueDecodingContainer {
             return typedValue
         }
         
-        // Try type-specific conversions
-        switch (value, type) {
-        case (let double as Double, is Date.Type):
-            if let date = Date(timeIntervalSince1970: double) as? T {
-                return date
-            }
-        case (let int as Int, is Date.Type):
-            if let date = Date(timeIntervalSince1970: Double(int)) as? T {
-                return date
-            }
-        case (let int64 as Int64, is Date.Type):
-            if let date = Date(timeIntervalSince1970: Double(int64)) as? T {
-                return date
-            }
-        case (let string as String, is UUID.Type):
-            if let uuid = UUID(uuidString: string) as? T {
-                return uuid
-            }
-        case (let int as Int, is Int64.Type):
-            if let value = Int64(int) as? T {
-                return value
-            }
-        case (let int64 as Int64, is Int.Type):
-            if let value = Int(int64) as? T {
-                return value
-            }
-        case (let int as Int, is Double.Type):
-            if let value = Double(int) as? T {
-                return value
-            }
-        case (let float as Float, is Double.Type):
-            if let value = Double(float) as? T {
-                return value
-            }
-        case (let double as Double, is Float.Type):
-            if let value = Float(double) as? T {
-                return value
-            }
-        case (let int as Int, is Float.Type):
-            if let value = Float(int) as? T {
-                return value
-            }
-        default:
-            break
+        // Try numeric/UUID conversions using shared helper
+        if let converted = convertNumericType(value, to: type) {
+            return converted
         }
         
         throw DecodingError.typeMismatch(
@@ -643,69 +571,11 @@ private struct _KuzuSingleValueDecodingContainer: SingleValueDecodingContainer {
         )
     }
     
-    private func convertToDate(_ value: Any) throws -> Date {
-        switch configuration.dateDecodingStrategy {
-        case .iso8601:
-            if let dateString = value as? String {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let date = formatter.date(from: dateString) {
-                    return date
-                }
-                formatter.formatOptions = [.withInternetDateTime]
-                if let date = formatter.date(from: dateString) {
-                    return date
-                }
-            }
-        case .secondsSince1970:
-            if let timestamp = value as? Double {
-                return Date(timeIntervalSince1970: timestamp)
-            } else if let timestamp = value as? Int {
-                return Date(timeIntervalSince1970: Double(timestamp))
-            }
-        case .millisecondsSince1970:
-            if let timestamp = value as? Double {
-                return Date(timeIntervalSince1970: timestamp / 1000)
-            } else if let timestamp = value as? Int {
-                return Date(timeIntervalSince1970: Double(timestamp) / 1000)
-            }
-        case .custom(let converter):
-            return try converter(value)
-        }
-        
-        throw DecodingError.typeMismatch(
-            Date.self,
-            DecodingError.Context(
-                codingPath: codingPath,
-                debugDescription: "Cannot convert \(value) to Date"
-            )
-        )
-    }
-    
-    private func convertToData(_ value: Any) throws -> Data {
-        switch configuration.dataDecodingStrategy {
-        case .base64:
-            if let base64String = value as? String,
-               let data = Data(base64Encoded: base64String) {
-                return data
-            }
-        case .custom(let converter):
-            return try converter(value)
-        }
-        
-        throw DecodingError.typeMismatch(
-            Data.self,
-            DecodingError.Context(
-                codingPath: codingPath,
-                debugDescription: "Cannot convert \(value) to Data"
-            )
-        )
-    }
 }
 
 // MARK: - UnkeyedDecodingContainer Implementation
 
-private struct _KuzuUnkeyedDecodingContainer: UnkeyedDecodingContainer {
+private struct _KuzuUnkeyedDecodingContainer: UnkeyedDecodingContainer, KuzuDecodingContainer {
     let array: [Any]
     let configuration: KuzuDecoder.Configuration
     var codingPath: [CodingKey]
@@ -750,17 +620,14 @@ private struct _KuzuUnkeyedDecodingContainer: UnkeyedDecodingContainer {
     }
     
     private func decodeValue<T>(_ value: Any, as type: T.Type) throws -> T where T: Decodable {
-        // Handle special types
-        if type == UUID.self {
-            if let uuidString = value as? String,
-               let uuid = UUID(uuidString: uuidString) {
-                return uuid as! T
-            }
-        }
-        
         // Handle basic types
         if let typedValue = value as? T {
             return typedValue
+        }
+        
+        // Try numeric/UUID conversions using shared helper
+        if let converted = convertNumericType(value, to: type) {
+            return converted
         }
         
         // Handle nested Decodable types
@@ -768,52 +635,6 @@ private struct _KuzuUnkeyedDecodingContainer: UnkeyedDecodingContainer {
             let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
             decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
             return try T(from: decoder)
-        }
-        
-        // Try type-specific conversions
-        switch (value, type) {
-        case (let double as Double, is Date.Type):
-            if let date = Date(timeIntervalSince1970: double) as? T {
-                return date
-            }
-        case (let int as Int, is Date.Type):
-            if let date = Date(timeIntervalSince1970: Double(int)) as? T {
-                return date
-            }
-        case (let int64 as Int64, is Date.Type):
-            if let date = Date(timeIntervalSince1970: Double(int64)) as? T {
-                return date
-            }
-        case (let string as String, is UUID.Type):
-            if let uuid = UUID(uuidString: string) as? T {
-                return uuid
-            }
-        case (let int as Int, is Int64.Type):
-            if let value = Int64(int) as? T {
-                return value
-            }
-        case (let int64 as Int64, is Int.Type):
-            if let value = Int(int64) as? T {
-                return value
-            }
-        case (let int as Int, is Double.Type):
-            if let value = Double(int) as? T {
-                return value
-            }
-        case (let float as Float, is Double.Type):
-            if let value = Double(float) as? T {
-                return value
-            }
-        case (let double as Double, is Float.Type):
-            if let value = Float(double) as? T {
-                return value
-            }
-        case (let int as Int, is Float.Type):
-            if let value = Float(int) as? T {
-                return value
-            }
-        default:
-            break
         }
         
         throw DecodingError.typeMismatch(

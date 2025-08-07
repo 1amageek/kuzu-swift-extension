@@ -60,7 +60,7 @@ public final class GraphDatabase {
     /// Must be called before first context() access.
     public func register(models: [any _KuzuGraphModel.Type]) {
         guard !isInitialized else {
-            print("Warning: Models registered after database initialization will not be migrated automatically.")
+            // Models registered after initialization won't be migrated automatically
             return
         }
         registeredModels.append(contentsOf: models)
@@ -70,7 +70,7 @@ public final class GraphDatabase {
     /// Must be called before first context() access.
     public func configure(migrationPolicy: MigrationPolicy) {
         guard !isInitialized else {
-            print("Warning: Migration policy changed after database initialization has no effect.")
+            // Migration policy changes after initialization have no effect
             return
         }
         self.migrationPolicy = migrationPolicy
@@ -145,7 +145,7 @@ public final class GraphDatabase {
                     attributes: nil
                 )
             } catch {
-                print("Warning: Failed to create test directory at \(appDir): \(error)")
+                // Failed to create test directory - will use temp directory fallback
             }
             
             return appDir.appendingPathComponent("graph.kuzu").path
@@ -168,9 +168,7 @@ public final class GraphDatabase {
                 attributes: nil
             )
         } catch {
-            // エラーをログに記録（本番環境では適切なロギング機構を使用）
-            print("Warning: Failed to create directory at \(appDir): \(error)")
-            // 作成は失敗しても続行（既存ディレクトリの可能性もある）
+            // Failed to create directory - continue anyway (directory may already exist)
         }
         
         return appDir.appendingPathComponent("graph.kuzu").path
@@ -213,18 +211,6 @@ public final class GraphDatabase {
     }
     
     @objc private func applicationWillResignActive() {
-        Task { @MainActor in
-            try? await flush()
-        }
-    }
-    
-    /// Flush any pending operations to disk
-    public func flush() async throws {
-        // Kuzu automatically flushes on connection close, 
-        // but we can ensure data integrity by recreating the connection
-        if let _ = self.context {
-            // No explicit flush needed - Kuzu handles this internally
-            // This method exists for API completeness and future enhancements
-        }
+        // Kuzu automatically handles flushing, no action needed
     }
 }

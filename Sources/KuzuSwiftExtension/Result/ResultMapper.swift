@@ -4,6 +4,22 @@ import Kuzu
 /// Utility for mapping QueryResult to Swift types
 public struct ResultMapper {
     
+    // MARK: - Private Validation Helpers
+    
+    private static func validateColumnBounds(_ result: QueryResult, column: Int) throws {
+        let columnCount = Int(result.getColumnCount())
+        guard column < columnCount else {
+            throw ResultMappingError.columnIndexOutOfBounds(index: column, columnCount: columnCount)
+        }
+    }
+    
+    private static func getFieldName(_ result: QueryResult, column: Int) -> String? {
+        let columnNames = result.getColumnNames()
+        return column < columnNames.count ? columnNames[column] : nil
+    }
+    
+    // MARK: - Public Methods
+    
     /// Maps a single value from the first row
     public static func value<T>(_ result: QueryResult, at column: Int = 0) throws -> T {
         guard result.hasNext() else {
@@ -14,25 +30,20 @@ public struct ResultMapper {
             throw ResultMappingError.noResults
         }
         
-        // Check column bounds
-        let columnCount = Int(result.getColumnCount())
-        guard column < columnCount else {
-            throw ResultMappingError.columnIndexOutOfBounds(index: column, columnCount: columnCount)
-        }
+        try validateColumnBounds(result, column: column)
         
         let value = try flatTuple.getValue(UInt64(column))
         
         // Check for null values on non-optional types
         guard let value = value else {
-            let columnNames = result.getColumnNames()
-            let fieldName = column < columnNames.count ? columnNames[column] : "column_\(column)"
+            let fieldName = getFieldName(result, column: column) ?? "column_\(column)"
             throw ResultMappingError.nullValueForNonOptionalType(
                 field: fieldName,
                 type: String(describing: T.self)
             )
         }
         
-        return try cast(value, to: T.self, field: column < result.getColumnNames().count ? result.getColumnNames()[column] : nil)
+        return try cast(value, to: T.self, field: getFieldName(result, column: column))
     }
     
     /// Maps a single optional value from the first row
@@ -45,35 +56,24 @@ public struct ResultMapper {
             return nil
         }
         
-        // Check column bounds
-        let columnCount = Int(result.getColumnCount())
-        guard column < columnCount else {
-            throw ResultMappingError.columnIndexOutOfBounds(index: column, columnCount: columnCount)
-        }
+        try validateColumnBounds(result, column: column)
         
         let value = try flatTuple.getValue(UInt64(column))
         guard let value = value else {
             return nil
         }
         
-        let columnNames = result.getColumnNames()
-        let fieldName = column < columnNames.count ? columnNames[column] : nil
-        return try cast(value, to: T.self, field: fieldName)
+        return try cast(value, to: T.self, field: getFieldName(result, column: column))
     }
     
     /// Maps all values from a column as an array
     /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
     /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
     public static func column<T>(_ result: QueryResult, at column: Int = 0) throws -> [T] {
-        var values: [T] = []
-        let columnNames = result.getColumnNames()
-        let fieldName = column < columnNames.count ? columnNames[column] : nil
+        try validateColumnBounds(result, column: column)
         
-        // Check column bounds early
-        let columnCount = Int(result.getColumnCount())
-        guard column < columnCount else {
-            throw ResultMappingError.columnIndexOutOfBounds(index: column, columnCount: columnCount)
-        }
+        var values: [T] = []
+        let fieldName = getFieldName(result, column: column)
         
         while result.hasNext() {
             guard let flatTuple = try result.getNext() else {
@@ -123,63 +123,17 @@ public struct ResultMapper {
     // MARK: - Private Helpers
     
     private static func cast<T>(_ value: Any, to type: T.Type, field: String? = nil) throws -> T {
-        // Direct casting for most types
-        if let casted = value as? T {
-            return casted
-        }
-        
-        // Special handling for type conversions
-        switch (value, type) {
-        // Date conversions
-        case (let double as Double, is Date.Type):
-            return Date(timeIntervalSince1970: double) as! T
-        case (let int as Int, is Date.Type):
-            return Date(timeIntervalSince1970: Double(int)) as! T
-        case (let int64 as Int64, is Date.Type):
-            return Date(timeIntervalSince1970: Double(int64)) as! T
-        case (let string as String, is Date.Type):
-            // Try to parse ISO8601 date string
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: string) {
-                return date as! T
-            }
-            
-        // UUID conversions
-        case (let string as String, is UUID.Type):
-            if let uuid = UUID(uuidString: string) {
-                return uuid as! T
-            }
-            
-        // Numeric conversions
-        case (let int as Int, is Int64.Type):
-            return Int64(int) as! T
-        case (let int64 as Int64, is Int.Type):
-            return Int(int64) as! T
-        case (let int as Int, is Double.Type):
-            return Double(int) as! T
-        case (let float as Float, is Double.Type):
-            return Double(float) as! T
-        case (let double as Double, is Float.Type):
-            return Float(double) as! T
-        case (let int as Int, is Float.Type):
-            return Float(int) as! T
-        case (let int64 as Int64, is Float.Type):
-            return Float(int64) as! T
-            
-        // String conversions
-        case (_, is String.Type):
-            return String(describing: value) as! T
-            
         // NSNull handling
-        case (is NSNull, _):
+        if value is NSNull {
             throw ResultMappingError.nullValueForNonOptionalType(
                 field: field ?? "unknown",
                 type: String(describing: T.self)
             )
-            
-        default:
-            break
+        }
+        
+        // Use shared type conversion utility
+        if let converted = TypeConversion.convert(value, to: type) {
+            return converted
         }
         
         throw ResultMappingError.typeMismatch(
@@ -212,11 +166,6 @@ extension QueryResult {
             }
             
             if let value = try flatTuple.getValue(UInt64(columnIndex)) {
-                // Debug: Print value type
-                #if DEBUG
-                print("[DEBUG] decode - Value type: \(Swift.type(of: value)), Value: \(value)")
-                #endif
-                
                 // Check if value is a KuzuNode (graph node)
                 if let nodeValue = value as? Kuzu.KuzuNode {
                     // Extract properties dictionary from KuzuNode
