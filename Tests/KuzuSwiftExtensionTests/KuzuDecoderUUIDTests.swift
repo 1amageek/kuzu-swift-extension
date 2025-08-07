@@ -1,6 +1,9 @@
-import XCTest
+import Testing
 import Kuzu
 @testable import KuzuSwiftExtension
+import struct Foundation.UUID
+import struct Foundation.Date
+import class Foundation.ISO8601DateFormatter
 
 // Test model with UUID
 struct UUIDTestModel: Codable {
@@ -9,26 +12,23 @@ struct UUIDTestModel: Codable {
     let createdAt: Date
 }
 
-final class KuzuDecoderUUIDTests: XCTestCase {
-    var database: Database!
-    var connection: Connection!
+@Suite("KuzuDecoder UUID Tests")
+struct KuzuDecoderUUIDTests {
     
-    override func setUp() async throws {
-        try await super.setUp()
-        database = try Database(":memory:")
-        connection = try Connection(database)
+    func createDatabaseAndConnection() throws -> (Database, Connection) {
+        let database = try Database(":memory:")
+        let connection = try Connection(database)
         
         // Create test table
-        try connection.query("CREATE NODE TABLE test (id STRING, name STRING, createdAt TIMESTAMP, PRIMARY KEY(id))")
+        _ = try connection.query("CREATE NODE TABLE test (id STRING, name STRING, createdAt TIMESTAMP, PRIMARY KEY(id))")
+        
+        return (database, connection)
     }
     
-    override func tearDown() async throws {
-        connection = nil
-        database = nil
-        try await super.tearDown()
-    }
-    
-    func testDecodeUUID() throws {
+    @Test("Decode UUID")
+    func decodeUUID() throws {
+        let (database, connection) = try createDatabaseAndConnection()
+        
         // Prepare test data
         let testUUID = UUID()
         let testDate = Date()
@@ -51,18 +51,21 @@ final class KuzuDecoderUUIDTests: XCTestCase {
         // Use KuzuDecoder's decode method directly - it handles node extraction automatically
         let decoded = try decoder.decode(UUIDTestModel.self, from: result)
         
-        XCTAssertEqual(decoded.id.uuidString, testUUID.uuidString)
-        XCTAssertEqual(decoded.name, "Test Name")
+        #expect(decoded.id.uuidString == testUUID.uuidString)
+        #expect(decoded.name == "Test Name")
         // Allow small time difference due to conversion
-        XCTAssertEqual(decoded.createdAt.timeIntervalSince1970, testDate.timeIntervalSince1970, accuracy: 1.0)
+        #expect(abs(decoded.createdAt.timeIntervalSince1970 - testDate.timeIntervalSince1970) < 1.0)
     }
     
-    func testDecodeMultipleUUIDs() throws {
+    @Test("Decode multiple UUIDs")
+    func decodeMultipleUUIDs() throws {
+        let (_, connection) = try createDatabaseAndConnection()
+        
         // Insert multiple records
         let uuids = (0..<5).map { _ in UUID() }
         
         for (index, uuid) in uuids.enumerated() {
-            try connection.query("""
+            _ = try connection.query("""
                 CREATE (t:test {
                     id: '\(uuid.uuidString)',
                     name: 'Test \(index)',
@@ -78,12 +81,12 @@ final class KuzuDecoderUUIDTests: XCTestCase {
         // Use KuzuDecoder's decodeArray method directly - it handles node extraction automatically
         let decodedModels = try decoder.decodeArray(UUIDTestModel.self, from: result)
         
-        XCTAssertEqual(decodedModels.count, 5)
+        #expect(decodedModels.count == 5)
         
         // Verify all UUIDs were decoded correctly
         for (index, model) in decodedModels.enumerated() {
-            XCTAssertEqual(model.id, uuids[index])
-            XCTAssertEqual(model.name, "Test \(index)")
+            #expect(model.id == uuids[index])
+            #expect(model.name == "Test \(index)")
         }
     }
 }

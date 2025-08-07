@@ -1,6 +1,9 @@
-import XCTest
+import Testing
 import KuzuSwiftExtension
 @testable import KuzuSwiftExtension
+import struct Foundation.UUID
+import class Foundation.FileManager
+import class Foundation.Bundle
 
 // Test model for GraphDatabase tests
 @GraphNode
@@ -10,9 +13,10 @@ struct TestTodo {
     var completed: Bool = false
 }
 
-final class GraphDatabaseTests: XCTestCase {
+@Suite("Graph Database Tests")
+struct GraphDatabaseTests {
     
-    override func tearDown() async throws {
+    func cleanup() async throws {
         // Reset GraphDatabase state
         try? await GraphDatabase.shared.close()
         
@@ -34,28 +38,39 @@ final class GraphDatabaseTests: XCTestCase {
         
         // Also remove the entire directory to ensure complete cleanup
         try? FileManager.default.removeItem(at: appDir)
-        
-        try await super.tearDown()
     }
     
-    func testSharedInstance() async throws {
+    @Test("Shared instance singleton behavior")
+    func sharedInstance() async throws {
+        try await cleanup()
+        
         // Verify singleton behavior
         let instance1 = await GraphDatabase.shared
         let instance2 = await GraphDatabase.shared
-        XCTAssertTrue(instance1 === instance2)
+        #expect(instance1 === instance2)
+        
+        try await cleanup()
     }
     
-    func testAutoPathResolution() async throws {
+    @Test("Auto path resolution")
+    func autoPathResolution() async throws {
+        try await cleanup()
+        
         // Get context - should auto-resolve path
         let context = try await GraphDatabase.shared.context()
-        XCTAssertNotNil(context)
+        #expect(context != nil)
         
         // Get context again - should return cached instance
         let context2 = try await GraphDatabase.shared.context()
-        XCTAssertTrue(context === context2)
+        #expect(context === context2)
+        
+        try await cleanup()
     }
     
-    func testModelRegistration() async throws {
+    @Test("Model registration")
+    func modelRegistration() async throws {
+        try await cleanup()
+        
         // Register models
         await GraphDatabase.shared.register(models: [TestTodo.self])
         
@@ -65,10 +80,15 @@ final class GraphDatabaseTests: XCTestCase {
         // Verify we can use the model
         let todo = TestTodo(title: "Test registration")
         let saved = try await context.save(todo)
-        XCTAssertEqual(saved.title, "Test registration")
+        #expect(saved.title == "Test registration")
+        
+        try await cleanup()
     }
     
-    func testDefaultPathCreation() async throws {
+    @Test("Default path creation")
+    func defaultPathCreation() async throws {
+        try await cleanup()
+        
         // This test verifies that the default path is created correctly
         // The actual path will vary by platform
         
@@ -83,10 +103,15 @@ final class GraphDatabaseTests: XCTestCase {
         
         // Data should persist
         let todos = try await context.fetch(TestTodo.self)
-        XCTAssertEqual(todos.count, 1)
+        #expect(todos.count == 1)
+        
+        try await cleanup()
     }
     
-    func testCloseAndReopen() async throws {
+    @Test("Close and reopen database")
+    func closeAndReopen() async throws {
+        try await cleanup()
+        
         // Register model
         await GraphDatabase.shared.register(models: [TestTodo.self])
         
@@ -103,7 +128,9 @@ final class GraphDatabaseTests: XCTestCase {
         let todos = try await context2.fetch(TestTodo.self)
         
         // Should find the previously saved todo
-        XCTAssertEqual(todos.count, 1)
-        XCTAssertEqual(todos.first?.title, "Persistent todo")
+        #expect(todos.count == 1)
+        #expect(todos.first?.title == "Persistent todo")
+        
+        try await cleanup()
     }
 }

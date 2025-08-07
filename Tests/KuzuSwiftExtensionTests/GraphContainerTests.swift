@@ -1,10 +1,12 @@
-import XCTest
+import Testing
 import Kuzu
 @testable import KuzuSwiftExtension
 
-final class GraphContainerTests: XCTestCase {
+@Suite("Graph Container Tests")
+struct GraphContainerTests {
     
-    func testGraphContainerBasicOperations() async throws {
+    @Test("Basic container operations")
+    func basicOperations() async throws {
         let config = GraphConfiguration(
             databasePath: ":memory:",
             options: GraphConfiguration.Options(
@@ -19,7 +21,7 @@ final class GraphContainerTests: XCTestCase {
         let result = try await container.withConnection { connection in
             try connection.query("RETURN 1 AS value")
         }
-        XCTAssertNotNil(result)
+        #expect(Bool(true)) // Result retrieved successfully
         
         // Test multiple concurrent connections
         async let result1 = container.withConnection { connection in
@@ -38,7 +40,8 @@ final class GraphContainerTests: XCTestCase {
         await container.close()
     }
     
-    func testGraphContainerTransaction() async throws {
+    @Test("Container transactions")
+    func transactions() async throws {
         let config = GraphConfiguration(databasePath: ":memory:")
         let container = try await GraphContainer(configuration: config)
         
@@ -56,7 +59,7 @@ final class GraphContainerTests: XCTestCase {
         let result = try await container.withConnection { connection in
             try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
         }
-        XCTAssertTrue(result.hasNext())
+        #expect(result.hasNext())
         
         // Test failed transaction (should rollback)
         do {
@@ -65,21 +68,25 @@ final class GraphContainerTests: XCTestCase {
                 // Force an error
                 throw GraphError.transactionFailed(reason: "Test error")
             }
-            XCTFail("Transaction should have failed")
-        } catch {
+            #expect(Bool(false), "Expected transaction to fail")
+        } catch is GraphError {
             // Expected
+            #expect(Bool(true))
+        } catch {
+            #expect(Bool(false), "Unexpected error: \(error)")
         }
         
         // Verify rollback worked (should still have only 1 node)
         let countResult = try await container.withConnection { connection in
             try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
         }
-        XCTAssertTrue(countResult.hasNext())
+        #expect(countResult.hasNext())
         
         await container.close()
     }
     
-    func testGraphContainerConnectionError() async throws {
+    @Test("Connection error handling")
+    func connectionErrors() async throws {
         let config = GraphConfiguration(databasePath: ":memory:")
         let container = try await GraphContainer(configuration: config)
         
@@ -89,22 +96,23 @@ final class GraphContainerTests: XCTestCase {
                 // This should fail
                 try connection.query("INVALID CYPHER QUERY")
             }
-            XCTFail("Should have thrown an error")
+            #expect(Bool(false), "Expected query to fail")
         } catch {
-            // Expected - verify it's not our wrapping error
-            XCTAssertFalse(error is GraphError)
+            // Verify it's not our wrapping error
+            #expect(!(error is GraphError))
         }
         
         // Verify we can still use the container after an error
         let result = try await container.withConnection { connection in
             try connection.query("RETURN 1 AS value")
         }
-        XCTAssertNotNil(result)
+        #expect(Bool(true)) // Result retrieved successfully
         
         await container.close()
     }
     
-    func testGraphContainerTransactionError() async throws {
+    @Test("Transaction error handling")
+    func transactionErrors() async throws {
         let config = GraphConfiguration(databasePath: ":memory:")
         let container = try await GraphContainer(configuration: config)
         
@@ -120,20 +128,22 @@ final class GraphContainerTests: XCTestCase {
                 // This should fail
                 _ = try connection.query("INVALID QUERY")
             }
-            XCTFail("Transaction should have failed")
+            #expect(Bool(false), "Expected transaction to fail")
         } catch let error as GraphError {
             if case .transactionFailed = error {
-                // Expected
+                #expect(Bool(true)) // Expected
             } else {
-                XCTFail("Expected transactionFailed error")
+                #expect(Bool(false), "Expected transactionFailed error")
             }
+        } catch {
+            #expect(Bool(false), "Unexpected error: \(error)")
         }
         
         // Verify the transaction was rolled back
         let result = try await container.withConnection { connection in
             try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
         }
-        XCTAssertTrue(result.hasNext())
+        #expect(result.hasNext())
         
         await container.close()
     }

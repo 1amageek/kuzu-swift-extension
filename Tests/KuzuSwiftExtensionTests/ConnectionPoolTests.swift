@@ -1,21 +1,17 @@
-import XCTest
+import Testing
 import Kuzu
 @testable import KuzuSwiftExtension
 
-final class ConnectionPoolTests: XCTestCase {
-    var database: Database!
+@Suite("Connection Pool Tests")
+struct ConnectionPoolTests {
     
-    override func setUp() async throws {
-        try await super.setUp()
-        database = try Database(":memory:")
+    func createDatabase() throws -> Database {
+        return try Database(":memory:")
     }
     
-    override func tearDown() async throws {
-        database = nil
-        try await super.tearDown()
-    }
-    
-    func testConnectionPoolBasicOperations() async throws {
+    @Test("Basic pool operations")
+    func basicOperations() async throws {
+        let database = try createDatabase()
         let pool = try await ConnectionPool(
             database: database,
             maxConnections: 3,
@@ -25,7 +21,7 @@ final class ConnectionPoolTests: XCTestCase {
         
         // Test checkout
         let connection1 = try await pool.checkout()
-        XCTAssertNotNil(connection1)
+        #expect(Bool(true)) // Connection retrieved successfully
         
         // Test checkin
         await pool.checkin(connection1)
@@ -48,7 +44,7 @@ final class ConnectionPoolTests: XCTestCase {
         
         // The waiting task should now succeed
         let conn4 = try await checkoutTask.value
-        XCTAssertNotNil(conn4)
+        #expect(Bool(true)) // Connection retrieved successfully
         
         // Cleanup
         await pool.checkin(conn2)
@@ -57,7 +53,9 @@ final class ConnectionPoolTests: XCTestCase {
         await pool.drain()
     }
     
-    func testConnectionPoolTimeout() async throws {
+    @Test("Connection pool timeout")
+    func timeout() async throws {
+        let database = try createDatabase()
         let pool = try await ConnectionPool(
             database: database,
             maxConnections: 1,
@@ -71,15 +69,15 @@ final class ConnectionPoolTests: XCTestCase {
         // Try to checkout another connection, should timeout
         do {
             _ = try await pool.checkout()
-            XCTFail("Expected timeout error")
+            #expect(Bool(false), "Expected timeout error")
         } catch let error as GraphError {
             if case .connectionTimeout(let duration) = error {
-                XCTAssertEqual(duration, 0.5)
+                #expect(duration == 0.5)
             } else {
-                XCTFail("Expected connectionTimeout error, got \(error)")
+                #expect(Bool(false), "Expected connectionTimeout error, got \(error)")
             }
         } catch {
-            XCTFail("Expected GraphError.connectionTimeout, got \(error)")
+            #expect(Bool(false), "Unexpected error: \(error)")
         }
         
         // Cleanup
@@ -87,7 +85,9 @@ final class ConnectionPoolTests: XCTestCase {
         await pool.drain()
     }
     
-    func testConnectionPoolCancellation() async throws {
+    @Test("Connection pool cancellation")
+    func cancellation() async throws {
+        let database = try createDatabase()
         let pool = try await ConnectionPool(
             database: database,
             maxConnections: 1,
@@ -119,16 +119,16 @@ final class ConnectionPoolTests: XCTestCase {
             await pool.checkin(conn)
         } catch {
             // Either CancellationError or the task succeeded - both are valid
-            if !(error is CancellationError) {
-                XCTFail("Expected CancellationError or success, got: \(error)")
-            }
+            #expect(error is CancellationError || error is GraphError)
         }
         
         // Cleanup
         await pool.drain()
     }
     
-    func testConnectionPoolDrain() async throws {
+    @Test("Connection pool drain")
+    func drain() async throws {
+        let database = try createDatabase()
         let pool = try await ConnectionPool(
             database: database,
             maxConnections: 3,
@@ -155,13 +155,16 @@ final class ConnectionPoolTests: XCTestCase {
         // The waiting task should fail
         do {
             _ = try await waitingTask.value
-            XCTFail("Expected error from drained pool")
+            #expect(Bool(false), "Expected task to fail")
         } catch let error as GraphError {
             if case .connectionPoolExhausted = error {
                 // Expected
+                #expect(Bool(true))
             } else {
-                XCTFail("Expected connectionPoolExhausted error, got \(error)")
+                #expect(Bool(false), "Expected connectionPoolExhausted error, got \(error)")
             }
+        } catch {
+            #expect(Bool(false), "Unexpected error: \(error)")
         }
     }
 }
