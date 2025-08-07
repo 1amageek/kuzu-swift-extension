@@ -252,7 +252,10 @@ public struct MigrationManager {
         
         // Execute all statements in a transaction
         if !statements.isEmpty {
-            _ = try await context.rawTransaction(statements.joined(separator: "; "), bindings: [:])
+            let statementsToExecute = statements.joined(separator: "; ")
+            _ = try await context.withTransaction { txCtx in
+                return try txCtx.raw(statementsToExecute)
+            }
         }
     }
 }

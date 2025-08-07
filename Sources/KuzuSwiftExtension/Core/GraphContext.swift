@@ -29,16 +29,10 @@ public actor GraphContext {
         }
     }
     
+    // Deprecated: Use withTransaction instead
     public func rawTransaction(_ query: String, bindings: [String: any Sendable] = [:]) async throws -> QueryResult {
-        return try await container.withTransaction { connection in
-            if bindings.isEmpty {
-                return try connection.query(query)
-            } else {
-                let statement = try connection.prepare(query)
-                // Convert values to Kuzu-compatible types using KuzuEncoder
-                let kuzuParams = try encoder.encodeParameters(bindings)
-                return try connection.execute(statement, kuzuParams)
-            }
+        return try await withTransaction { txCtx in
+            return try txCtx.raw(query, bindings: bindings)
         }
     }
     
@@ -115,40 +109,8 @@ public actor GraphContext {
         return try await raw(cypher.query, bindings: cypher.parameters)
     }
     
-    /// Executes a query in a transaction and returns a single value
-    public func transactionValue<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> T {
-        let query = builder()
-        let cypher = try CypherCompiler.compile(query)
-        let result = try await rawTransaction(cypher.query, bindings: cypher.parameters)
-        
-        return try ResultMapper.value(result, at: column)
-    }
-    
-    /// Executes a query in a transaction and returns an array of values
-    public func transactionArray<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> [T] {
-        let query = builder()
-        let cypher = try CypherCompiler.compile(query)
-        let result = try await rawTransaction(cypher.query, bindings: cypher.parameters)
-        
-        return try ResultMapper.column(result, at: column)
-    }
-    
-    /// Executes a query in a transaction and decodes the result
-    public func transaction<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> Query) async throws -> T {
-        let query = builder()
-        let cypher = try CypherCompiler.compile(query)
-        let result = try await rawTransaction(cypher.query, bindings: cypher.parameters)
-        
-        return try result.decode(type)
-    }
-    
-    /// Executes a query in a transaction and returns the raw QueryResult
-    public func transaction(@QueryBuilder _ builder: () -> Query) async throws -> QueryResult {
-        let query = builder()
-        let cypher = try CypherCompiler.compile(query)
-        
-        return try await rawTransaction(cypher.query, bindings: cypher.parameters)
-    }
+    // MARK: - Transaction Support
+    // Use withTransaction for proper transaction semantics with TransactionalGraphContext
     
     // MARK: - Schema Operations
     

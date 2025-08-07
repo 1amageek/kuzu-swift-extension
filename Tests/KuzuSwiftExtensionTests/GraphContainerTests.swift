@@ -40,8 +40,10 @@ struct GraphContainerTests {
         await container.close()
     }
     
-    @Test("Container transactions")
+    @Test("Container transactions (internal API)")
     func transactions() async throws {
+        // Note: Testing internal transaction API directly for low-level functionality
+        // Public users should use GraphContext.withTransaction instead
         let config = GraphConfiguration(databasePath: ":memory:")
         let container = try await GraphContainer(configuration: config)
         

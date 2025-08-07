@@ -188,19 +188,7 @@ public extension GraphContext {
 // MARK: - Batch Operations
 public extension GraphContext {
     
-    /// Perform multiple operations in a transaction
-    /// 
-    /// This method creates a new TransactionalGraphContext that shares a single database connection
-    /// for all operations, ensuring proper ACID transaction semantics.
-    /// 
-    /// - Parameter operations: A closure containing operations to perform within the transaction.
-    ///                        The closure receives a TransactionalGraphContext that must be used
-    ///                        for all database operations to ensure they're part of the transaction.
-    /// - Returns: The result of the operations
-    /// - Throws: Any error thrown by the operations. The transaction is automatically rolled back on error.
-    func transaction<T: Sendable>(_ operations: @escaping @Sendable (TransactionalGraphContext) throws -> T) async throws -> T {
-        return try await withTransaction(operations)
-    }
+    // Transaction support is provided via withTransaction method inherited from GraphContext
     
     /// Batch insert with better performance
     func batchInsert<T: GraphNodeModel>(_ models: [T]) async throws {

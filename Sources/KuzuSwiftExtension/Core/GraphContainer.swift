@@ -68,7 +68,8 @@ public actor GraphContainer {
         }
     }
     
-    public func withTransaction<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
+    // Internal transaction support - use GraphContext.withTransaction for public API
+    internal func withTransaction<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
         let connection = try await connectionPool.checkout()
         
         do {

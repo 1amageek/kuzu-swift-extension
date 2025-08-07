@@ -313,7 +313,7 @@ struct GraphModelTests {
         
         // Transaction that should fail
         do {
-            try await context.transaction { txCtx in
+            try await context.withTransaction { txCtx in
                 let user1 = ModelTestUser(name: "TxUser1", age: 25)
                 _ = try txCtx.save(user1)  // No await - synchronous
                 
@@ -342,7 +342,7 @@ struct GraphModelTests {
         let context = try await createContext()
         
         // Transaction that should succeed
-        try await context.transaction { txCtx in
+        try await context.withTransaction { txCtx in
             let user1 = ModelTestUser(name: "TxUser1", age: 25)
             let user2 = ModelTestUser(name: "TxUser2", age: 30)
             
