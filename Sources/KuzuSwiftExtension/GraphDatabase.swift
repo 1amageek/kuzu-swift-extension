@@ -107,9 +107,9 @@ public final class GraphDatabase {
     private func close() async throws {
         if let context = self.context {
             await context.close()
+            self.context = nil
+            self.isInitialized = false
         }
-        // Do NOT reset context or isInitialized
-        // This prevents accidental re-initialization
     }
     
     // MARK: - Private Helpers

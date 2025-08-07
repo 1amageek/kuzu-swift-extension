@@ -74,8 +74,10 @@ public struct ResultMapper {
         
         var values: [T] = []
         let fieldName = getFieldName(result, column: column)
+        var hasConsumedResults = false
         
         while result.hasNext() {
+            hasConsumedResults = true
             guard let flatTuple = try result.getNext() else {
                 break
             }
@@ -84,6 +86,13 @@ public struct ResultMapper {
             if let value = value {
                 values.append(try cast(value, to: T.self, field: fieldName))
             }
+        }
+        
+        // Warn if QueryResult appears to be already consumed
+        if values.isEmpty && !hasConsumedResults {
+            #if DEBUG
+            print("Warning: QueryResult may have been already consumed. QueryResult can only be iterated once.")
+            #endif
         }
         
         return values
@@ -118,6 +127,19 @@ public struct ResultMapper {
         }
         
         return rows
+    }
+    
+    /// Gets the next row from a QueryResult
+    public static func nextRow(_ result: QueryResult) throws -> [String: Any] {
+        guard result.hasNext() else {
+            throw ResultMappingError.noResults
+        }
+        
+        guard let flatTuple = try result.getNext() else {
+            throw ResultMappingError.noResults
+        }
+        
+        return try flatTuple.getAsDictionary().compactMapValues { $0 }
     }
     
     // MARK: - Private Helpers

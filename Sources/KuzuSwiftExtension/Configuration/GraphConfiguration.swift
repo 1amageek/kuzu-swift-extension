@@ -5,17 +5,23 @@ public struct GraphConfiguration: Sendable {
     public let options: Options
     public let encodingConfiguration: KuzuEncoder.Configuration
     public let decodingConfiguration: KuzuDecoder.Configuration
+    public let statementCacheSize: Int
+    public let statementCacheTTL: TimeInterval
     
     public init(
         databasePath: String = ":memory:",
         options: Options = Options(),
         encodingConfiguration: KuzuEncoder.Configuration = KuzuEncoder.Configuration(),
-        decodingConfiguration: KuzuDecoder.Configuration = KuzuDecoder.Configuration()
+        decodingConfiguration: KuzuDecoder.Configuration = KuzuDecoder.Configuration(),
+        statementCacheSize: Int = 100,
+        statementCacheTTL: TimeInterval = 3600
     ) {
         self.databasePath = databasePath
         self.options = options
         self.encodingConfiguration = encodingConfiguration
         self.decodingConfiguration = decodingConfiguration
+        self.statementCacheSize = statementCacheSize
+        self.statementCacheTTL = statementCacheTTL
     }
     
     public struct Options: Sendable {
@@ -25,6 +31,8 @@ public struct GraphConfiguration: Sendable {
         public let extensions: Set<KuzuExtension>
         public let migrationPolicy: MigrationPolicy
         public let enableLogging: Bool
+        public let maxNumThreadsPerQuery: Int?
+        public let queryTimeout: TimeInterval?
         
         public init(
             maxConnections: Int = 10,
@@ -32,7 +40,9 @@ public struct GraphConfiguration: Sendable {
             connectionTimeout: TimeInterval = 30,
             extensions: Set<KuzuExtension> = [],
             migrationPolicy: MigrationPolicy = .safeOnly,
-            enableLogging: Bool = false
+            enableLogging: Bool = false,
+            maxNumThreadsPerQuery: Int? = nil,
+            queryTimeout: TimeInterval? = nil
         ) {
             self.maxConnections = maxConnections
             self.minConnections = minConnections
@@ -40,6 +50,8 @@ public struct GraphConfiguration: Sendable {
             self.extensions = extensions
             self.migrationPolicy = migrationPolicy
             self.enableLogging = enableLogging
+            self.maxNumThreadsPerQuery = maxNumThreadsPerQuery
+            self.queryTimeout = queryTimeout
         }
     }
     

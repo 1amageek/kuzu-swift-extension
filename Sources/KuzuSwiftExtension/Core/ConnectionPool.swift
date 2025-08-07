@@ -18,14 +18,26 @@ import Kuzu
 // References:
 // - Kuzu Documentation: https://docs.kuzudb.com/
 // - Issue tracking: https://github.com/kuzudb/kuzu/issues
-extension Connection: @unchecked Sendable {}
-extension Database: @unchecked Sendable {}
+extension Connection: @unchecked Sendable {
+    #if DEBUG
+    // In debug builds, we could add runtime checks if needed
+    // Example: Track thread IDs to detect cross-thread usage
+    #endif
+}
+
+extension Database: @unchecked Sendable {
+    #if DEBUG
+    // In debug builds, we could add runtime checks if needed
+    // Example: Assert that database operations happen on expected threads
+    #endif
+}
 
 actor ConnectionPool {
     private let database: Database
     private let maxConnections: Int
     private let minConnections: Int
     private let timeout: TimeInterval
+    private let connectionConfig: ConnectionConfiguration
     private let clock = ContinuousClock()
     
     private var availableConnections: [Connection] = []
@@ -33,9 +45,15 @@ actor ConnectionPool {
     private var waitingTasks: [WaitingTask] = []
     
     private struct WaitingTask {
-        let id = UUID()
+        let id: UUID
         let continuation: CheckedContinuation<Connection, Error>
         let timeoutTask: Task<Void, Never>
+        
+        init(id: UUID, continuation: CheckedContinuation<Connection, Error>, timeoutTask: Task<Void, Never>) {
+            self.id = id
+            self.continuation = continuation
+            self.timeoutTask = timeoutTask
+        }
         
         func cancel() {
             timeoutTask.cancel()
@@ -46,15 +64,18 @@ actor ConnectionPool {
         database: Database,
         maxConnections: Int,
         minConnections: Int,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        connectionConfig: ConnectionConfiguration = ConnectionConfiguration()
     ) async throws {
         self.database = database
         self.maxConnections = maxConnections
         self.minConnections = minConnections
         self.timeout = timeout
+        self.connectionConfig = connectionConfig
         
         for _ in 0..<minConnections {
             let connection = try Connection(database)
+            connection.configure(with: connectionConfig)
             availableConnections.append(connection)
         }
     }
@@ -67,18 +88,17 @@ actor ConnectionPool {
         
         if activeConnections.count + availableConnections.count < maxConnections {
             let connection = try Connection(database)
+            connection.configure(with: connectionConfig)
             activeConnections.insert(ObjectIdentifier(connection))
             return connection
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            // Create a mutable variable to store the task
-            var waitingTask: WaitingTask!
-            
+            let taskId = UUID()
             let timeoutTask = Task {
                 do {
                     try await clock.sleep(for: .seconds(timeout))
-                    await handleTimeout(for: waitingTask.id)
+                    await handleTimeout(for: taskId)
                 } catch is CancellationError {
                     // Task was cancelled - this is expected when connection becomes available
                     // before timeout. The continuation will be resumed by checkin().
@@ -89,7 +109,8 @@ actor ConnectionPool {
                 }
             }
             
-            waitingTask = WaitingTask(
+            let waitingTask = WaitingTask(
+                id: taskId,
                 continuation: continuation,
                 timeoutTask: timeoutTask
             )

@@ -12,11 +12,17 @@ public actor GraphContainer {
         
         self.database = try Database(configuration.databasePath)
         
+        let connectionConfig = ConnectionConfiguration(
+            maxNumThreadsPerQuery: configuration.options.maxNumThreadsPerQuery,
+            queryTimeout: configuration.options.queryTimeout
+        )
+        
         self.connectionPool = try await ConnectionPool(
             database: database,
             maxConnections: configuration.options.maxConnections,
             minConnections: configuration.options.minConnections,
-            timeout: configuration.options.connectionTimeout
+            timeout: configuration.options.connectionTimeout,
+            connectionConfig: connectionConfig
         )
         
         try await initialize()
@@ -58,13 +64,19 @@ public actor GraphContainer {
     public func withConnection<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
         let connection = try await connectionPool.checkout()
         
-        do {
-            let result = try block(connection)
-            await connectionPool.checkin(connection)
-            return result
-        } catch {
-            await connectionPool.checkin(connection)
-            throw error
+        return try await withTaskCancellationHandler {
+            do {
+                let result = try block(connection)
+                await connectionPool.checkin(connection)
+                return result
+            } catch {
+                await connectionPool.checkin(connection)
+                throw error
+            }
+        } onCancel: {
+            Task {
+                await connectionPool.checkin(connection)
+            }
         }
     }
     
@@ -81,7 +93,12 @@ public actor GraphContainer {
                 await connectionPool.checkin(connection)
                 return result
             } catch {
-                _ = try? connection.query("ROLLBACK")
+                do {
+                    _ = try connection.query("ROLLBACK")
+                } catch let rollbackError {
+                    // Log rollback error but throw original error
+                    print("Warning: Failed to rollback transaction: \(rollbackError)")
+                }
                 await connectionPool.checkin(connection)
                 throw GraphError.transactionFailed(reason: error.localizedDescription)
             }

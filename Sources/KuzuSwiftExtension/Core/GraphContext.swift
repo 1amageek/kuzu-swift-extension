@@ -6,12 +6,17 @@ public actor GraphContext {
     let configuration: GraphConfiguration  // Made internal for TransactionalGraphContext
     private let encoder: KuzuEncoder
     private let decoder: KuzuDecoder
+    private let statementCache: PreparedStatementCache
     
     public init(configuration: GraphConfiguration = GraphConfiguration()) async throws {
         self.configuration = configuration
         self.container = try await GraphContainer(configuration: configuration)
         self.encoder = KuzuEncoder(configuration: configuration.encodingConfiguration)
         self.decoder = KuzuDecoder(configuration: configuration.decodingConfiguration)
+        self.statementCache = PreparedStatementCache(
+            maxSize: configuration.statementCacheSize,
+            ttl: configuration.statementCacheTTL
+        )
     }
     
     // MARK: - Raw Query Execution

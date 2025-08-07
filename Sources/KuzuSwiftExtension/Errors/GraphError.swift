@@ -12,6 +12,7 @@ public enum GraphError: LocalizedError {
     case resourceCleanupFailed(reason: String)
     case contextNotAvailable(reason: String)
     case wrapped(underlyingError: Error)
+    case kuzuError(error: Error, query: String?)
     case missingIdentifier
     case invalidOperation(message: String)
     
@@ -39,6 +40,9 @@ public enum GraphError: LocalizedError {
             return "Database context not available: \(reason)"
         case .wrapped(let underlyingError):
             return "Error: \(underlyingError.localizedDescription)"
+        case .kuzuError(let error, let query):
+            let queryInfo = query.map { " (Query: \($0))" } ?? ""
+            return "Kuzu database error: \(error.localizedDescription)\(queryInfo)"
         case .missingIdentifier:
             return "Node model is missing an identifier (id property)"
         case .invalidOperation(let message):
@@ -70,6 +74,8 @@ public enum GraphError: LocalizedError {
             return "Restart the application or create a new test context"
         case .wrapped:
             return "Check the underlying error for more details"
+        case .kuzuError:
+            return "Review the query syntax and ensure the database schema is correct"
         case .missingIdentifier:
             return "Ensure the model has an @ID property"
         case .invalidOperation:
@@ -81,6 +87,8 @@ public enum GraphError: LocalizedError {
         switch self {
         case .wrapped(let underlyingError):
             return (underlyingError as? LocalizedError)?.failureReason
+        case .kuzuError(let error, _):
+            return (error as? LocalizedError)?.failureReason ?? error.localizedDescription
         default:
             return nil
         }

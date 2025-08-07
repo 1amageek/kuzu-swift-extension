@@ -477,25 +477,25 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer, 
     let configuration: KuzuEncoder.Configuration
     var codingPath: [CodingKey]
     var storage: (any Sendable)?
-    weak var encoder: _KuzuEncoder?
+    unowned let encoder: _KuzuEncoder
     
     mutating func encodeNil() throws {
         storage = NSNull()
-        encoder?.container = storage
+        encoder.container = storage
     }
     
     mutating func encode<T>(_ value: T) throws where T: Encodable {
         // Handle Date with strategy
         if let date = value as? Date {
             storage = try encodeDate(date)
-            encoder?.container = storage
+            encoder.container = storage
             return
         }
         
         // Handle Data with strategy
         if let data = value as? Data {
             storage = try encodeData(data)
-            encoder?.container = storage
+            encoder.container = storage
             return
         }
         
@@ -503,10 +503,10 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer, 
         switch value {
         case let string as String:
             storage = string
-            encoder?.container = storage
+            encoder.container = storage
         case let int as Int:
             storage = int
-            encoder?.container = storage
+            encoder.container = storage
         case let int8 as Int8:
             storage = int8
         case let int16 as Int16:
@@ -531,10 +531,10 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer, 
             storage = double
         case let bool as Bool:
             storage = bool
-            encoder?.container = storage
+            encoder.container = storage
         case let uuid as UUID:
             storage = uuid.uuidString
-            encoder?.container = storage
+            encoder.container = storage
         case let url as URL:
             storage = url.absoluteString
         default:
@@ -544,7 +544,7 @@ private struct _KuzuSingleValueEncodingContainer: SingleValueEncodingContainer, 
             try value.encode(to: encoder)
             storage = encoder.container
         }
-        self.encoder?.container = storage
+        self.encoder.container = storage
     }
     
 }
