@@ -29,13 +29,6 @@ public actor GraphContext {
         }
     }
     
-    // Deprecated: Use withTransaction instead
-    public func rawTransaction(_ query: String, bindings: [String: any Sendable] = [:]) async throws -> QueryResult {
-        return try await withTransaction { txCtx in
-            return try txCtx.raw(query, bindings: bindings)
-        }
-    }
-    
     // MARK: - Query DSL
     
     /// Executes a query and returns a single value

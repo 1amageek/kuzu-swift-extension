@@ -188,8 +188,6 @@ public extension GraphContext {
 // MARK: - Batch Operations
 public extension GraphContext {
     
-    // Transaction support is provided via withTransaction method inherited from GraphContext
-    
     /// Batch insert with better performance
     func batchInsert<T: GraphNodeModel>(_ models: [T]) async throws {
         guard !models.isEmpty else { return }

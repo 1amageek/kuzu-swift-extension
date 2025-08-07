@@ -8,13 +8,13 @@ This is a Swift extension library for [kuzu-swift](https://github.com/kuzudb/kuz
 
 ## Architecture Overview
 
-The library is structured in layers:
+The library follows a clean 5-layer architecture:
 
 1. **Model Declaration Layer (Macros)** - `@GraphNode`, `@GraphEdge` annotations that generate schema definitions
 2. **Schema Generation & Migration Layer** - Automatic DDL generation and migration from Swift models
 3. **Persistence Layer** - `GraphConfiguration`, `GraphContainer`, `GraphContext` for managing connections
-4. **Query System** - Type-safe DSL that compiles to Cypher queries
-5. **Graph Extensions** - Path traversal, shortest path algorithms, etc.
+4. **Query System Layer** - Type-safe DSL that compiles to Cypher queries with parameter binding
+5. **Result Processing Layer** - `KuzuEncoder`/`KuzuDecoder`, `ResultMapper` for type conversions
 
 ## Key Components
 
@@ -26,12 +26,23 @@ The library is structured in layers:
 ### Query DSL
 - `GraphContext.query { }` accepts a `@QueryBuilder` closure
 - Compiles Swift expressions to Cypher queries with parameter binding
-- Supports `Create`, `Match`, `Set`, `Delete`, `Return` clauses
-- Type-safe predicates using KeyPaths
+- Supports `Create`, `Match`, `Set`, `Delete`, `Return`, `Where` clauses
+- Type-safe predicates using KeyPaths with `PropertyPath<Model>`
+- Comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- String operators: `contains`, `startsWith`, `endsWith`
+- Logical operators: `&&`, `||`, `!`
 
-### Raw Query Support
+### Query Support
+
+#### Raw Queries
 - `GraphContext.raw(_:bindings:)` for direct Cypher execution
-- Parameter binding via dictionary of `Encodable` values
+- Parameter binding via dictionary of `Sendable` values
+
+#### Transaction Support
+- `GraphContext.withTransaction { txCtx in }` for ACID transactions
+- `TransactionalGraphContext` provides synchronous operations within transactions
+- Automatic rollback on errors
+- Single connection per transaction for consistency
 
 ## Commands
 
@@ -104,13 +115,16 @@ The kuzu-swift dependency contains a large C++ codebase that takes significant t
 
 ### Concurrency Model
 - `GraphContext` is an actor for thread-safe operations
-- Multiple `Connection` instances can be managed per `GraphContainer`
-- Transactions are serialized on the actor's executor
+- `GraphContainer` is an actor managing connection pooling
+- `ConnectionPool` handles connection lifecycle with timeout support
+- `TransactionalGraphContext` is a value type (struct) for transaction operations
+- All types conform to `Sendable` for Swift concurrency
 
 ### Error Handling
 - All public APIs throw errors
-- Error types: `GraphError`, `QueryError`
-- Errors conform to `LocalizedError`
+- Primary error type: `GraphError` with 16 distinct cases
+- Errors conform to `LocalizedError` with recovery suggestions
+- Common errors: `connectionTimeout`, `transactionFailed`, `invalidConfiguration`
 
 ## Testing Strategy
 
@@ -184,6 +198,27 @@ Similar conversions as KuzuDecoder, particularly important for:
 4. **Numeric Type Conversions**
    - Issue: Type mismatches between Swift numeric types and Kuzu
    - Solution: Both KuzuDecoder and ResultMapper support bidirectional conversions
+
+5. **Reserved Keywords in Cypher**
+   - Error: `Parser exception: mismatched input 'exists'`
+   - Solution: Avoid reserved keywords like `exists` as aliases, use `result` instead
+
+6. **Transaction Rollback**
+   - Issue: Each operation using different connection
+   - Solution: Use `GraphContext.withTransaction` for proper transaction scope
+
+## Recent API Changes
+
+### Transaction API Consolidation (Latest)
+- **Removed**: `rawTransaction`, `transactionValue`, `transactionArray`, `transaction` (QueryBuilder overloads)
+- **Unified API**: Use `GraphContext.withTransaction { txCtx in }` for all transaction needs
+- **Internal**: `GraphContainer.withTransaction` is now internal (use GraphContext API)
+
+### TransactionalGraphContext Design
+- Changed from `actor` to `struct` for value semantics
+- Synchronous operations (no `async`) to match Kuzu's synchronous Connection API
+- Single connection per transaction for ACID guarantees
+- Proper parameter encoding with `KuzuEncoder`
 
 ### Code Quality Tools
 
