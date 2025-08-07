@@ -6,7 +6,7 @@ public struct PropertyPath<Model: _KuzuGraphModel> {
     let alias: String
     let propertyName: String
     
-    init(keyPath: PartialKeyPath<Model>, alias: String) {
+    public init(keyPath: PartialKeyPath<Model>, alias: String) {
         self.keyPath = keyPath
         self.alias = alias
         // Extract property name from keyPath
@@ -32,6 +32,11 @@ public struct PropertyPath<Model: _KuzuGraphModel> {
     /// Converts to PropertyReference for use in predicates
     var propertyReference: PropertyReference {
         PropertyReference(alias: alias, property: propertyName)
+    }
+    
+    /// Creates a Cypher property reference string
+    var cypherString: String {
+        "\(alias).\(propertyName)"
     }
 }
 
@@ -176,6 +181,14 @@ extension Match {
 
 /// Helper function to create property paths with cleaner syntax
 public func prop<T: _KuzuGraphModel, V>(
+    _ keyPath: KeyPath<T, V>,
+    on alias: String
+) -> PropertyPath<T> {
+    PropertyPath(keyPath: keyPath, alias: alias)
+}
+
+/// Alias for prop - creates a type-safe property path from a KeyPath
+public func path<T: _KuzuGraphModel, V>(
     _ keyPath: KeyPath<T, V>,
     on alias: String
 ) -> PropertyPath<T> {

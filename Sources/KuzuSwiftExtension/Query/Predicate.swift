@@ -47,6 +47,8 @@ public indirect enum PredicateNode {
     case startsWith(PropertyReference, value: String)
     case endsWith(PropertyReference, value: String)
     case regex(PropertyReference, pattern: String)
+    case exists(Exists)
+    case literal(Bool)
     
     public func toCypher() throws -> CypherFragment {
         switch self {
@@ -116,6 +118,12 @@ public indirect enum PredicateNode {
                 query: "\(prop.cypher) =~ $\(paramName)",
                 parameters: [paramName: pattern]
             )
+            
+        case .exists(let exists):
+            return try exists.toCypher()
+            
+        case .literal(let value):
+            return CypherFragment(query: value ? "true" : "false")
         }
     }
 }
@@ -175,6 +183,11 @@ public struct PropertyReference {
     public init(alias: String, property: String) {
         self.alias = alias
         self.property = property
+    }
+    
+    /// Returns the Cypher representation of this property reference
+    public func toCypher() -> String {
+        return cypher
     }
 }
 

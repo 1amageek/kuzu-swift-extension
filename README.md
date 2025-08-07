@@ -96,9 +96,9 @@ let adults = try await graph.query {
 }
 ```
 
-## Declarative Query DSL - The Heart of This Library
+## Declarative Query DSL
 
-The Query DSL brings Swift's type safety and expressiveness to graph databases. No more string concatenation or runtime errors!
+The Query DSL brings Swift's type safety and expressiveness to graph databases with a comprehensive set of features:
 
 ### Basic Queries
 
@@ -217,57 +217,210 @@ let followerCount = try await graph.queryValue(Int.self) {
     Return.count("follower")
 }
 
-// Group and aggregate
+// Advanced aggregations with type safety
 let stats = try await graph.query {
     Match.node(User.self, alias: "u")
-    Match.edge(Post.self)
+    Match.edge(Post.self, alias: "p")
         .from("u")
-        .to(Post.self, alias: "p")
-    Return.items(
-        .alias("u"),
-        .count("p", as: "postCount"),
-        .avg(path(\.likes, on: "p"), as: "avgLikes")
-    )
-    .groupBy("u")
-    .orderBy("postCount", .descending)
+        .to(Post.self)
+    Return.aggregates(
+        (.count("p"), "postCount"),
+        (.avg(path(\.likes, on: "p")), "avgLikes"),
+        (.max(path(\.createdAt, on: "p")), "lastPost")
+    ).groupBy(path(\.name, on: "u"))
+     .orderBy("postCount", .descending)
 }
 ```
 
-### Advanced: Path Queries
+### Advanced Features
 
+#### Edge Properties with Type Safety
 ```swift
-// Shortest path between users
-let path = try await graph.query {
-    Match.shortestPath(
-        from: (User.self, "start"),
-        to: (User.self, "end"),
-        via: Follows.self,
-        maxHops: 6
-    )
-    Where.path(\.id, on: "start") == startId
-    Where.path(\.id, on: "end") == endId
-    Return.path("path")
-}
-
-// Recommendation engine - users within 3 hops
-let recommendations = try await graph.query {
-    Match.node(User.self, alias: "me")
-        .where(path(\.id, on: "me") == myId)
-    Match.path(
-        from: "me",
-        to: (User.self, "recommended"),
-        via: Follows.self,
-        hops: 2...3
-    )
-    Where.not(exists: Follows.self, from: "me", to: "recommended")
-    Return.distinct("recommended")
-        .limit(10)
+// Query edge properties
+let recentFollows = try await graph.query {
+    Match.edge(Follows.self, alias: "f")
+        .from("a")
+        .to("b")
+    Where(edge(\.since, on: "f") > oneWeekAgo)
+    Return.property(edge(\.since, on: "f"), as: "followDate")
 }
 ```
 
-## SwiftData-like CRUD Operations
+#### OPTIONAL MATCH
+```swift
+// Find users and their optional profiles
+let usersWithProfiles = try await graph.query {
+    Match.node(User.self, alias: "u")
+    OptionalMatch.node(Profile.self, alias: "p")
+        .where(path(\.userId, on: "p") == path(\.id, on: "u"))
+    Return.nodes("u", "p")
+}
+```
 
-For simple operations, use the familiar save/fetch/delete pattern:
+#### WITH Clause for Query Pipelining
+```swift
+// Multi-stage query with WITH
+let results = try await graph.query {
+    Match.node(User.self, alias: "u")
+    With.aggregate(.count("u"), as: "userCount")
+        .and("u")
+        .limit(100)
+    Match.edge(Follows.self)
+        .from("u")
+        .to("other")
+    Return.node("other")
+}
+```
+
+#### EXISTS Patterns
+```swift
+// Find users who have posted
+let activeUsers = try await graph.query {
+    Match.node(User.self, alias: "u")
+    Where(Predicate.exists(
+        Exists.edge(Post.self, from: "u", to: "p")
+    ))
+    Return.node("u")
+}
+
+// Complex EXISTS with subqueries
+let popularUsers = try await graph.query {
+    Match.node(User.self, alias: "u")
+    Where(Predicate.exists(
+        Exists.subquery {
+            Match.edge(Follows.self).to("u")
+            Return.count() > 100
+        }
+    ))
+    Return.node("u")
+}
+```
+
+#### Path Patterns
+```swift
+// Shortest path
+let shortestPath = try await graph.query {
+    Match.path(
+        PathPattern.shortest(
+            from: "alice",
+            to: "bob",
+            via: Follows.self,
+            maxHops: 5,
+            as: "p"
+        )
+    )
+    Return.pathLength("p", as: "distance")
+}
+
+// Variable length paths
+let friends = try await graph.query {
+    Match.path(
+        PathPattern.variablePath(
+            from: "user",
+            to: "friend",
+            via: Follows.self,
+            hops: 1...3,
+            as: "friendship"
+        )
+    )
+    Return.distinct("friend")
+}
+
+// All paths with constraints
+let paths = try await graph.query {
+    Match.path(
+        PathPattern.allPaths(
+            from: "start",
+            to: "end",
+            via: Follows.self,
+            maxHops: 4
+        )
+    )
+    Where(Predicate.pathLength("path", .lessThanOrEqual, 3))
+    Return.pathNodes("path")
+}
+```
+
+#### Batch Operations with UNWIND
+```swift
+// Batch create
+let users = [user1, user2, user3]
+try await graph.createMany(users)
+
+// Batch update with conditions
+try await graph.updateMany(
+    User.self,
+    matching: path(\.age, on: "u") < 18,
+    set: ["category": "minor"]
+)
+
+// Batch merge (upsert)
+try await graph.mergeMany(
+    users,
+    matchOn: "id",
+    onCreate: ["createdAt": Date()],
+    onMatch: ["updatedAt": Date()]
+)
+```
+
+#### Query Within Transactions
+```swift
+try await graph.withTransaction { tx in
+    // Use Query DSL within transactions
+    let user = try tx.queryOne(User.self) {
+        Match.node(User.self, alias: "u")
+        Where(path(\.id, on: "u") == userId)
+        Return.node("u")
+    }
+    
+    // Update using DSL
+    try tx.query {
+        Match.node(User.self, alias: "u")
+        Where(path(\.id, on: "u") == userId)
+        Set.property(\.lastActive, on: "u", to: Date())
+        Return.node("u")
+    }
+    
+    // Transaction automatically commits or rolls back
+}
+```
+
+#### Query Debugging and Analysis
+```swift
+// Enable verbose debugging
+QueryDebug.enableVerbose()
+
+// Debug specific query
+let result = try await graph.debugQuery(debug: .verbose) {
+    Match.node(User.self)
+    Return.count()
+}
+// Outputs: Cypher, parameters, execution time, result count
+
+// Analyze query without execution
+let analysis = try graph.analyzeQuery {
+    Match.node(User.self, alias: "u")
+    Match.edge(Follows.self).from("u").to("other")
+    Return.nodes("u", "other")
+}
+print(analysis.description)
+// Shows: operations, node/edge types, complexity score
+
+// Profile query performance
+let (result, profile) = try await QueryProfiler.profile {
+    try await graph.query {
+        Match.node(User.self)
+        Return.count()
+    }
+}
+print("Query took \(profile.executionTimeMs)ms")
+```
+
+## What Works Today
+
+### SwiftData-like CRUD Operations ✅
+
+These methods are stable and ready for production use:
 
 ```swift
 let graph = try await GraphDatabase.shared.context()
@@ -293,7 +446,32 @@ try await graph.deleteAll(User.self)
 let count = try await graph.count(User.self)
 ```
 
-## Transactions
+### Raw Cypher Queries ✅
+
+For complex queries, use the stable `raw()` method:
+
+```swift
+// Relationship queries
+let result = try await graph.raw(
+    """
+    MATCH (u:User {name: $name})-[:FOLLOWS]->(f:User)
+    RETURN f
+    """,
+    bindings: ["name": "Alice"]
+)
+
+// Aggregations
+let countResult = try await graph.raw(
+    """
+    MATCH (u:User)
+    WHERE u.age > $minAge
+    RETURN count(u) as userCount
+    """,
+    bindings: ["minAge": 25]
+)
+```
+
+## Transactions ✅
 
 Ensure data consistency with ACID transactions:
 
@@ -434,19 +612,42 @@ struct UserListView: View {
 }
 ```
 
+## Query DSL Roadmap
+
+The Query DSL is under active development. Here's the current status:
+
+### ✅ Working
+- Basic node matching with `Match.node()`
+- Property paths with `path()` and `prop()`
+- Simple predicates (`==`, `!=`, `>`, `<`, etc.)
+- Query compilation to Cypher
+
+### 🚧 In Progress
+- Edge matching improvements
+- Complex path queries
+- Aggregation functions
+- Full predicate support
+
+### 📋 Planned
+- Subqueries
+- Graph algorithms
+- Full Cypher feature parity
+
+For production use, we recommend using `raw()` queries until the DSL is complete.
+
 ## Query DSL vs Raw Cypher
 
-While the Query DSL is recommended for type safety, you can still use raw Cypher when needed:
+Currently, raw Cypher is more reliable for complex queries:
 
 ```swift
-// Declarative Query DSL (Recommended)
+// Declarative Query DSL (Experimental - simple queries work)
 let results = try await graph.query {
     Match.node(User.self, alias: "u")
     Where.path(\.age, on: "u") > 25
     Return.node("u")
 }
 
-// Raw Cypher (For complex or dynamic queries)
+// Raw Cypher (Recommended for production)
 let results = try await graph.raw("""
     MATCH (u:User)
     WHERE u.age > $minAge

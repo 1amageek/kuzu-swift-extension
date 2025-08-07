@@ -1,9 +1,52 @@
 import Foundation
 
+/// Builder for creating edge match patterns with fluent API
+public struct EdgeBuilder<T: _KuzuGraphModel> {
+    let type: T.Type
+    let alias: String?
+    
+    init(type: T.Type, alias: String?) {
+        self.type = type
+        self.alias = alias
+    }
+    
+    public func from(_ source: String) -> EdgeBuilderWithFrom<T> {
+        EdgeBuilderWithFrom(type: type, alias: alias, from: source)
+    }
+}
+
+public struct EdgeBuilderWithFrom<T: _KuzuGraphModel> {
+    let type: T.Type
+    let alias: String?
+    let from: String
+    
+    public func to(_ target: String) -> Match {
+        let pattern = MatchPattern.edge(
+            type: String(describing: type),
+            from: from,
+            to: target,
+            alias: alias ?? String(describing: type).lowercased(),
+            predicate: nil
+        )
+        return Match(patterns: [pattern])
+    }
+    
+    public func to<TargetType: _KuzuGraphModel>(_ targetType: TargetType.Type, alias targetAlias: String) -> Match {
+        let pattern = MatchPattern.edge(
+            type: String(describing: type),
+            from: from,
+            to: targetAlias,
+            alias: alias ?? String(describing: type).lowercased(),
+            predicate: nil
+        )
+        return Match(patterns: [pattern])
+    }
+}
+
 public struct Match: QueryComponent {
     let patterns: [MatchPattern]
     
-    private init(patterns: [MatchPattern]) {
+    internal init(patterns: [MatchPattern]) {
         self.patterns = patterns
     }
     
@@ -22,6 +65,13 @@ public struct Match: QueryComponent {
     
     public static func pattern(_ patterns: MatchPattern...) -> Match {
         Match(patterns: patterns)
+    }
+    
+    public static func edge<T: _KuzuGraphModel>(
+        _ type: T.Type,
+        alias: String? = nil
+    ) -> EdgeBuilder<T> {
+        EdgeBuilder(type: type, alias: alias)
     }
     
     public func toCypher() throws -> CypherFragment {
@@ -50,6 +100,7 @@ public enum MatchPattern {
     case node(type: String, alias: String, predicate: Predicate?)
     case edge(type: String, from: String, to: String, alias: String, predicate: Predicate?)
     case path(from: String, to: String, edgeType: String?, minHops: Int?, maxHops: Int?, alias: String)
+    case custom(String)
     
     public static func node<T: _KuzuGraphModel>(
         _ type: T.Type,
@@ -131,6 +182,9 @@ public enum MatchPattern {
             let edgeClause = edgeType.map { ":\($0)" } ?? ""
             let pathPattern = "\(alias) = (\(from))-[\(edgeClause)\(hopsClause)]->(\(to))"
             return CypherFragment(query: pathPattern)
+            
+        case .custom(let pattern):
+            return CypherFragment(query: pattern)
         }
     }
 }

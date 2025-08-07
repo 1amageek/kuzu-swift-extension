@@ -1,12 +1,7 @@
 import Foundation
 
 public struct CypherCompiler {
-    public struct CompiledQuery {
-        public let query: String
-        public let parameters: [String: any Sendable]
-    }
-    
-    public static func compile(_ query: Query) throws -> CompiledQuery {
+    public static func compile(_ query: Query) throws -> CypherFragment {
         var cypherFragments: [CypherFragment] = []
         var allParameters: [String: any Sendable] = [:]
         
@@ -37,7 +32,7 @@ public struct CypherCompiler {
             .map { $0.query }
             .joined(separator: " ")
         
-        return CompiledQuery(
+        return CypherFragment(
             query: compiledQuery,
             parameters: allParameters
         )
