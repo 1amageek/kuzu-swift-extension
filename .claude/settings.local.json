@@ -33,7 +33,8 @@
       "Bash(grep:*)",
       "Bash(mv:*)",
       "Bash(swift repl:*)",
-      "WebFetch(domain:deepwiki.com)"
+      "WebFetch(domain:deepwiki.com)",
+      "mcp__deepwiki__ask_question"
     ],
     "deny": []
   }

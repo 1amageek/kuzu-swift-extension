@@ -10,6 +10,7 @@ public enum GraphError: LocalizedError {
     case extensionLoadFailed(extension: String, reason: String)
     case migrationFailed(reason: String)
     case resourceCleanupFailed(reason: String)
+    case contextNotAvailable(reason: String)
     case wrapped(underlyingError: Error)
     case missingIdentifier
     case invalidOperation(message: String)
@@ -34,6 +35,8 @@ public enum GraphError: LocalizedError {
             return "Migration failed: \(reason)"
         case .resourceCleanupFailed(let reason):
             return "Failed to cleanup resources: \(reason)"
+        case .contextNotAvailable(let reason):
+            return "Database context not available: \(reason)"
         case .wrapped(let underlyingError):
             return "Error: \(underlyingError.localizedDescription)"
         case .missingIdentifier:
@@ -63,6 +66,8 @@ public enum GraphError: LocalizedError {
             return "Review migration policy and schema compatibility"
         case .resourceCleanupFailed:
             return "Check for resource leaks and ensure proper connection management"
+        case .contextNotAvailable:
+            return "Restart the application or create a new test context"
         case .wrapped:
             return "Check the underlying error for more details"
         case .missingIdentifier:

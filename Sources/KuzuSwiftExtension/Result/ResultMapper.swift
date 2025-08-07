@@ -212,8 +212,23 @@ extension QueryResult {
             }
             
             if let value = try flatTuple.getValue(UInt64(columnIndex)) {
-                // Convert value to dictionary for decoding
-                if let dict = value as? [String: Any?] {
+                // Debug: Print value type
+                #if DEBUG
+                print("[DEBUG] decode - Value type: \(Swift.type(of: value)), Value: \(value)")
+                #endif
+                
+                // Check if value is a KuzuNode (graph node)
+                if let nodeValue = value as? Kuzu.KuzuNode {
+                    // Extract properties dictionary from KuzuNode
+                    let properties = nodeValue.properties
+                    let decoded = try decoder.decode(T.self, from: properties)
+                    results.append(decoded)
+                } else if let dict = value as? [String: Any?] {
+                    // Direct dictionary decoding
+                    let decoded = try decoder.decode(T.self, from: dict)
+                    results.append(decoded)
+                } else if let dict = value as? [String: Any] {
+                    // Try without optional values
                     let decoded = try decoder.decode(T.self, from: dict)
                     results.append(decoded)
                 } else {
@@ -247,8 +262,16 @@ extension QueryResult {
         }
         
         if let value = try flatTuple.getValue(UInt64(columnIndex)) {
-            // Convert value to dictionary for decoding
-            if let dict = value as? [String: Any?] {
+            // Check if value is a KuzuNode (graph node)
+            if let nodeValue = value as? Kuzu.KuzuNode {
+                // Extract properties dictionary from KuzuNode
+                let properties = nodeValue.properties
+                return try decoder.decode(T.self, from: properties)
+            } else if let dict = value as? [String: Any?] {
+                // Direct dictionary decoding
+                return try decoder.decode(T.self, from: dict)
+            } else if let dict = value as? [String: Any] {
+                // Try without optional values
                 return try decoder.decode(T.self, from: dict)
             } else {
                 // Try to decode as a simple value

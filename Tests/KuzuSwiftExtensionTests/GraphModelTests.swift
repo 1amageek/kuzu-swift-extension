@@ -313,12 +313,12 @@ struct GraphModelTests {
         
         // Transaction that should fail
         do {
-            try await context.transaction { ctx in
+            try await context.transaction { txCtx in
                 let user1 = ModelTestUser(name: "TxUser1", age: 25)
-                _ = try await ctx.save(user1)
+                _ = try txCtx.save(user1)  // No await - synchronous
                 
                 let user2 = ModelTestUser(name: "TxUser2", age: 30)  
-                _ = try await ctx.save(user2)
+                _ = try txCtx.save(user2)  // No await - synchronous
                 
                 // Force an error
                 throw TestError.intentionalError
@@ -342,12 +342,12 @@ struct GraphModelTests {
         let context = try await createContext()
         
         // Transaction that should succeed
-        try await context.transaction { ctx in
+        try await context.transaction { txCtx in
             let user1 = ModelTestUser(name: "TxUser1", age: 25)
             let user2 = ModelTestUser(name: "TxUser2", age: 30)
             
-            _ = try await ctx.save(user1)
-            _ = try await ctx.save(user2)
+            _ = try txCtx.save(user1)  // No await - synchronous
+            _ = try txCtx.save(user2)  // No await - synchronous
         }
         
         // Verify transaction succeeded

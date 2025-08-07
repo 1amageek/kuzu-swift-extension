@@ -2,8 +2,8 @@ import Foundation
 import Kuzu
 
 public actor GraphContext {
-    private let container: GraphContainer
-    private let configuration: GraphConfiguration
+    let container: GraphContainer  // Made internal for TransactionalGraphContext
+    let configuration: GraphConfiguration  // Made internal for TransactionalGraphContext
     private let encoder: KuzuEncoder
     private let decoder: KuzuDecoder
     
@@ -158,7 +158,9 @@ public actor GraphContext {
     }
     
     public func createSchema(for types: [any _KuzuGraphModel.Type]) async throws {
-        try await container.withTransaction { connection in
+        // DDL commands cannot be executed within transactions in Kuzu
+        // Execute each DDL statement separately
+        try await container.withConnection { connection in
             for type in types {
                 _ = try connection.query(type._kuzuDDL)
             }

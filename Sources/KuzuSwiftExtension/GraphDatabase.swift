@@ -14,19 +14,29 @@ public final class GraphDatabase {
     private var context: GraphContext?
     private var registeredModels: [any _KuzuGraphModel.Type] = []
     private var migrationPolicy: MigrationPolicy = .safeOnly
+    private var isInitialized = false
     
     private init() {
         setupLifecycleHandlers()
     }
     
-    /// Get or create the default graph context with automatic path resolution
+    /// Get the shared graph context. Always returns the same instance once initialized.
     public func context() async throws -> GraphContext {
+        // Return existing context if available
         if let context = self.context {
             return context
         }
         
+        // Create new context only if not initialized
+        guard !isInitialized else {
+            throw GraphError.contextNotAvailable(
+                reason: "Database context was closed. Application restart required."
+            )
+        }
+        
+        let dbPath = Self.defaultDatabasePath()
         let configuration = GraphConfiguration(
-            databasePath: Self.defaultDatabasePath()
+            databasePath: dbPath
         )
         
         let context = try await GraphContext(configuration: configuration)
@@ -41,27 +51,65 @@ public final class GraphDatabase {
         }
         
         self.context = context
+        self.isInitialized = true
         
         return context
     }
     
-    /// Register model types for automatic schema creation
+    /// Register model types for automatic schema creation.
+    /// Must be called before first context() access.
     public func register(models: [any _KuzuGraphModel.Type]) {
+        guard !isInitialized else {
+            print("Warning: Models registered after database initialization will not be migrated automatically.")
+            return
+        }
         registeredModels.append(contentsOf: models)
     }
     
-    /// Configure migration policy
+    /// Configure migration policy.
+    /// Must be called before first context() access.
     public func configure(migrationPolicy: MigrationPolicy) {
+        guard !isInitialized else {
+            print("Warning: Migration policy changed after database initialization has no effect.")
+            return
+        }
         self.migrationPolicy = migrationPolicy
     }
     
-    /// Close the database (called automatically on app termination)
-    public func close() async throws {
+    // MARK: - Test Support
+    
+    /// Create an isolated database context for testing.
+    /// Each call creates a new, independent database instance.
+    public static func createTestContext(
+        name: String = UUID().uuidString,
+        models: [any _KuzuGraphModel.Type] = [],
+        migrationPolicy: MigrationPolicy = .safeOnly
+    ) async throws -> GraphContext {
+        // Use in-memory database for tests to avoid file system issues
+        let configuration = GraphConfiguration(databasePath: ":memory:")
+        let context = try await GraphContext(configuration: configuration)
+        
+        // Apply schema if models provided
+        if !models.isEmpty {
+            let migrationManager = MigrationManager(
+                context: context,
+                policy: migrationPolicy
+            )
+            try await migrationManager.migrate(types: models)
+        }
+        
+        return context
+    }
+    
+    // MARK: - Private Methods
+    
+    /// Internal close method - only for app lifecycle
+    private func close() async throws {
         if let context = self.context {
             await context.close()
         }
-        self.context = nil
-        self.registeredModels.removeAll()
+        // Do NOT reset context or isInitialized
+        // This prevents accidental re-initialization
     }
     
     // MARK: - Private Helpers
@@ -79,15 +127,51 @@ public final class GraphDatabase {
             in: .userDomainMask
         ).first!
         
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.app.kuzu"
-        let appDir = appSupport.appendingPathComponent(bundleID)
+        // Bundle IDを優先的に使用、なければプロセス名ベースのフォールバック
+        let directoryName: String
+        let processName = ProcessInfo.processInfo.processName
+        
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+           processName.contains("xctest") || 
+           processName.contains("testing") {
+            // テスト環境: 一時ディレクトリを使用
+            let tempDir = FileManager.default.temporaryDirectory
+            let appDir = tempDir.appendingPathComponent("kuzu-tests/\(processName)")
+            
+            do {
+                try FileManager.default.createDirectory(
+                    at: appDir,
+                    withIntermediateDirectories: true,
+                    attributes: nil
+                )
+            } catch {
+                print("Warning: Failed to create test directory at \(appDir): \(error)")
+            }
+            
+            return appDir.appendingPathComponent("graph.kuzu").path
+        } else if let bundleID = Bundle.main.bundleIdentifier {
+            // アプリ環境: bundleIDを使用（既存の動作を維持）
+            directoryName = bundleID
+        } else {
+            // SPM/CLI環境: プロセス名を使用
+            directoryName = "kuzu/\(processName)"
+        }
+        
+        let appDir = appSupport.appendingPathComponent(directoryName)
         #endif
         
-        // Create directory if needed
-        try? FileManager.default.createDirectory(
-            at: appDir,
-            withIntermediateDirectories: true
-        )
+        // ディレクトリ作成のエラーハンドリング改善
+        do {
+            try FileManager.default.createDirectory(
+                at: appDir,
+                withIntermediateDirectories: true,
+                attributes: nil
+            )
+        } catch {
+            // エラーをログに記録（本番環境では適切なロギング機構を使用）
+            print("Warning: Failed to create directory at \(appDir): \(error)")
+            // 作成は失敗しても続行（既存ディレクトリの可能性もある）
+        }
         
         return appDir.appendingPathComponent("graph.kuzu").path
     }

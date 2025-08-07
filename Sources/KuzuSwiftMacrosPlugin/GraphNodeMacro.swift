@@ -57,16 +57,41 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                             if let expr = arg.expression.as(IntegerLiteralExprSyntax.self) {
                                 let dimensions = expr.literal.text
                                 columns.append((propertyName, "DOUBLE[\(dimensions)]", constraints))
-                                ddlColumns.append("\(propertyName) DOUBLE[\(dimensions)]")
+                                // Build DDL column with only supported inline constraints
+                                var columnDef = "\(propertyName) DOUBLE[\(dimensions)]"
+                                for constraint in constraints {
+                                    if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
+                                        columnDef += " \(constraint)"
+                                    }
+                                    // UNIQUE and FULLTEXT are ignored as Kuzu doesn't support them inline
+                                }
+                                ddlColumns.append(columnDef)
                                 continue
                             }
                         }
                     }
                     continue
-                case "FTS":
-                    constraints.append("FTS")
+                case "FullTextSearch":
+                    constraints.append("FULLTEXT")
+                case "Unique":
+                    constraints.append("UNIQUE")
+                case "Default":
+                    if case .argumentList(let args) = attr.arguments,
+                       let firstArg = args.first {
+                        let defaultValue = firstArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // Handle string literals by ensuring they're properly quoted for SQL
+                        if defaultValue.hasPrefix("\"") && defaultValue.hasSuffix("\"") {
+                            // Convert Swift string literal to SQL string literal
+                            let sqlValue = defaultValue.replacingOccurrences(of: "\"", with: "'")
+                            constraints.append("DEFAULT \(sqlValue)")
+                        } else {
+                            // Non-string values (numbers, etc.)
+                            constraints.append("DEFAULT \(defaultValue)")
+                        }
+                    }
                 case "Timestamp":
-                    continue
+                    // @Timestamp is metadata only, process property normally
+                    break
                 default:
                     break
                 }
@@ -80,9 +105,13 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             }) {
                 columns.append((propertyName, kuzuType, constraints))
                 
+                // Build DDL column with only supported inline constraints
                 var columnDef = "\(propertyName) \(kuzuType)"
-                if constraints.contains("PRIMARY KEY") {
-                    columnDef += " PRIMARY KEY"
+                for constraint in constraints {
+                    if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
+                        columnDef += " \(constraint)"
+                    }
+                    // UNIQUE and FULLTEXT are ignored as Kuzu doesn't support them inline
                 }
                 ddlColumns.append(columnDef)
             }

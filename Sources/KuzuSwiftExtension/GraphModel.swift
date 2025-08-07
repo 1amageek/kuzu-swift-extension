@@ -22,7 +22,7 @@ public extension GraphContext {
         
         let existsQuery = """
             MATCH (n:\(T.modelName) {\(idColumn.name): $id})
-            RETURN count(n) > 0
+            RETURN count(n) > 0 as result
             """
         
         let existsResult = try await raw(existsQuery, bindings: ["id": idValue ?? NSNull()])
@@ -189,10 +189,17 @@ public extension GraphContext {
 public extension GraphContext {
     
     /// Perform multiple operations in a transaction
-    func transaction<T: Sendable>(_ operations: @escaping @Sendable (GraphContext) async throws -> T) async throws -> T {
-        // Since GraphContext already handles transactions internally,
-        // we can directly execute the operations
-        try await operations(self)
+    /// 
+    /// This method creates a new TransactionalGraphContext that shares a single database connection
+    /// for all operations, ensuring proper ACID transaction semantics.
+    /// 
+    /// - Parameter operations: A closure containing operations to perform within the transaction.
+    ///                        The closure receives a TransactionalGraphContext that must be used
+    ///                        for all database operations to ensure they're part of the transaction.
+    /// - Returns: The result of the operations
+    /// - Throws: Any error thrown by the operations. The transaction is automatically rolled back on error.
+    func transaction<T: Sendable>(_ operations: @escaping @Sendable (TransactionalGraphContext) throws -> T) async throws -> T {
+        return try await withTransaction(operations)
     }
     
     /// Batch insert with better performance
