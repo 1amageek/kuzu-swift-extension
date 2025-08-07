@@ -4,7 +4,7 @@ import Foundation
 public struct KuzuEncoder: Sendable {
     /// Configuration options for encoding
     public struct Configuration: Sendable {
-        public var dateEncodingStrategy: DateEncodingStrategy = .iso8601
+        public var dateEncodingStrategy: DateEncodingStrategy = .iso8601  // Kuzu expects ISO-8601 for TIMESTAMP
         public var dataEncodingStrategy: DataEncodingStrategy = .base64
         public var keyEncodingStrategy: KeyEncodingStrategy = .useDefaultKeys
         public var userInfo: [CodingUserInfoKey: any Sendable] = [:]
@@ -121,6 +121,14 @@ public struct KuzuEncoder: Sendable {
         // Handle UUID
         if let uuid = value as? UUID {
             return uuid.uuidString
+        }
+        
+        // Handle Date - Kuzu expects ISO-8601 formatted string for TIMESTAMP
+        if let date = value as? Date {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            return formatter.string(from: date)
         }
         
         // All other values pass through

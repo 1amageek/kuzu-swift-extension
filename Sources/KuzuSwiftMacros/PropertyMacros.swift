@@ -19,9 +19,9 @@ public macro Vector(dimensions: Int) = #externalMacro(
 )
 
 @attached(peer)
-public macro FTS() = #externalMacro(
+public macro FullTextSearch() = #externalMacro(
     module: "KuzuSwiftMacrosPlugin",
-    type: "FTSMacro"
+    type: "FullTextSearchMacro"
 )
 
 @attached(peer)
@@ -29,3 +29,16 @@ public macro Timestamp() = #externalMacro(
     module: "KuzuSwiftMacrosPlugin",
     type: "TimestampMacro"
 )
+
+@attached(peer)
+public macro Unique() = #externalMacro(
+    module: "KuzuSwiftMacrosPlugin",
+    type: "UniqueMacro"
+)
+
+@attached(peer)
+public macro Default(_ value: Any) = #externalMacro(
+    module: "KuzuSwiftMacrosPlugin",
+    type: "DefaultMacro"
+)
+

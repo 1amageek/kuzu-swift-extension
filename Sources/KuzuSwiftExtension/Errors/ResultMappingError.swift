@@ -9,6 +9,7 @@ public enum ResultMappingError: LocalizedError {
     case missingRequiredField(String)
     case nullValueForNonOptionalType(field: String, type: String)
     case columnIndexOutOfBounds(index: Int, columnCount: Int)
+    case columnNotFound(column: String)
     
     public var errorDescription: String? {
         switch self {
@@ -36,6 +37,9 @@ public enum ResultMappingError: LocalizedError {
             
         case .columnIndexOutOfBounds(let index, let columnCount):
             return "Column index \(index) is out of bounds (total columns: \(columnCount))"
+            
+        case .columnNotFound(let column):
+            return "Column '\(column)' not found in query result"
         }
     }
     
@@ -61,6 +65,9 @@ public enum ResultMappingError: LocalizedError {
             
         case .columnIndexOutOfBounds:
             return "The specified column index doesn't exist in the result"
+            
+        case .columnNotFound:
+            return "The specified column name doesn't exist in the result"
         }
     }
 }

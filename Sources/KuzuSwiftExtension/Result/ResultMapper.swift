@@ -193,6 +193,111 @@ public struct ResultMapper {
 // MARK: - QueryResult Extensions
 
 extension QueryResult {
+    // MARK: - Decodable Support
+    
+    /// Decodes results to an array of Decodable types from a specific column
+    public func decode<T: Decodable>(_ type: T.Type, column: String) throws -> [T] {
+        let decoder = KuzuDecoder()
+        var results: [T] = []
+        
+        // Find column index
+        let columnNames = getColumnNames()
+        guard let columnIndex = columnNames.firstIndex(of: column) else {
+            throw ResultMappingError.columnNotFound(column: column)
+        }
+        
+        while hasNext() {
+            guard let flatTuple = try getNext() else {
+                break
+            }
+            
+            if let value = try flatTuple.getValue(UInt64(columnIndex)) {
+                // Convert value to dictionary for decoding
+                if let dict = value as? [String: Any?] {
+                    let decoded = try decoder.decode(T.self, from: dict)
+                    results.append(decoded)
+                } else {
+                    // Try to decode as a simple value
+                    if let casted = value as? T {
+                        results.append(casted)
+                    }
+                }
+            }
+        }
+        
+        return results
+    }
+    
+    /// Decodes the first result to a Decodable type from a specific column
+    public func first<T: Decodable>(_ type: T.Type, column: String) throws -> T? {
+        guard hasNext() else {
+            return nil
+        }
+        
+        let decoder = KuzuDecoder()
+        
+        // Find column index
+        let columnNames = getColumnNames()
+        guard let columnIndex = columnNames.firstIndex(of: column) else {
+            throw ResultMappingError.columnNotFound(column: column)
+        }
+        
+        guard let flatTuple = try getNext() else {
+            return nil
+        }
+        
+        if let value = try flatTuple.getValue(UInt64(columnIndex)) {
+            // Convert value to dictionary for decoding
+            if let dict = value as? [String: Any?] {
+                return try decoder.decode(T.self, from: dict)
+            } else {
+                // Try to decode as a simple value
+                return value as? T
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Decodes node and edge pairs from the result
+    public func decodePairs<N: Decodable, E: Decodable>(
+        nodeType: N.Type,
+        edgeType: E.Type,
+        nodeColumn: String = "n",
+        edgeColumn: String = "e"
+    ) throws -> [(node: N, edge: E)] {
+        let decoder = KuzuDecoder()
+        var results: [(node: N, edge: E)] = []
+        
+        // Find column indices
+        let columnNames = getColumnNames()
+        guard let nodeIndex = columnNames.firstIndex(of: nodeColumn) else {
+            throw ResultMappingError.columnNotFound(column: nodeColumn)
+        }
+        guard let edgeIndex = columnNames.firstIndex(of: edgeColumn) else {
+            throw ResultMappingError.columnNotFound(column: edgeColumn)
+        }
+        
+        while hasNext() {
+            guard let flatTuple = try getNext() else {
+                break
+            }
+            
+            if let nodeValue = try flatTuple.getValue(UInt64(nodeIndex)),
+               let edgeValue = try flatTuple.getValue(UInt64(edgeIndex)) {
+                // Convert values to dictionaries for decoding
+                if let nodeDict = nodeValue as? [String: Any?],
+                   let edgeDict = edgeValue as? [String: Any?] {
+                    let node = try decoder.decode(N.self, from: nodeDict)
+                    let edge = try decoder.decode(E.self, from: edgeDict)
+                    results.append((node: node, edge: edge))
+                }
+            }
+        }
+        
+        return results
+    }
+    
     // MARK: - Single Value Mapping
     
     /// Maps the first result to a value

@@ -20,7 +20,7 @@ The library is structured in layers:
 
 ### Model System
 - Models are structs annotated with `@GraphNode` or `@GraphEdge(from:to:)`
-- Properties use `@ID`, `@Index`, `@Vector`, `@FTS`, `@Timestamp` annotations
+- Properties use `@ID`, `@Index`, `@Vector`, `@FullTextSearch`, `@Timestamp` annotations
 - Macros generate `_kuzuDDL` and `_kuzuColumns` static properties conforming to `_KuzuGraphModel`
 
 ### Query DSL

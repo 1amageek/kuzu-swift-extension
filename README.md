@@ -11,8 +11,12 @@
 - ✨ **Zero Configuration** - Start immediately with `GraphDatabase.shared`
 - 🎯 **SwiftData-like API** - Intuitive methods: `save()`, `fetch()`, `delete()`
 - 🔄 **Automatic Schema Management** - Auto-generates DDL from your models
-- 🏗️ **Type Safety** - Compile-time error detection with Swift macros
+- 🏗️ **Type Safety** - Compile-time error detection with Swift macros and KeyPath-based queries
 - 🚀 **Modern Swift** - Full async/await support
+- 🔍 **Type-Safe Queries** - KeyPath-based predicates for compile-time validation
+- 🔗 **Relationship Helpers** - Simple APIs for creating and querying relationships
+- 📦 **Batch Operations** - Efficient bulk create, update, and delete operations
+- 🎨 **Enhanced Attributes** - Support for `@Unique`, `@Default`, `@FullTextSearch` and more
 
 ## Installation
 
@@ -212,7 +216,7 @@ try await graph.createRelationship(
 struct Document: Codable {
     @ID var id: UUID = UUID()
     @Index var title: String
-    @FTS var content: String  // Full-text search
+    @FullTextSearch var content: String  // Full-text search
     @Vector(dimensions: 1536) var embedding: [Double]  // Vector search
     @Timestamp var createdAt: Date = Date()  // Automatic timestamp
 }

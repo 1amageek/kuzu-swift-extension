@@ -9,7 +9,9 @@ struct KuzuSwiftMacrosPlugin: CompilerPlugin {
         IDMacro.self,
         IndexMacro.self,
         VectorMacro.self,
-        FTSMacro.self,
-        TimestampMacro.self
+        FullTextSearchMacro.self,
+        TimestampMacro.self,
+        UniqueMacro.self,
+        DefaultMacro.self,
     ]
 }

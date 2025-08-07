@@ -11,6 +11,8 @@ public enum GraphError: LocalizedError {
     case migrationFailed(reason: String)
     case resourceCleanupFailed(reason: String)
     case wrapped(underlyingError: Error)
+    case missingIdentifier
+    case invalidOperation(message: String)
     
     public var errorDescription: String? {
         switch self {
@@ -34,6 +36,10 @@ public enum GraphError: LocalizedError {
             return "Failed to cleanup resources: \(reason)"
         case .wrapped(let underlyingError):
             return "Error: \(underlyingError.localizedDescription)"
+        case .missingIdentifier:
+            return "Node model is missing an identifier (id property)"
+        case .invalidOperation(let message):
+            return "Invalid operation: \(message)"
         }
     }
     
@@ -59,6 +65,10 @@ public enum GraphError: LocalizedError {
             return "Check for resource leaks and ensure proper connection management"
         case .wrapped:
             return "Check the underlying error for more details"
+        case .missingIdentifier:
+            return "Ensure the model has an @ID property"
+        case .invalidOperation:
+            return "Review the operation parameters and requirements"
         }
     }
     
