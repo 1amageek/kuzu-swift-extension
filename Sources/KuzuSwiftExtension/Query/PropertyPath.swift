@@ -16,17 +16,7 @@ public struct PropertyPath<Model: _KuzuGraphModel> {
     /// Extracts the property name from a KeyPath
     private static func extractPropertyName(from keyPath: PartialKeyPath<Model>) -> String {
         let keyPathString = String(describing: keyPath)
-        // KeyPath string format is like: \TypeName.propertyName
-        // We need to extract the property name after the last dot
-        let components = keyPathString.components(separatedBy: ".")
-        if let lastComponent = components.last {
-            // Remove any trailing characters that might be added
-            let cleanName = lastComponent.replacingOccurrences(of: ")", with: "")
-                .replacingOccurrences(of: ">", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return cleanName
-        }
-        return keyPathString
+        return KeyPathUtilities.extractPropertyName(from: keyPathString)
     }
     
     /// Converts to PropertyReference for use in predicates

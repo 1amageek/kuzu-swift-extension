@@ -37,7 +37,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             
             let propertyName = pattern.identifier.text
             let swiftType = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
-            let kuzuType = mapSwiftTypeToKuzuType(swiftType)
+            let kuzuType = MacroUtilities.mapSwiftTypeToKuzuType(swiftType)
             
             var constraints: [String] = []
             
@@ -187,28 +187,4 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         return [extensionDecl]
     }
     
-    private static func mapSwiftTypeToKuzuType(_ swiftType: String) -> String {
-        let typeMapping: [String: String] = [
-            "String": "STRING",
-            "String?": "STRING",
-            "Int": "INT64",
-            "Int?": "INT64",
-            "Int32": "INT32",
-            "Int32?": "INT32",
-            "Int64": "INT64",
-            "Int64?": "INT64",
-            "Double": "DOUBLE",
-            "Double?": "DOUBLE",
-            "Float": "FLOAT",
-            "Float?": "FLOAT",
-            "Bool": "BOOLEAN",
-            "Bool?": "BOOLEAN",
-            "Date": "TIMESTAMP",
-            "Date?": "TIMESTAMP",
-            "UUID": "STRING",
-            "UUID?": "STRING"
-        ]
-        
-        return typeMapping[swiftType] ?? "STRING"
-    }
 }

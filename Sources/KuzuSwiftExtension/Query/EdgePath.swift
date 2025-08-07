@@ -15,17 +15,7 @@ public struct EdgePath<Edge: _KuzuGraphModel, Value> {
     /// Extracts the property name from a KeyPath
     private static func extractPropertyName(from keyPath: KeyPath<Edge, Value>) -> String {
         let keyPathString = String(describing: keyPath)
-        // KeyPath string format is like: \TypeName.propertyName
-        let components = keyPathString.components(separatedBy: ".")
-        if let lastComponent = components.last {
-            // Remove any trailing characters
-            let cleanName = lastComponent
-                .replacingOccurrences(of: ")", with: "")
-                .replacingOccurrences(of: ">", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return cleanName
-        }
-        return keyPathString
+        return KeyPathUtilities.extractPropertyName(from: keyPathString)
     }
     
     /// Converts to PropertyReference for use in predicates
