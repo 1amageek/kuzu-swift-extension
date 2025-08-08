@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Return: QueryComponent {
+public struct Return: QueryComponent, ItemBuilder {
     let items: [ReturnItem]
     let distinct: Bool
     let orderBy: [OrderByItem]?
@@ -21,7 +21,20 @@ public struct Return: QueryComponent {
         self.skip = skip
     }
     
+    // MARK: - ItemBuilder Conformance
+    public typealias Item = ReturnItem
+    
+    public static func build(_ items: [ReturnItem]) -> Return {
+        Return(items: items)
+    }
+    
+    // MARK: - Public API
     public static func items(_ items: ReturnItem...) -> Return {
+        Return(items: items)
+    }
+    
+    /// Create Return from array of items (no switch statement needed!)
+    public static func items(_ items: [ReturnItem]) -> Return {
         Return(items: items)
     }
     

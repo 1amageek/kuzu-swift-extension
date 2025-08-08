@@ -131,24 +131,8 @@ public extension Return {
         let items = aggregations.map { agg, alias in
             ReturnItem.aliased(expression: agg.toCypher(), alias: alias)
         }
-        // Convert array to Return using switch
-        switch items.count {
-        case 0:
-            return Return.all()
-        case 1:
-            return Return.items(items[0])
-        case 2:
-            return Return.items(items[0], items[1])
-        case 3:
-            return Return.items(items[0], items[1], items[2])
-        case 4:
-            return Return.items(items[0], items[1], items[2], items[3])
-        case 5:
-            return Return.items(items[0], items[1], items[2], items[3], items[4])
-        default:
-            // For more than 5 items, return the first 5
-            return Return.items(items[0], items[1], items[2], items[3], items[4])
-        }
+        // Use ItemBuilder to handle any number of items
+        return Return.items(items)
     }
     
     /// Adds a GROUP BY clause with a property path
@@ -165,21 +149,8 @@ public extension Return {
         }) {
             newItems.insert(propItem, at: 0)
         }
-        // Rebuild using public API - need to handle array conversion
-        let result: Return
-        switch newItems.count {
-        case 0:
-            result = Return.all()
-        case 1:
-            result = Return.items(newItems[0])
-        case 2:
-            result = Return.items(newItems[0], newItems[1])
-        case 3:
-            result = Return.items(newItems[0], newItems[1], newItems[2])
-        default:
-            // Handle more items by using the first few
-            result = Return.items(newItems[0], newItems[1], newItems[2])
-        }
+        // Rebuild using array-based API (no switch needed)
+        let result = Return.items(newItems)
         var finalResult = result
         if self.distinct {
             finalResult = finalResult.withDistinct()
@@ -211,21 +182,8 @@ public extension Return {
         }) {
             newItems.insert(propItem, at: 0)
         }
-        // Rebuild using public API - need to handle array conversion
-        let result: Return
-        switch newItems.count {
-        case 0:
-            result = Return.all()
-        case 1:
-            result = Return.items(newItems[0])
-        case 2:
-            result = Return.items(newItems[0], newItems[1])
-        case 3:
-            result = Return.items(newItems[0], newItems[1], newItems[2])
-        default:
-            // Handle more items by using the first few
-            result = Return.items(newItems[0], newItems[1], newItems[2])
-        }
+        // Rebuild using array-based API (no switch needed)
+        let result = Return.items(newItems)
         var finalResult = result
         if self.distinct {
             finalResult = finalResult.withDistinct()

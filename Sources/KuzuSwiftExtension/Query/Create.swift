@@ -9,17 +9,32 @@ public struct Create: QueryComponent {
         self.edge = edge
     }
     
+    // MARK: - Type-safe API using ModelReference
+    
+    /// Type-safe node creation using ModelReference
+    public static func node<T: _KuzuGraphModel>(
+        _ modelRef: ModelReference<T>,
+        as alias: String? = nil,
+        properties: [String: any Sendable] = [:]
+    ) -> Create {
+        let pattern = NodePattern(
+            type: modelRef.cypherTypeName,
+            alias: alias ?? modelRef.defaultAlias,
+            properties: properties
+        )
+        return Create(node: pattern)
+    }
+    
+    // MARK: - Existing API (maintained for compatibility)
+    
     public static func node<T: _KuzuGraphModel>(
         _ type: T.Type,
         alias: String? = nil,
         properties: [String: any Sendable] = [:]
     ) -> Create {
-        let pattern = NodePattern(
-            type: String(describing: type),
-            alias: alias ?? String(describing: type).lowercased(),
-            properties: properties
-        )
-        return Create(node: pattern)
+        // Use ModelReference internally
+        let modelRef = ModelReference(type)
+        return node(modelRef, as: alias, properties: properties)
     }
     
     public static func node<T: _KuzuGraphModel & Encodable>(

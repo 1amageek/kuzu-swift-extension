@@ -5,18 +5,18 @@ public struct Call: QueryComponent {
     let procedure: String
     let parameters: [String: any Sendable]
     let yields: [String]?
-    let `where`: Predicate?
+    let whereClause: Predicate?  // Renamed from `where` to avoid reserved word
     
     private init(
         procedure: String,
         parameters: [String: any Sendable],
         yields: [String]?,
-        `where`: Predicate? = nil
+        whereClause: Predicate? = nil
     ) {
         self.procedure = procedure
         self.parameters = parameters
         self.yields = yields
-        self.`where` = `where`
+        self.whereClause = whereClause
     }
     
     // MARK: - Factory Methods
@@ -44,13 +44,18 @@ public struct Call: QueryComponent {
     // MARK: - Modifiers
     
     /// Adds a WHERE clause to filter the CALL results
-    public func `where`(_ predicate: Predicate) -> Call {
+    public func filter(_ predicate: Predicate) -> Call {
         Call(
             procedure: procedure,
             parameters: parameters,
             yields: yields,
-            where: predicate
+            whereClause: predicate
         )
+    }
+    
+    /// Alias for filter (maintains compatibility)
+    public func `where`(_ predicate: Predicate) -> Call {
+        filter(predicate)
     }
     
     /// Adds YIELD clauses
@@ -59,7 +64,7 @@ public struct Call: QueryComponent {
             procedure: procedure,
             parameters: parameters,
             yields: items,
-            where: `where`
+            whereClause: whereClause
         )
     }
     
@@ -83,7 +88,7 @@ public struct Call: QueryComponent {
         
         // Add WHERE clause
         var allParameters = parameters
-        if let whereClause = `where` {
+        if let whereClause = whereClause {
             let whereCypher = try whereClause.toCypher()
             query += " WHERE \(whereCypher.query)"
             allParameters.merge(whereCypher.parameters) { _, new in new }

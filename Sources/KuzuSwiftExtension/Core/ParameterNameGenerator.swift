@@ -10,20 +10,33 @@ public struct ParameterNameGenerator {
         
         /// UUID-based naming with optional prefix (e.g., "param_a1b2c3d4")
         case uuid(prefix: String = "param")
+        
+        /// Lightweight counter-based naming (e.g., "p1", "p2")
+        case lightweight(prefix: String = "p")
+        
+        /// Cached naming for reused values
+        case cached(key: String)
     }
     
     /// Generates a parameter name using the specified strategy
     public static func generate(using strategy: Strategy) -> String {
         switch strategy {
         case .semantic(let alias, let property):
-            let sanitizedAlias = sanitizeName(alias)
-            let sanitizedProperty = sanitizeName(property)
-            return "\(sanitizedAlias)_\(sanitizedProperty)"
+            // Use optimized generator if available
+            return OptimizedParameterGenerator.semantic(alias: alias, property: property)
             
         case .uuid(let prefix):
             let sanitizedPrefix = sanitizeName(prefix)
             let uuid = UUID().uuidString.replacingOccurrences(of: "-", with: "")
             return "\(sanitizedPrefix)_\(uuid)"
+            
+        case .lightweight(let prefix):
+            // Use optimized counter-based generator
+            return OptimizedParameterGenerator.lightweight(prefix: prefix)
+            
+        case .cached(let key):
+            // Use cached parameter name
+            return OptimizedParameterGenerator.cached(for: key)
         }
     }
     
@@ -48,11 +61,17 @@ public struct ParameterNameGenerator {
     
     /// Convenience method for generating UUID-based parameter names
     public static func generateUUID(prefix: String = "param") -> String {
-        generate(using: .uuid(prefix: prefix))
+        // Default to lightweight for better performance
+        generate(using: .lightweight(prefix: prefix))
     }
     
     /// Convenience method for generating semantic parameter names
     public static func generateSemantic(alias: String, property: String) -> String {
         generate(using: .semantic(alias: alias, property: property))
+    }
+    
+    /// Generates optimized parameter name (lightweight counter-based)
+    public static func generateOptimized() -> String {
+        generate(using: .lightweight())
     }
 }

@@ -208,83 +208,123 @@ public struct Ref: QueryComponent, Sendable {
 // MARK: - Predicate Extensions for Subqueries
 
 public extension Predicate {
-    /// Creates a predicate with an EXISTS subquery
-    static func exists(@QueryBuilder _ builder: () -> [QueryComponent]) -> Predicate {
-        do {
-            let query = Query(components: builder())
-            let subquery = Subquery.exists(query)
-            let cypher = try subquery.toCypher()
-            return Predicate(node: .custom(cypher.query, parameters: cypher.parameters))
-        } catch {
-            return Predicate(node: .literal(false))
-        }
+    /// Creates a predicate with an EXISTS subquery (throwing version)
+    static func exists(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> Predicate {
+        let query = Query(components: builder())
+        let subquery = Subquery.exists(query)
+        let cypher = try subquery.toCypher()
+        return Predicate(node: .custom(cypher.query, parameters: cypher.parameters))
     }
     
-    /// Creates a predicate with a NOT EXISTS subquery
-    static func notExists(@QueryBuilder _ builder: () -> [QueryComponent]) -> Predicate {
-        do {
-            let query = Query(components: builder())
-            let subquery = Subquery.exists(query)
-            let cypher = try subquery.toCypher()
-            return Predicate(node: .custom("NOT \(cypher.query)", parameters: cypher.parameters))
-        } catch {
-            return Predicate(node: .literal(false))
-        }
+    /// Creates a predicate with an EXISTS subquery (safe version with error handling)
+    static func safeExists(
+        @QueryBuilder _ builder: () -> [QueryComponent],
+        onError strategy: ErrorStrategy = .defaultValue(false)
+    ) -> Predicate {
+        return (try? QueryErrorHandler.handle({
+            try exists(builder)
+        }, strategy: strategy, context: "EXISTS subquery")) ?? Predicate(node: .literal(false))
+    }
+    
+    /// Creates a predicate with a NOT EXISTS subquery (throwing version)
+    static func notExists(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> Predicate {
+        let query = Query(components: builder())
+        let subquery = Subquery.exists(query)
+        let cypher = try subquery.toCypher()
+        return Predicate(node: .custom("NOT \(cypher.query)", parameters: cypher.parameters))
+    }
+    
+    /// Creates a predicate with a NOT EXISTS subquery (safe version with error handling)
+    static func safeNotExists(
+        @QueryBuilder _ builder: () -> [QueryComponent],
+        onError strategy: ErrorStrategy = .defaultValue(false)
+    ) -> Predicate {
+        return (try? QueryErrorHandler.handle({
+            try notExists(builder)
+        }, strategy: strategy, context: "NOT EXISTS subquery")) ?? Predicate(node: .literal(false))
     }
 }
 
 // MARK: - Return Extensions for Subqueries
 
 public extension Return {
-    /// Returns a scalar subquery result
-    static func scalar(as alias: String, @QueryBuilder _ builder: () -> [QueryComponent]) -> Return {
-        do {
-            let query = Query(components: builder())
-            let subquery = Subquery.scalar(query)
-            let cypher = try subquery.toCypher()
-            return Return.items(.aliased(expression: cypher.query, alias: alias))
-        } catch {
-            return Return.items(.aliased(expression: "null", alias: alias))
-        }
+    /// Returns a scalar subquery result (throwing version)
+    static func scalar(as alias: String, @QueryBuilder _ builder: () -> [QueryComponent]) throws -> Return {
+        let query = Query(components: builder())
+        let subquery = Subquery.scalar(query)
+        let cypher = try subquery.toCypher()
+        return Return.items(.aliased(expression: cypher.query, alias: alias))
     }
     
-    /// Returns a list subquery result
-    static func list(as alias: String, @QueryBuilder _ builder: () -> [QueryComponent]) -> Return {
-        do {
-            let query = Query(components: builder())
-            let subquery = Subquery.list(query)
-            let cypher = try subquery.toCypher()
-            return Return.items(.aliased(expression: cypher.query, alias: alias))
-        } catch {
-            return Return.items(.aliased(expression: "[]", alias: alias))
-        }
+    /// Returns a scalar subquery result (safe version with error handling)
+    static func safeScalar(
+        as alias: String,
+        @QueryBuilder _ builder: () -> [QueryComponent],
+        onError strategy: ErrorStrategy = .defaultValue("null")
+    ) -> Return {
+        return (try? QueryErrorHandler.handle({
+            try scalar(as: alias, builder)
+        }, strategy: strategy, context: "Scalar subquery")) ?? Return.items(.aliased(expression: "null", alias: alias))
+    }
+    
+    /// Returns a list subquery result (throwing version)
+    static func list(as alias: String, @QueryBuilder _ builder: () -> [QueryComponent]) throws -> Return {
+        let query = Query(components: builder())
+        let subquery = Subquery.list(query)
+        let cypher = try subquery.toCypher()
+        return Return.items(.aliased(expression: cypher.query, alias: alias))
+    }
+    
+    /// Returns a list subquery result (safe version with error handling)
+    static func safeList(
+        as alias: String,
+        @QueryBuilder _ builder: () -> [QueryComponent],
+        onError strategy: ErrorStrategy = .defaultValue("[]")
+    ) -> Return {
+        return (try? QueryErrorHandler.handle({
+            try list(as: alias, builder)
+        }, strategy: strategy, context: "List subquery")) ?? Return.items(.aliased(expression: "[]", alias: alias))
     }
 }
 
 // MARK: - WITH Extensions for Subqueries
 
 public extension With {
-    /// Creates a WITH clause including a scalar subquery
-    static func scalar(_ variable: String, @QueryBuilder _ builder: () -> [QueryComponent]) -> With {
-        do {
-            let query = Query(components: builder())
-            let subquery = Subquery.scalar(query)
-            let cypher = try subquery.toCypher()
-            return With.items(.aliased(expression: cypher.query, alias: variable))
-        } catch {
-            return With.items(.aliased(expression: "null", alias: variable))
-        }
+    /// Creates a WITH clause including a scalar subquery (throwing version)
+    static func scalar(_ variable: String, @QueryBuilder _ builder: () -> [QueryComponent]) throws -> With {
+        let query = Query(components: builder())
+        let subquery = Subquery.scalar(query)
+        let cypher = try subquery.toCypher()
+        return With.items(.aliased(expression: cypher.query, alias: variable))
     }
     
-    /// Creates a WITH clause including a list subquery
-    static func list(_ variable: String, @QueryBuilder _ builder: () -> [QueryComponent]) -> With {
-        do {
-            let query = Query(components: builder())
-            let subquery = Subquery.list(query)
-            let cypher = try subquery.toCypher()
-            return With.items(.aliased(expression: cypher.query, alias: variable))
-        } catch {
-            return With.items(.aliased(expression: "[]", alias: variable))
-        }
+    /// Creates a WITH clause including a scalar subquery (safe version with error handling)
+    static func safeScalar(
+        _ variable: String,
+        @QueryBuilder _ builder: () -> [QueryComponent],
+        onError strategy: ErrorStrategy = .defaultValue("null")
+    ) -> With {
+        return (try? QueryErrorHandler.handle({
+            try scalar(variable, builder)
+        }, strategy: strategy, context: "WITH scalar subquery")) ?? With.items(.aliased(expression: "null", alias: variable))
+    }
+    
+    /// Creates a WITH clause including a list subquery (throwing version)
+    static func list(_ variable: String, @QueryBuilder _ builder: () -> [QueryComponent]) throws -> With {
+        let query = Query(components: builder())
+        let subquery = Subquery.list(query)
+        let cypher = try subquery.toCypher()
+        return With.items(.aliased(expression: cypher.query, alias: variable))
+    }
+    
+    /// Creates a WITH clause including a list subquery (safe version with error handling)
+    static func safeList(
+        _ variable: String,
+        @QueryBuilder _ builder: () -> [QueryComponent],
+        onError strategy: ErrorStrategy = .defaultValue("[]")
+    ) -> With {
+        return (try? QueryErrorHandler.handle({
+            try list(variable, builder)
+        }, strategy: strategy, context: "WITH list subquery")) ?? With.items(.aliased(expression: "[]", alias: variable))
     }
 }
