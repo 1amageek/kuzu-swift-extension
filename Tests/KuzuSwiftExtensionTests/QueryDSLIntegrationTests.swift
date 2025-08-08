@@ -1,13 +1,16 @@
-import XCTest
+import Testing
+import Foundation
 import Kuzu
 @testable import KuzuSwiftExtension
 
-final class QueryDSLIntegrationTests: XCTestCase {
+@Suite("Query DSL Integration Tests")
+struct QueryDSLIntegrationTests {
     
-    var context: GraphContext!
+    init() {
+        // Swift Testing doesn't support async init
+    }
     
-    override func setUp() async throws {
-        try await super.setUp()
+    func createContext() async throws -> GraphContext {
         
         // Create in-memory database for testing
         let config = GraphConfiguration(
@@ -15,10 +18,10 @@ final class QueryDSLIntegrationTests: XCTestCase {
             options: GraphConfiguration.Options()
         )
         
-        context = try await GraphContext(configuration: config)
+        let context = try await GraphContext(configuration: config)
         
         // Set up test schema
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE NODE TABLE User (
                 id STRING PRIMARY KEY,
                 name STRING,
@@ -28,7 +31,7 @@ final class QueryDSLIntegrationTests: XCTestCase {
             )
             """)
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE NODE TABLE Post (
                 id STRING PRIMARY KEY,
                 userId STRING,
@@ -38,14 +41,14 @@ final class QueryDSLIntegrationTests: XCTestCase {
             )
             """)
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE REL TABLE Follows (
                 FROM User TO User,
                 since TIMESTAMP
             )
             """)
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE REL TABLE Wrote (
                 FROM User TO Post,
                 publishedAt TIMESTAMP
@@ -53,34 +56,36 @@ final class QueryDSLIntegrationTests: XCTestCase {
             """)
         
         // Insert test data
-        try await setupTestData()
+        try await setupTestData(context: context)
+        
+        return context
     }
     
-    private func setupTestData() async throws {
+    private func setupTestData(context: GraphContext) async throws {
         // Create users
         let alice = UUID()
         let bob = UUID()
         let charlie = UUID()
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE (u:User {id: $id, name: $name, age: $age, city: $city, createdAt: timestamp('2024-01-01 00:00:00')})
             """, bindings: ["id": alice.uuidString, "name": "Alice", "age": 30, "city": "Tokyo"])
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE (u:User {id: $id, name: $name, age: $age, city: $city, createdAt: timestamp('2024-01-02 00:00:00')})
             """, bindings: ["id": bob.uuidString, "name": "Bob", "age": 25, "city": "Tokyo"])
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE (u:User {id: $id, name: $name, age: $age, city: $city, createdAt: timestamp('2024-01-03 00:00:00')})
             """, bindings: ["id": charlie.uuidString, "name": "Charlie", "age": 35, "city": "Osaka"])
         
         // Create relationships
-        try await context.raw("""
+        _ = try await context.raw("""
             MATCH (a:User {name: 'Alice'}), (b:User {name: 'Bob'})
             CREATE (a)-[:Follows {since: timestamp('2024-01-15 00:00:00')}]->(b)
             """)
         
-        try await context.raw("""
+        _ = try await context.raw("""
             MATCH (b:User {name: 'Bob'}), (c:User {name: 'Charlie'})
             CREATE (b)-[:Follows {since: timestamp('2024-01-20 00:00:00')}]->(c)
             """)
@@ -89,21 +94,21 @@ final class QueryDSLIntegrationTests: XCTestCase {
         let post1 = UUID()
         let post2 = UUID()
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE (p:Post {id: $id, userId: $userId, content: $content, likes: $likes, createdAt: timestamp('2024-02-01 00:00:00')})
             """, bindings: ["id": post1.uuidString, "userId": alice.uuidString, "content": "Hello World", "likes": 10])
         
-        try await context.raw("""
+        _ = try await context.raw("""
             CREATE (p:Post {id: $id, userId: $userId, content: $content, likes: $likes, createdAt: timestamp('2024-02-02 00:00:00')})
             """, bindings: ["id": post2.uuidString, "userId": bob.uuidString, "content": "Graph databases are cool", "likes": 25])
         
         // Link users to posts
-        try await context.raw("""
+        _ = try await context.raw("""
             MATCH (u:User {name: 'Alice'}), (p:Post {content: 'Hello World'})
             CREATE (u)-[:Wrote {publishedAt: timestamp('2024-02-01 10:00:00')}]->(p)
             """)
         
-        try await context.raw("""
+        _ = try await context.raw("""
             MATCH (u:User {name: 'Bob'}), (p:Post {content: 'Graph databases are cool'})
             CREATE (u)-[:Wrote {publishedAt: timestamp('2024-02-02 15:00:00')}]->(p)
             """)
@@ -111,7 +116,9 @@ final class QueryDSLIntegrationTests: XCTestCase {
     
     // MARK: - Transaction Query DSL Tests
     
+    @Test("Transaction Query DSL")
     func testTransactionQueryDSL() async throws {
+        let context = try await createContext()
         try await context.withTransaction { tx in
             // Query within transaction
             let cypher = try CypherCompiler.compile(Query(components: [
@@ -127,13 +134,15 @@ final class QueryDSLIntegrationTests: XCTestCase {
                 count += 1
             }
             
-            XCTAssertEqual(count, 3)
+            #expect(count == 3)
         }
     }
     
     // MARK: - Aggregation Tests
     
+    @Test("Aggregation functions")
     func testAggregationFunctions() async throws {
+        _ = try await createContext()
         // Test COUNT
         let countQuery = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
@@ -141,7 +150,7 @@ final class QueryDSLIntegrationTests: XCTestCase {
         ])
         
         let countCypher = try CypherCompiler.compile(countQuery)
-        XCTAssertTrue(countCypher.query.contains("COUNT(*)"))
+        #expect(countCypher.query.contains("COUNT(*)"))
         
         // Test AVG
         let avgQuery = Query(components: [
@@ -150,8 +159,8 @@ final class QueryDSLIntegrationTests: XCTestCase {
         ])
         
         let avgCypher = try CypherCompiler.compile(avgQuery)
-        XCTAssertTrue(avgCypher.query.contains("AVG(u.age)"))
-        XCTAssertTrue(avgCypher.query.contains("AS avgAge"))
+        #expect(avgCypher.query.contains("AVG(u.age)"))
+        #expect(avgCypher.query.contains("AS avgAge"))
         
         // Test multiple aggregations
         let multiAggQuery = Query(components: [
@@ -164,14 +173,16 @@ final class QueryDSLIntegrationTests: XCTestCase {
         ])
         
         let multiCypher = try CypherCompiler.compile(multiAggQuery)
-        XCTAssertTrue(multiCypher.query.contains("COUNT(u) AS total"))
-        XCTAssertTrue(multiCypher.query.contains("MAX(u.age) AS maxAge"))
-        XCTAssertTrue(multiCypher.query.contains("MIN(u.age) AS minAge"))
+        #expect(multiCypher.query.contains("COUNT(u) AS total"))
+        #expect(multiCypher.query.contains("MAX(u.age) AS maxAge"))
+        #expect(multiCypher.query.contains("MIN(u.age) AS minAge"))
     }
     
     // MARK: - OPTIONAL MATCH Tests
     
+    @Test("Optional match")
     func testOptionalMatch() async throws {
+        _ = try await createContext()
         let query = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
             OptionalMatch.pattern(.node(type: "Post", alias: "p", predicate: nil))
@@ -184,14 +195,16 @@ final class QueryDSLIntegrationTests: XCTestCase {
         ])
         
         let cypher = try CypherCompiler.compile(query)
-        XCTAssertTrue(cypher.query.contains("OPTIONAL MATCH"))
-        XCTAssertTrue(cypher.query.contains("(p:Post)"))
-        XCTAssertTrue(cypher.query.contains("WHERE"))
+        #expect(cypher.query.contains("OPTIONAL MATCH"))
+        #expect(cypher.query.contains("(p:Post)"))
+        #expect(cypher.query.contains("WHERE"))
     }
     
     // MARK: - WITH Clause Tests
     
+    @Test("WITH clause")
     func testWithClause() async throws {
+        _ = try await createContext()
         let query = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
             With.aggregate(.count("u"), as: "userCount")
@@ -202,14 +215,16 @@ final class QueryDSLIntegrationTests: XCTestCase {
         ])
         
         let cypher = try CypherCompiler.compile(query)
-        XCTAssertTrue(cypher.query.contains("WITH"))
-        XCTAssertTrue(cypher.query.contains("COUNT(u) AS userCount"))
-        XCTAssertTrue(cypher.query.contains("LIMIT 10"))
+        #expect(cypher.query.contains("WITH"))
+        #expect(cypher.query.contains("COUNT(u) AS userCount"))
+        #expect(cypher.query.contains("LIMIT 10"))
     }
     
     // MARK: - EXISTS Pattern Tests
     
+    @Test("EXISTS pattern")
     func testExistsPattern() async throws {
+        _ = try await createContext()
         // Test exists in predicate
         let predicate = Predicate.exists(
             Exists.edge(
@@ -219,12 +234,14 @@ final class QueryDSLIntegrationTests: XCTestCase {
             )
         )
         let predicateCypher = try predicate.toCypher()
-        XCTAssertTrue(predicateCypher.query.contains("EXISTS"))
+        #expect(predicateCypher.query.contains("EXISTS"))
     }
     
     // MARK: - Path Pattern Tests
     
+    @Test("Path patterns")
     func testPathPatterns() async throws {
+        _ = try await createContext()
         // Test shortest path
         let shortestPath = PathPattern.shortest(
             from: "a",
@@ -235,8 +252,8 @@ final class QueryDSLIntegrationTests: XCTestCase {
         )
         
         let shortestCypher = shortestPath.toCypher()
-        XCTAssertTrue(shortestCypher.contains("p = shortestPath"))
-        XCTAssertTrue(shortestCypher.contains(":Follows*..5"))
+        #expect(shortestCypher.contains("p = shortestPath"))
+        #expect(shortestCypher.contains(":Follows*..5"))
         
         // Test variable length path
         let variablePath = PathPattern.variablePath(
@@ -248,20 +265,22 @@ final class QueryDSLIntegrationTests: XCTestCase {
         )
         
         let variableCypher = variablePath.toCypher()
-        XCTAssertTrue(variableCypher.contains("friendship ="))
-        XCTAssertTrue(variableCypher.contains(":Follows*1..3"))
+        #expect(variableCypher.contains("friendship ="))
+        #expect(variableCypher.contains(":Follows*1..3"))
         
         // Test path functions
         let lengthFunc = PathFunctions.length("p")
-        XCTAssertEqual(lengthFunc, "length(p)")
+        #expect(lengthFunc == "length(p)")
         
         let nodesFunc = PathFunctions.nodes("p")
-        XCTAssertEqual(nodesFunc, "nodes(p)")
+        #expect(nodesFunc == "nodes(p)")
     }
     
     // MARK: - Query Debug Tests
     
+    @Test("Query debug and analysis")
     func testQueryDebugAndAnalysis() async throws {
+        _ = try await createContext()
         // Test query analysis
         let query = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
@@ -271,25 +290,27 @@ final class QueryDSLIntegrationTests: XCTestCase {
         
         let analysis = try QueryIntrospection.analyze(query)
         
-        XCTAssertTrue(analysis.nodeTypes.contains("User"))
-        XCTAssertTrue(analysis.edgeTypes.contains("Follows"))
-        XCTAssertTrue(analysis.operations.contains("MATCH"))
-        XCTAssertTrue(analysis.operations.contains("RETURN"))
-        XCTAssertTrue(analysis.hasAggregation)
-        XCTAssertGreaterThan(analysis.estimatedComplexity, 0)
+        #expect(analysis.nodeTypes.contains("User"))
+        #expect(analysis.edgeTypes.contains("Follows"))
+        #expect(analysis.operations.contains("MATCH"))
+        #expect(analysis.operations.contains("RETURN"))
+        #expect(analysis.hasAggregation)
+        #expect(analysis.estimatedComplexity > 0)
         
         // Test debug configuration
         QueryDebug.configuration = .verbose
-        XCTAssertTrue(QueryDebug.configuration.printCypher)
-        XCTAssertTrue(QueryDebug.configuration.printParameters)
+        #expect(QueryDebug.configuration.printCypher)
+        #expect(QueryDebug.configuration.printParameters)
         
         QueryDebug.disable()
-        XCTAssertFalse(QueryDebug.configuration.printCypher)
+        #expect(!QueryDebug.configuration.printCypher)
     }
     
     // MARK: - Integration Test
     
+    @Test("Complex query integration")
     func testComplexQueryIntegration() async throws {
+        _ = try await createContext()
         // Build a complex query using multiple advanced features
         let query = Query(components: [
             // Start with users in Tokyo
@@ -333,13 +354,13 @@ final class QueryDSLIntegrationTests: XCTestCase {
         let cypher = try CypherCompiler.compile(query)
         
         // Verify the query contains all expected parts
-        XCTAssertTrue(cypher.query.contains("MATCH (u:User)"))
-        XCTAssertTrue(cypher.query.contains("OPTIONAL MATCH"))
-        XCTAssertTrue(cypher.query.contains("WITH"))
-        XCTAssertTrue(cypher.query.contains("EXISTS"))
-        XCTAssertTrue(cypher.query.contains("RETURN"))
-        XCTAssertTrue(cypher.query.contains("ORDER BY"))
-        XCTAssertTrue(cypher.query.contains("LIMIT"))
+        #expect(cypher.query.contains("MATCH (u:User)"))
+        #expect(cypher.query.contains("OPTIONAL MATCH"))
+        #expect(cypher.query.contains("WITH"))
+        #expect(cypher.query.contains("EXISTS"))
+        #expect(cypher.query.contains("RETURN"))
+        #expect(cypher.query.contains("ORDER BY"))
+        #expect(cypher.query.contains("LIMIT"))
     }
 }
 
