@@ -4,16 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Swift extension library for [kuzu-swift](https://github.com/kuzudb/kuzu-swift) that provides a declarative, type-safe interface for working with the Kuzu graph database. The library implements a comprehensive DSL for graph operations, automatic schema management, and Swift-native query building.
+**Status: Beta 1**
+
+A Swift extension library for [kuzu-swift](https://github.com/kuzudb/kuzu-swift) that provides a declarative, type-safe interface for working with the Kuzu graph database. The library implements a comprehensive DSL for graph operations, automatic schema management, and Swift-native query building.
+
+⚠️ **Note**: This is beta software. APIs may change between releases. Always check SPECIFICATION.md and API_STATUS.md for current feature status.
 
 ## Architecture Overview
 
-The library follows a clean 5-layer architecture:
+The library follows a clean layered architecture:
 
-1. **Model Declaration Layer (Macros)** - `@GraphNode`, `@GraphEdge` annotations that generate schema definitions
-2. **Schema Generation & Migration Layer** - Automatic DDL generation and migration from Swift models
+1. **Model Declaration Layer** - `@GraphNode`, `@GraphEdge` annotations that generate schema definitions
+2. **Schema Generation Layer** - Automatic DDL generation and migration from Swift models  
 3. **Persistence Layer** - `GraphConfiguration`, `GraphContainer`, `GraphContext` for managing connections
-4. **Query System Layer** - Type-safe DSL that compiles to Cypher queries with parameter binding
+4. **Query DSL Layer** - Type-safe DSL that compiles to Cypher queries with parameter binding
 5. **Result Processing Layer** - `KuzuEncoder`/`KuzuDecoder`, `ResultMapper` for type conversions
 
 ## Key Components
@@ -22,27 +26,20 @@ The library follows a clean 5-layer architecture:
 - Models are structs annotated with `@GraphNode` or `@GraphEdge(from:to:)`
 - Properties use `@ID`, `@Index`, `@Vector`, `@FullTextSearch`, `@Timestamp` annotations
 - Macros generate `_kuzuDDL` and `_kuzuColumns` static properties conforming to `_KuzuGraphModel`
+- Property macros use a shared `BasePropertyMacro` protocol for consistency
 
 ### Query DSL
 - `GraphContext.query { }` accepts a `@QueryBuilder` closure
-- Compiles Swift expressions to Cypher queries with parameter binding
-- Supports `Create`, `Match`, `Set`, `Delete`, `Return`, `Where` clauses
-- Type-safe predicates using KeyPaths with `PropertyPath<Model>`
-- Comparison operators: `==`, `!=`, `<`, `>`, `<=`, `>=`
-- String operators: `contains`, `startsWith`, `endsWith`
-- Logical operators: `&&`, `||`, `!`
+- Compiles Swift expressions to parameterized Cypher queries
+- Supports `Create`, `Match`, `Set`, `Delete`, `Return`, `Where`, `With`, `Unwind` clauses
+- Type-safe predicates using KeyPaths
+- Optimized parameter generation with `OptimizedParameterGenerator`
 
-### Query Support
-
-#### Raw Queries
-- `GraphContext.raw(_:bindings:)` for direct Cypher execution
-- Parameter binding via dictionary of `Sendable` values
-
-#### Transaction Support
-- `GraphContext.withTransaction { txCtx in }` for ACID transactions
-- `TransactionalGraphContext` provides synchronous operations within transactions
-- Automatic rollback on errors
-- Single connection per transaction for consistency
+### Error Handling
+- Unified `KuzuError` type for all operations
+- Type aliases for backward compatibility (`QueryError`, `ResultMappingError`)
+- Comprehensive error cases with recovery suggestions
+- All errors conform to `LocalizedError`
 
 ## Commands
 
@@ -53,178 +50,137 @@ swift build
 # Run tests
 swift test
 
-# Run a specific test class
+# Run specific test class
 swift test --filter TestClassName
-
-# Run a specific test method
-swift test --filter TestClassName/testMethodName
 
 # Build for release
 swift build -c release
 
-# Generate documentation
-swift package generate-documentation
+# Clean build
+swift package clean
 
 # Update dependencies
 swift package update
-
-# Run lint (if configured)
-npm run lint
-
-# Run type check (if configured)
-npm run typecheck
-
-# Run SwiftLint or similar tools
-swift run swiftlint
 ```
 
-## Build Notes
+## Build Optimization
 
-### Build Time Optimization
+### Build Times
+- Initial build: 5-10 minutes (compiles Kuzu C++ library)
+- Incremental builds: Much faster (only Swift changes)
+- Use `swift test --filter` for targeted testing
 
-The kuzu-swift dependency contains a large C++ codebase that takes significant time to compile. To optimize development workflow:
+### Memory Requirements
+- Minimum 8GB RAM for C++ compilation
+- Use pre-built binaries when available:
+```bash
+export KUZU_USE_BINARY=1
+export KUZU_BINARY_URL="https://github.com/1amageek/kuzu-swift/releases/download/v0.11.1/Kuzu.xcframework.zip"
+export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28eb2bf0de49c1f9"
+```
 
-1. **Initial Build**: The first build will take several minutes due to compiling the Kuzu C++ library
-2. **Incremental Builds**: Subsequent builds are faster as only changed Swift files need recompilation
-3. **Test Execution**: 
-   - Run specific test suites to avoid full rebuilds: `swift test --filter TestClassName`
-   - For rapid iteration, consider using Xcode which caches build artifacts more efficiently
-4. **CI/CD**: Allow sufficient time for builds in CI pipelines (typically 5-10 minutes for full build)
+## Beta 1 Changes
 
-### Common Build Issues
+### Recent Code Cleanup
+- Removed `QueryDebug.swift` and `QueryDebuggable.swift` - unnecessary complexity
+- Deleted `ParameterNameGenerator.swift` - consolidated into `OptimizedParameterGenerator`
+- Removed `GraphAlgorithms.swift` - Kuzu doesn't support graph algorithms
+- Unified error types into single `KuzuError`
+- Consolidated property macros with shared base implementation
 
-- **Memory Usage**: The C++ compilation can use significant memory. Ensure at least 8GB RAM available.
-- **Binary Downloads**: Set environment variables for pre-built binaries if available:
-  ```bash
-  export KUZU_USE_BINARY=1
-  export KUZU_BINARY_URL="https://github.com/1amageek/kuzu-swift/releases/download/v0.11.1/Kuzu.xcframework.zip"
-  export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28eb2bf0de49c1f9"
-  ```
+### Current Focus
+- Stabilizing core APIs for 1.0 release
+- Completing Query DSL coverage
+- Improving error messages and documentation
 
-## Development Notes
+## Development Guidelines
 
 ### Macro Development
-- Macro implementations are in `Sources/KuzuSwiftMacrosPlugin/`
-- Macro declarations are in `Sources/KuzuSwiftMacros/`
-- Test macros using `SwiftSyntaxMacrosTestSupport`
+- Implementations in `Sources/KuzuSwiftMacrosPlugin/`
+- Use `BasePropertyMacro` protocol for new property macros
+- Test with `SwiftSyntaxMacrosTestSupport`
 
-### Kuzu Swift SDK Integration
-- The library depends on `https://github.com/kuzudb/kuzu-swift`
-- Core Kuzu types: `Database`, `Connection`, `QueryResult`, `PreparedStatement`
-- Database can be in-memory (`:memory:`) or file-based
-
-### Concurrency Model
-- `GraphContext` is an actor for thread-safe operations
-- `GraphContainer` is an actor managing connection pooling
-- `ConnectionPool` handles connection lifecycle with timeout support
-- `TransactionalGraphContext` is a value type (struct) for transaction operations
-- All types conform to `Sendable` for Swift concurrency
-
-### Error Handling
-- All public APIs throw errors
-- Primary error type: `GraphError` with 16 distinct cases
-- Errors conform to `LocalizedError` with recovery suggestions
-- Common errors: `connectionTimeout`, `transactionFailed`, `invalidConfiguration`
-
-## Testing Strategy
-
-- Unit tests for macro expansion
-- Integration tests with in-memory Kuzu database
-- Query DSL compilation tests
-- Migration scenario tests
-
-### Test Execution Notes
-
-Due to the large C++ codebase in kuzu-swift, running tests can be time-consuming:
-
-1. **Full Test Suite**: Can take 5-10 minutes on first run
-2. **Specific Test Classes**: Use `swift test --filter TestClassName` to run only specific test classes
-3. **Individual Tests**: Use `swift test --filter TestClassName/testMethodName` for even more granular testing
-4. **Recommended Workflow**: During development, run only the relevant test class or method to save time
-
-## Important Implementation Details
-
-### Schema Migration
-- Non-destructive migrations are default (`MigrationPolicy.safeOnly`)
-- Destructive migrations require explicit `.allowDestructive`
-- All DDL executed in single transaction
-
-### Query Compilation
-- DSL expressions compile to parameterized Cypher
-- Type checking happens at Swift compile time via macros
-- Runtime validation for parameter binding
-
-### Extension Management
-- Vector/FTS extensions loaded via `GraphConfiguration.options.extensions`
-- Automatic `INSTALL`/`LOAD` on container initialization
+### Query DSL Extensions
+- Add new clauses to `Sources/KuzuSwiftExtension/Query/`
+- Use `OptimizedParameterGenerator` for parameter names
+- Implement `QueryComponent` protocol with `toCypher()` method
 
 ### Type Conversions
+- **KuzuEncoder**: UUID→String, Date→Timestamp, automatic numeric conversions
+- **KuzuDecoder**: Flexible numeric conversions (Int64↔Int, Double→Float)
+- **ResultMapper**: Handles query result mapping with type flexibility
 
-The library handles type conversions between Swift and Kuzu in several places:
+### Testing Strategy
+- Unit tests for each component
+- Integration tests with in-memory database
+- Use `swift test --filter` during development for speed
+- All tests must pass before committing
 
-#### KuzuEncoder (Swift → Kuzu)
-- UUID → String (via `uuid.uuidString`)
-- Date → Timestamp (ISO8601 or epoch-based)
-- Data → Base64 String or custom encoding
-- Arrays and Dictionaries are recursively encoded
+## Common Patterns
 
-#### KuzuDecoder (Kuzu → Swift)
-Supports flexible numeric conversions:
-- Int64 ↔ Int
-- Double → Float
-- Int → Float
-- Int64 → Float
-- Automatic handling of Kuzu's numeric types
+### Transaction Usage
+```swift
+try await graph.withTransaction { tx in
+    // All operations use same connection
+    try tx.save(node)
+    let result = try tx.raw("MATCH (n) RETURN n")
+}
+```
 
-#### ResultMapper (Query Results → Swift)
-Similar conversions as KuzuDecoder, particularly important for:
-- `count()` functions return Int64 from Kuzu
-- Numeric type flexibility for query results
+### Query DSL
+```swift
+let results = try await graph.query {
+    Match.node(User.self, alias: "u")
+    Where(path(\.age, on: "u") > 25)
+    Return.node("u")
+}
+```
 
-### Common Issues and Solutions
+### Raw Cypher
+```swift
+let result = try await graph.raw(
+    "MATCH (u:User) WHERE u.age > $minAge RETURN u",
+    bindings: ["minAge": 25]
+)
+```
 
-1. **UUID Parameter Errors**
-   - Error: `valueConversionFailed("Unsupported Swift type UUID")`
-   - Solution: KuzuEncoder.encodeValue converts UUID to String automatically
+## Troubleshooting
 
-2. **Count Query Type Mismatch**
-   - Error: `typeMismatch(expected: "Optional<Int>", actual: "Int64")`
-   - Solution: Use `Int64` for count results: `result.mapFirst(to: Int64.self)`
+### Type Mismatches
+- Count queries return `Int64`, not `Int`
+- Use flexible numeric conversion in decoders
+- UUID automatically converts to/from String
 
-3. **Array/Dictionary Encoding**
-   - Issue: Arrays and dictionaries returning nil when encoded
-   - Solution: Use reference-based storage wrappers (_StorageRef, _DictStorageRef)
+### Reserved Keywords
+- Avoid Cypher reserved words in aliases (e.g., use `result` not `exists`)
+- Check Kuzu documentation for full list
 
-4. **Numeric Type Conversions**
-   - Issue: Type mismatches between Swift numeric types and Kuzu
-   - Solution: Both KuzuDecoder and ResultMapper support bidirectional conversions
+### Transaction Issues
+- Ensure all operations in transaction use the transaction context
+- Transactions automatically rollback on error
+- Don't mix transaction and non-transaction operations
 
-5. **Reserved Keywords in Cypher**
-   - Error: `Parser exception: mismatched input 'exists'`
-   - Solution: Avoid reserved keywords like `exists` as aliases, use `result` instead
+## Code Quality Checklist
 
-6. **Transaction Rollback**
-   - Issue: Each operation using different connection
-   - Solution: Use `GraphContext.withTransaction` for proper transaction scope
+Before committing:
+- [ ] Run `swift test` - all tests pass
+- [ ] No compiler warnings
+- [ ] New features have tests
+- [ ] Public APIs have documentation comments
+- [ ] Error cases are handled appropriately
+- [ ] No unnecessary debug code or print statements
 
-## Recent API Changes
+## API Stability
 
-### Transaction API Consolidation (Latest)
-- **Removed**: `rawTransaction`, `transactionValue`, `transactionArray`, `transaction` (QueryBuilder overloads)
-- **Unified API**: Use `GraphContext.withTransaction { txCtx in }` for all transaction needs
-- **Internal**: `GraphContainer.withTransaction` is now internal (use GraphContext API)
+See [API_STATUS.md](API_STATUS.md) for detailed API stability information.
 
-### TransactionalGraphContext Design
-- Changed from `actor` to `struct` for value semantics
-- Synchronous operations (no `async`) to match Kuzu's synchronous Connection API
-- Single connection per transaction for ACID guarantees
-- Proper parameter encoding with `KuzuEncoder`
+### Key Files to Reference
+- `SPECIFICATION.md` - Complete feature specification
+- `API_STATUS.md` - API stability tracking
+- `README.md` - User-facing documentation
 
-### Code Quality Tools
-
-When making changes, ensure code quality by running:
-- Lint checks (if configured in the project)
-- Type checking for Swift code
-- Test coverage for new functionality
-
-The project should pass all quality checks before committing changes.
+### When Making Changes
+1. Check API_STATUS.md to understand stability level
+2. Update SPECIFICATION.md if adding/changing features
+3. Mark experimental features clearly
+4. Don't break stable APIs without discussion

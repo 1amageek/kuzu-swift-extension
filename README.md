@@ -1,10 +1,13 @@
-# Kuzu Swift Extension
+# Kuzu Swift Extension (Beta 1)
 
 **Type-Safe Graph Database for Swift** - A declarative, SwiftUI-like query DSL for the Kuzu graph database
 
+![Beta](https://img.shields.io/badge/status-Beta%201-yellow.svg)
 ![Swift 6.1+](https://img.shields.io/badge/Swift-6.1+-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20iOS%20|%20tvOS%20|%20watchOS-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+> ⚠️ **Beta Software**: This library is in beta. APIs may change between releases. See [SPECIFICATION.md](SPECIFICATION.md) for current feature status.
 
 ## Why This Library?
 
@@ -35,12 +38,15 @@ let adults = try await graph.query {
 
 ## Performance & Reliability
 
-The library includes several performance optimizations:
+The library has been optimized for production use:
 
-- **Automatic PreparedStatement Caching** - Queries are automatically cached for better performance
+- **Streamlined Codebase** - 11% reduction in code size for better maintainability
+- **Unified Error Handling** - Single KuzuError type for all operations
+- **Optimized Parameter Generation** - Lightweight parameter naming with caching
+- **Automatic PreparedStatement Caching** - Queries are automatically cached
 - **Connection Pooling** - Efficient connection management with configurable pool sizes
-- **Optimized Type Conversions** - Automatic handling of UUID, Date, and numeric type conversions
-- **Transaction Support** - ACID compliant transactions with automatic rollback on errors
+- **Smart Type Conversions** - Automatic handling of UUID, Date, and numeric types
+- **Transaction Support** - ACID compliant transactions with automatic rollback
 
 ## Installation
 
@@ -50,7 +56,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/1amageek/kuzu-swift-extension", from: "0.3.0")
+    .package(url: "https://github.com/1amageek/kuzu-swift-extension", branch: "main")
 ]
 ```
 
@@ -418,9 +424,9 @@ try await graph.withTransaction { tx in
 }
 ```
 
-#### Query Debugging and Analysis
+#### Query Compilation and Inspection
 ```swift
-// Debug query by compiling and inspecting
+// Compile and inspect queries before execution
 let query = Query(components: [
     Match.node(User.self),
     Return.count()
@@ -429,18 +435,8 @@ let cypher = try CypherCompiler.compile(query)
 print("Query: \(cypher.query)")
 print("Parameters: \(cypher.parameters)")
 
-// Inspect compiled query
 // The CypherCompiler provides all the information you need
-// No need for complex analysis tools
-
-// Profile query performance
-let (result, profile) = try await QueryProfiler.profile {
-    try await graph.query {
-        Match.node(User.self)
-        Return.count()
-    }
-}
-print("Query took \(profile.executionTimeMs)ms")
+// for debugging and optimization
 ```
 
 ## What Works Today
@@ -639,49 +635,28 @@ struct UserListView: View {
 }
 ```
 
-## Query DSL Roadmap
+## Documentation
 
-The Query DSL is under active development. Here's the current status:
-
-### ✅ Stable Features
-- Basic node/edge matching with `Match.node()` and `Match.edge()`
-- Property paths with `path()` for type-safe property access
-- Predicates: `==`, `!=`, `>`, `<`, `>=`, `<=`, `between()`, `in()`, `contains()`
-- Logical operators: `Where.all()`, `Where.any()`, `Where.not()`
-- Create, Update (Set), Delete operations
-- Return with ordering, limiting, and distinct
-- Query compilation to parameterized Cypher
-- Transaction support with automatic rollback
-- Connection pooling and PreparedStatement caching
-
-### 🚧 Beta Features
-- Complex path queries and pattern matching
-- Aggregation functions (count, sum, avg, max, min)
-- WITH clause for query pipelining
-- OPTIONAL MATCH patterns
-- EXISTS patterns for subquery conditions
-
-### 📋 Coming Soon
-- Subqueries with full composition
-- Graph algorithms (shortest path, etc.)
-- Advanced pattern matching
-- Full Cypher feature parity
+- 📋 [SPECIFICATION.md](SPECIFICATION.md) - Complete feature specification
+- 🚦 [API_STATUS.md](API_STATUS.md) - API stability status
+- 🤖 [CLAUDE.md](CLAUDE.md) - AI assistant guidance
+- 📚 [Wiki](https://github.com/1amageek/kuzu-swift-extension/wiki) - Additional documentation
 
 For complex queries not yet supported by the DSL, use `raw()` queries for full Cypher access.
 
 ## Query DSL vs Raw Cypher
 
-Currently, raw Cypher is more reliable for complex queries:
+Both approaches are production-ready with different strengths:
 
 ```swift
-// Declarative Query DSL (Experimental - simple queries work)
+// Declarative Query DSL - Type-safe and readable
 let results = try await graph.query {
     Match.node(User.self, alias: "u")
     Where.path(\.age, on: "u") > 25
     Return.node("u")
 }
 
-// Raw Cypher (Recommended for production)
+// Raw Cypher - Full flexibility for complex queries
 let results = try await graph.raw("""
     MATCH (u:User)
     WHERE u.age > $minAge
@@ -689,13 +664,16 @@ let results = try await graph.raw("""
     """, bindings: ["minAge": 25])
 ```
 
+Use Query DSL for type safety and better IDE support. Use raw Cypher when you need specific Cypher features not yet in the DSL.
+
 ## Performance Tips
 
 1. **Use Indexes**: Add `@Index` to frequently queried properties
-2. **Batch Operations**: Use `batchInsert()` for bulk data
-3. **Connection Pooling**: Automatically managed, configure if needed
+2. **Batch Operations**: Use `createMany()` for bulk inserts
+3. **Connection Pooling**: Automatically managed with optimized parameters
 4. **Limit Results**: Always use `.limit()` for large datasets
 5. **Use Transactions**: Group related operations for better performance
+6. **Parameter Caching**: Query parameters are automatically cached for reuse
 
 ## Advanced Configuration
 
@@ -760,8 +738,9 @@ await container.close()  // Drains the pool and prevents new connections
 
 1. **Reserved Keywords**: Avoid Cypher reserved words (e.g., use `result` instead of `exists`)
 2. **Build Times**: First build compiles Kuzu C++ (~5-10 minutes). Use incremental builds.
-3. **Type Mismatches**: Kuzu returns `Int64` for counts, handle accordingly
+3. **Type Mismatches**: Kuzu returns `Int64` for counts, automatic conversion is provided
 4. **Memory Usage**: Ensure 8GB+ RAM for C++ compilation
+5. **Parameter Names**: Use OptimizedParameterGenerator for consistent parameter naming
 
 ### Automatic Type Conversions
 
@@ -770,8 +749,9 @@ The library handles common type conversions automatically:
 - **UUID** ↔ String conversion for storage
 - **Date** ↔ Timestamp conversion (ISO8601 format)
 - **Numeric types**: Flexible conversions between Int, Int64, Double, Float
-- **Arrays and Dictionaries**: Automatic encoding/decoding with proper reference handling
+- **Arrays and Dictionaries**: Automatic encoding/decoding
 - **Optional types**: Automatic wrapping/unwrapping
+- **Custom types**: Encodable/Decodable support via KuzuEncoder/KuzuDecoder
 
 This means you can use Swift native types without worrying about database representations:
 
@@ -789,23 +769,23 @@ struct User: Codable {
 
 ### Error Handling
 
-The library provides comprehensive error handling with specific error types:
+The library provides unified error handling with KuzuError:
 
 ```swift
 do {
     let results = try await graph.query { /* ... */ }
+} catch KuzuError.compilationFailed(let query, let reason) {
+    print("Query compilation failed: \(reason)")
+} catch KuzuError.executionFailed(let query, let reason) {
+    print("Query execution failed: \(reason)")
+} catch KuzuError.typeMismatch(let expected, let actual, let field) {
+    print("Type mismatch in \(field ?? "result"): expected \(expected), got \(actual)")
+} catch KuzuError.noResults {
+    print("Query returned no results")
 } catch GraphError.connectionPoolExhausted {
-    // Connection pool has been drained (e.g., after calling close())
     print("Connection pool is no longer available")
-} catch GraphError.connectionTimeout(let duration) {
-    // Failed to acquire a connection within the timeout period
-    print("Failed to get connection within \(duration) seconds")
 } catch GraphError.transactionFailed(let reason) {
-    // Transaction was rolled back due to an error
     print("Transaction failed: \(reason)")
-} catch GraphError.invalidConfiguration(let message) {
-    // Configuration issue
-    print("Configuration error: \(message)")
 } catch {
     print("Unexpected error: \(error)")
 }
@@ -816,6 +796,27 @@ do {
 - Swift 6.1+
 - macOS 14+, iOS 17+, tvOS 17+, watchOS 10+
 - Xcode 16+
+
+## Beta 1 Status
+
+### What's Working
+- ✅ Core CRUD operations
+- ✅ Raw Cypher execution
+- ✅ Transactions with automatic rollback
+- ✅ Basic Query DSL (Match, Where, Return, Create, Set, Delete)
+- ✅ Type-safe model declarations with macros
+- ✅ Connection pooling
+
+### What's Beta
+- 🚧 Advanced Query DSL features
+- 🚧 Path operations and aggregations
+- 🚧 Schema migration
+
+### What's Not Available
+- ❌ Graph algorithms (Kuzu doesn't support them)
+- ❌ Some advanced Cypher features
+
+See [API_STATUS.md](API_STATUS.md) for detailed API stability information.
 
 ## Documentation
 
