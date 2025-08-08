@@ -61,7 +61,7 @@ public extension QueryResult {
                     var batch: [[String: Any]] = []
                     
                     while self.hasNext() {
-                        let row = try ResultMapper.nextRow(self)
+                        guard let row = try self.mapFirst() else { break }
                         batch.append(row)
                         
                         if batch.count >= batchSize {

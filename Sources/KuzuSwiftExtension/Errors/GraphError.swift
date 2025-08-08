@@ -15,6 +15,7 @@ public enum GraphError: LocalizedError {
     case kuzuError(error: Error, query: String?)
     case missingIdentifier
     case invalidOperation(message: String)
+    case conversionFailed(from: String, to: String)
     
     public var errorDescription: String? {
         switch self {
@@ -47,6 +48,8 @@ public enum GraphError: LocalizedError {
             return "Node model is missing an identifier (id property)"
         case .invalidOperation(let message):
             return "Invalid operation: \(message)"
+        case .conversionFailed(let from, let to):
+            return "Failed to convert value from type '\(from)' to type '\(to)'"
         }
     }
     
@@ -80,6 +83,8 @@ public enum GraphError: LocalizedError {
             return "Ensure the model has an @ID property"
         case .invalidOperation:
             return "Review the operation parameters and requirements"
+        case .conversionFailed:
+            return "Ensure the value types are compatible or implement proper type conversion"
         }
     }
     

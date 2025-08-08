@@ -67,7 +67,7 @@ struct DecodeDebugTest {
         
         // Now try decode
         let result2 = try await context.raw("MATCH (u:DecodeTestUser) WHERE u.age > 25 RETURN u ORDER BY u.name")
-        let decoded = try result2.decode(DecodeTestUser.self, column: "u")
+        let decoded = try result2.decodeArray(DecodeTestUser.self)
         print("Decoded count: \(decoded.count)")
         for user in decoded {
             print("  User: \(user.name), age: \(user.age)")

@@ -555,7 +555,7 @@ public extension GraphContext {
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
         // Use the existing mapAll method from ResultMapper extensions
-        return try result.mapAll(to: T.self)
+        return try result.map(to: T.self)
     }
     
     /// Executes PageRank and returns scores

@@ -85,7 +85,7 @@ struct QueryDSLTests {
     func queryWithAggregation() throws {
         let query = Query(components: [
             Match.pattern(.node(type: "Post", alias: "p", predicate: nil)),
-            Return.count()
+            Return.items([.count(nil)])
         ])
         
         let cypher = try CypherCompiler.compile(query)
@@ -154,12 +154,12 @@ struct QueryDSLTests {
     func multipleAggregations() throws {
         let query = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
-            Return.aggregates(
-                (.count("u"), "total"),
-                (.max(PropertyReference(alias: "u", property: "age")), "maxAge"),
-                (.min(PropertyReference(alias: "u", property: "age")), "minAge"),
-                (.avg(PropertyReference(alias: "u", property: "age")), "avgAge")
-            )
+            Return.items([
+                .aliased(expression: "COUNT(u)", alias: "total"),
+                .aliased(expression: "MAX(u.age)", alias: "maxAge"),
+                .aliased(expression: "MIN(u.age)", alias: "minAge"),
+                .aliased(expression: "AVG(u.age)", alias: "avgAge")
+            ])
         ])
         
         let cypher = try CypherCompiler.compile(query)

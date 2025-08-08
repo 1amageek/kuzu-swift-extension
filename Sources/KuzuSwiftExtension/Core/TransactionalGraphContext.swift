@@ -165,7 +165,7 @@ public struct TransactionalGraphContext: Sendable {
             RETURN n
             """
         let result = try raw(query)
-        return try result.decode(T.self, column: "n")
+        return try result.decodeArray(T.self)
     }
 }
 

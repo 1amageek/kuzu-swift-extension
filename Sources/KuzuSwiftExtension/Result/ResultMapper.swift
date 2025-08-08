@@ -1,358 +1,260 @@
 import Foundation
 import Kuzu
+import Algorithms
 
-/// Utility for mapping QueryResult to Swift types
-public struct ResultMapper {
+/// Provides convenient mapping and transformation methods for query results
+public extension QueryResult {
     
-    // MARK: - Private Validation Helpers
+    // MARK: - Basic Mapping
     
-    private static func validateColumnBounds(_ result: QueryResult, column: Int) throws {
-        let columnCount = Int(result.getColumnCount())
-        guard column < columnCount else {
-            throw ResultMappingError.columnIndexOutOfBounds(index: column, columnCount: columnCount)
-        }
-    }
-    
-    private static func getFieldName(_ result: QueryResult, column: Int) -> String? {
-        let columnNames = result.getColumnNames()
-        return column < columnNames.count ? columnNames[column] : nil
-    }
-    
-    // MARK: - Public Methods
-    
-    /// Maps a single value from the first row
-    public static func value<T>(_ result: QueryResult, at column: Int = 0) throws -> T {
-        guard result.hasNext() else {
-            throw ResultMappingError.noResults
-        }
-        
-        guard let flatTuple = try result.getNext() else {
-            throw ResultMappingError.noResults
-        }
-        
-        try validateColumnBounds(result, column: column)
-        
-        let value = try flatTuple.getValue(UInt64(column))
-        
-        // Check for null values on non-optional types
-        guard let value = value else {
-            let fieldName = getFieldName(result, column: column) ?? "column_\(column)"
-            throw ResultMappingError.nullValueForNonOptionalType(
-                field: fieldName,
-                type: String(describing: T.self)
-            )
-        }
-        
-        return try cast(value, to: T.self, field: getFieldName(result, column: column))
-    }
-    
-    /// Maps a single optional value from the first row
-    public static func optionalValue<T>(_ result: QueryResult, at column: Int = 0) throws -> T? {
-        guard result.hasNext() else {
-            return nil
-        }
-        
-        guard let flatTuple = try result.getNext() else {
-            return nil
-        }
-        
-        try validateColumnBounds(result, column: column)
-        
-        let value = try flatTuple.getValue(UInt64(column))
-        guard let value = value else {
-            return nil
-        }
-        
-        return try cast(value, to: T.self, field: getFieldName(result, column: column))
-    }
-    
-    /// Maps all values from a column as an array
-    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
-    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
-    public static func column<T>(_ result: QueryResult, at column: Int = 0) throws -> [T] {
-        try validateColumnBounds(result, column: column)
-        
-        var values: [T] = []
-        let fieldName = getFieldName(result, column: column)
-        var hasConsumedResults = false
-        
-        while result.hasNext() {
-            hasConsumedResults = true
-            guard let flatTuple = try result.getNext() else {
-                break
-            }
-            
-            let value = try flatTuple.getValue(UInt64(column))
-            if let value = value {
-                values.append(try cast(value, to: T.self, field: fieldName))
-            }
-        }
-        
-        // Warn if QueryResult appears to be already consumed
-        if values.isEmpty && !hasConsumedResults {
-            #if DEBUG
-            print("Warning: QueryResult may have been already consumed. QueryResult can only be iterated once.")
-            #endif
-        }
-        
-        return values
-    }
-    
-    /// Maps a row to a dictionary
-    public static func row(_ result: QueryResult) throws -> [String: Any] {
-        guard result.hasNext() else {
-            throw ResultMappingError.noResults
-        }
-        
-        guard let flatTuple = try result.getNext() else {
-            throw ResultMappingError.noResults
-        }
-        
-        return try flatTuple.getAsDictionary().compactMapValues { $0 }
-    }
-    
-    /// Maps all rows to an array of dictionaries
-    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
-    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
-    public static func rows(_ result: QueryResult) throws -> [[String: Any]] {
+    /// Maps the result to an array of dictionaries
+    public func mapRows() throws -> [[String: Any]] {
         var rows: [[String: Any]] = []
+        let columnNames = getColumnNames()
         
-        while result.hasNext() {
-            guard let flatTuple = try result.getNext() else {
-                break
+        while hasNext() {
+            guard let tuple = try getNext() else { break }
+            var row: [String: Any] = [:]
+            
+            for (index, columnName) in columnNames.enumerated() {
+                row[columnName] = try decodeValue(tuple.getValue(UInt64(index)))
             }
             
-            let dict = try flatTuple.getAsDictionary().compactMapValues { $0 }
-            rows.append(dict)
+            rows.append(row)
         }
         
         return rows
     }
     
-    /// Gets the next row from a QueryResult
-    public static func nextRow(_ result: QueryResult) throws -> [String: Any] {
-        guard result.hasNext() else {
-            throw ResultMappingError.noResults
+    /// Maps the first row to a dictionary
+    public func mapFirst() throws -> [String: Any]? {
+        guard hasNext() else { return nil }
+        
+        guard let tuple = try getNext() else {
+            throw GraphError.invalidOperation(message: "Failed to get next tuple")
         }
-        
-        guard let flatTuple = try result.getNext() else {
-            throw ResultMappingError.noResults
-        }
-        
-        return try flatTuple.getAsDictionary().compactMapValues { $0 }
-    }
-    
-    // MARK: - Private Helpers
-    
-    private static func cast<T>(_ value: Any, to type: T.Type, field: String? = nil) throws -> T {
-        // NSNull handling
-        if value is NSNull {
-            throw ResultMappingError.nullValueForNonOptionalType(
-                field: field ?? "unknown",
-                type: String(describing: T.self)
-            )
-        }
-        
-        // Use shared type conversion utility
-        if let converted = TypeConversion.convert(value, to: type) {
-            return converted
-        }
-        
-        throw ResultMappingError.typeMismatch(
-            expected: String(describing: T.self),
-            actual: String(describing: Swift.type(of: value)),
-            field: field
-        )
-    }
-}
-
-// MARK: - QueryResult Extensions
-
-extension QueryResult {
-    // MARK: - Decodable Support
-    
-    /// Decodes results to an array of Decodable types from a specific column
-    public func decode<T: Decodable>(_ type: T.Type, column: String) throws -> [T] {
-        let decoder = KuzuDecoder()
-        var results: [T] = []
-        
-        // Find column index
         let columnNames = getColumnNames()
-        guard let columnIndex = columnNames.firstIndex(of: column) else {
-            throw ResultMappingError.columnNotFound(column: column)
+        var row: [String: Any] = [:]
+        
+        for (index, columnName) in columnNames.enumerated() {
+            row[columnName] = try decodeValue(tuple.getValue(UInt64(index)))
         }
         
-        while hasNext() {
-            guard let flatTuple = try getNext() else {
-                break
-            }
-            
-            if let value = try flatTuple.getValue(UInt64(columnIndex)) {
-                // Check if value is a KuzuNode (graph node)
-                if let nodeValue = value as? Kuzu.KuzuNode {
-                    // Extract properties dictionary from KuzuNode
-                    let properties = nodeValue.properties
-                    let decoded = try decoder.decode(T.self, from: properties)
-                    results.append(decoded)
-                } else if let dict = value as? [String: Any?] {
-                    // Direct dictionary decoding
-                    let decoded = try decoder.decode(T.self, from: dict)
-                    results.append(decoded)
-                } else if let dict = value as? [String: Any] {
-                    // Try without optional values
-                    let decoded = try decoder.decode(T.self, from: dict)
-                    results.append(decoded)
-                } else {
-                    // Try to decode as a simple value
-                    if let casted = value as? T {
-                        results.append(casted)
-                    }
-                }
-            }
-        }
-        
-        return results
+        return row
     }
     
-    /// Decodes the first result to a Decodable type from a specific column
-    public func first<T: Decodable>(_ type: T.Type, column: String) throws -> T? {
+    /// Maps the first row to a specific type at a given column index (required version)
+    public func mapFirstRequired<T>(to type: T.Type, at columnIndex: Int) throws -> T {
         guard hasNext() else {
-            return nil
+            throw GraphError.invalidOperation(message: "No rows returned from query")
         }
         
+        guard let tuple = try getNext() else {
+            throw GraphError.invalidOperation(message: "Failed to get next tuple")
+        }
+        let value = try decodeValue(tuple.getValue(UInt64(columnIndex)))
+        return try castValue(value, to: type)
+    }
+    
+    // MARK: - Type-Safe Mapping
+    
+    /// Maps rows to a specific Decodable type
+    public func map<T: Decodable>(to type: T.Type) throws -> [T] {
+        let rows = try mapRows()
         let decoder = KuzuDecoder()
         
-        // Find column index
-        let columnNames = getColumnNames()
-        guard let columnIndex = columnNames.firstIndex(of: column) else {
-            throw ResultMappingError.columnNotFound(column: column)
+        // Use swift-algorithms for efficient mapping
+        return try rows.map { row in
+            try decoder.decode(type, from: row)
+        }
+    }
+    
+    /// Maps the first row to a specific Decodable type
+    public func mapFirst<T: Decodable>(to type: T.Type) throws -> T? {
+        guard let row = try mapFirst() else { return nil }
+        let decoder = KuzuDecoder()
+        return try decoder.decode(type, from: row)
+    }
+    
+    // MARK: - Column Extraction
+    
+    /// Extracts values from a specific column
+    public func column<T>(_ name: String, as type: T.Type) throws -> [T] {
+        let rows = try mapRows()
+        
+        // Use swift-algorithms compactMap for efficient extraction
+        return try rows.compactMap { row in
+            guard let value = row[name] else { return nil }
+            return try castValue(value, to: type)
+        }
+    }
+    
+    /// Extracts unique values from a specific column using swift-algorithms
+    public func uniqueColumn<T: Hashable>(_ name: String, as type: T.Type) throws -> Set<T> {
+        let rows = try mapRows()
+        
+        // Use swift-algorithms uniqued() for efficient unique extraction
+        let values = try rows.compactMap { row -> T? in
+            guard let value = row[name] else { return nil }
+            return try castValue(value, to: type)
         }
         
-        guard let flatTuple = try getNext() else {
-            return nil
-        }
+        return Set(values.uniqued())
+    }
+    
+    // MARK: - Aggregation
+    
+    /// Count rows
+    public func count() throws -> Int {
+        return try mapRows().count
+    }
+    
+    /// Groups rows by a key using swift-algorithms
+    public func grouped<Key: Hashable>(by keyPath: String, as keyType: Key.Type) throws -> [Key: [[String: Any]]] {
+        let rows = try mapRows()
         
-        if let value = try flatTuple.getValue(UInt64(columnIndex)) {
-            // Check if value is a KuzuNode (graph node)
-            if let nodeValue = value as? Kuzu.KuzuNode {
-                // Extract properties dictionary from KuzuNode
-                let properties = nodeValue.properties
-                return try decoder.decode(T.self, from: properties)
-            } else if let dict = value as? [String: Any?] {
-                // Direct dictionary decoding
-                return try decoder.decode(T.self, from: dict)
-            } else if let dict = value as? [String: Any] {
-                // Try without optional values
-                return try decoder.decode(T.self, from: dict)
+        // Use swift-algorithms' grouped(by:) for efficient grouping
+        return Dictionary(grouping: rows) { row in
+            try? castValue(row[keyPath], to: keyType)
+        }.compactMapKeys { $0 }
+    }
+    
+    /// Groups and aggregates using swift-algorithms
+    public func groupedAndAggregated<Key: Hashable, Value>(
+        by keyPath: String,
+        as keyType: Key.Type,
+        aggregate: String,
+        with aggregator: ([Any]) -> Value
+    ) throws -> [Key: Value] {
+        let rows = try mapRows()
+        
+        // Use swift-algorithms for efficient grouping and aggregation
+        let grouped = Dictionary(grouping: rows) { row -> Key? in
+            try? castValue(row[keyPath], to: keyType)
+        }.compactMapKeys { $0 }
+        
+        return grouped.mapValues { group in
+            let values = group.compactMap { $0[aggregate] }
+            return aggregator(values)
+        }
+    }
+    
+    // MARK: - Advanced Operations with swift-algorithms
+    
+    /// Finds the first row matching a predicate using swift-algorithms
+    public func first(where predicate: ([String: Any]) throws -> Bool) throws -> [String: Any]? {
+        let rows = try mapRows()
+        return try rows.first(where: predicate)
+    }
+    
+    /// Finds all rows matching a predicate with limit using swift-algorithms
+    public func prefix(while predicate: ([String: Any]) throws -> Bool) throws -> [[String: Any]] {
+        let rows = try mapRows()
+        return try Array(rows.prefix(while: predicate))
+    }
+    
+    /// Takes first n rows using swift-algorithms
+    public func prefix(_ maxLength: Int) throws -> [[String: Any]] {
+        let rows = try mapRows()
+        return Array(rows.prefix(maxLength))
+    }
+    
+    /// Drops first n rows using swift-algorithms
+    public func dropFirst(_ count: Int) throws -> [[String: Any]] {
+        let rows = try mapRows()
+        return Array(rows.dropFirst(count))
+    }
+    
+    /// Chunks rows into batches using swift-algorithms
+    public func chunked(by size: Int) throws -> [[[String: Any]]] {
+        let rows = try mapRows()
+        return rows.chunks(ofCount: size).map(Array.init)
+    }
+    
+    /// Returns rows in sliding windows using swift-algorithms
+    public func windows(ofCount count: Int) throws -> [[[String: Any]]] {
+        let rows = try mapRows()
+        return rows.windows(ofCount: count).map(Array.init)
+    }
+    
+    /// Combines two result sets using swift-algorithms
+    public func zip<T>(with other: [T]) throws -> [(row: [String: Any], item: T)] {
+        let rows = try mapRows()
+        return Array(Swift.zip(rows, other))
+    }
+    
+    /// Finds unique adjacent rows using swift-algorithms
+    public func uniquedAdjacent(by keyPath: String) throws -> [[String: Any]] {
+        let rows = try mapRows()
+        return rows.uniqued(on: { $0[keyPath] as? AnyHashable })
+    }
+    
+    /// Partitions rows based on a predicate using swift-algorithms
+    public func partitioned(by predicate: ([String: Any]) throws -> Bool) throws -> (matching: [[String: Any]], notMatching: [[String: Any]]) {
+        let rows = try mapRows()
+        
+        var matching: [[String: Any]] = []
+        var notMatching: [[String: Any]] = []
+        
+        for row in rows {
+            if try predicate(row) {
+                matching.append(row)
             } else {
-                // Try to decode as a simple value
-                return value as? T
+                notMatching.append(row)
             }
         }
         
+        return (matching, notMatching)
+    }
+    
+    /// Returns combinations of rows using swift-algorithms
+    public func combinations(ofCount count: Int) throws -> [[[String: Any]]] {
+        let rows = try mapRows()
+        return rows.combinations(ofCount: count).map(Array.init)
+    }
+    
+    /// Returns permutations of rows using swift-algorithms
+    public func permutations(ofCount count: Int? = nil) throws -> [[[String: Any]]] {
+        let rows = try mapRows()
+        if let count = count {
+            return rows.permutations(ofCount: count).map(Array.init)
+        } else {
+            return rows.permutations().map(Array.init)
+        }
+    }
+    
+    // MARK: - Statistical Operations with swift-algorithms
+    
+    /// Calculates min/max for a numeric column using swift-algorithms
+    public func minMax<T: Comparable>(for column: String, as type: T.Type) throws -> (min: T, max: T)? {
+        let values = try self.column(column, as: type)
+        guard !values.isEmpty else { return nil }
+        
+        // Use swift-algorithms minAndMax for efficiency
+        if let result = values.minAndMax() {
+            return (min: result.min, max: result.max)
+        }
         return nil
     }
     
-    /// Decodes node and edge pairs from the result
-    public func decodePairs<N: Decodable, E: Decodable>(
-        nodeType: N.Type,
-        edgeType: E.Type,
-        nodeColumn: String = "n",
-        edgeColumn: String = "e"
-    ) throws -> [(node: N, edge: E)] {
-        let decoder = KuzuDecoder()
-        var results: [(node: N, edge: E)] = []
-        
-        // Find column indices
-        let columnNames = getColumnNames()
-        guard let nodeIndex = columnNames.firstIndex(of: nodeColumn) else {
-            throw ResultMappingError.columnNotFound(column: nodeColumn)
-        }
-        guard let edgeIndex = columnNames.firstIndex(of: edgeColumn) else {
-            throw ResultMappingError.columnNotFound(column: edgeColumn)
-        }
-        
-        while hasNext() {
-            guard let flatTuple = try getNext() else {
-                break
-            }
-            
-            if let nodeValue = try flatTuple.getValue(UInt64(nodeIndex)),
-               let edgeValue = try flatTuple.getValue(UInt64(edgeIndex)) {
-                // Convert values to dictionaries for decoding
-                if let nodeDict = nodeValue as? [String: Any?],
-                   let edgeDict = edgeValue as? [String: Any?] {
-                    let node = try decoder.decode(N.self, from: nodeDict)
-                    let edge = try decoder.decode(E.self, from: edgeDict)
-                    results.append((node: node, edge: edge))
-                }
-            }
-        }
-        
-        return results
-    }
-    
-    // MARK: - Single Value Mapping
-    
-    /// Maps the first result to a value
-    public func mapFirst<T>(to type: T.Type, at column: Int = 0) throws -> T? {
-        guard hasNext() else {
-            return nil
-        }
-        return try ResultMapper.value(self, at: column)
-    }
-    
-    /// Maps the first result to a value, throwing if no results
-    public func mapFirstRequired<T>(to type: T.Type, at column: Int = 0) throws -> T {
-        return try ResultMapper.value(self, at: column)
-    }
-    
-    // MARK: - Collection Mapping
-    
-    /// Maps all results to an array of values
-    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
-    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
-    /// - TODO: When kuzu-swift supports result cloning, implement proper iterator reset functionality
-    public func mapAll<T>(to type: T.Type, at column: Int = 0) throws -> [T] {
-        let results: [T] = try ResultMapper.column(self, at: column)
-        
-        // Check if we've consumed an already-consumed iterator
-        // This helps developers identify the issue quickly
-        if results.isEmpty && !isEmpty {
-            // Note: isEmpty also consumes the iterator, so we can't reliably detect this case
-            // TODO: Remove this when kuzu-swift supports result.clone() or reset()
-        }
-        
-        return results
-    }
-    
-    /// Maps results to an array of dictionaries
-    /// - Warning: This method consumes the QueryResult iterator. Subsequent calls will return empty results.
-    /// - Note: QueryResult can only be iterated once. Store the results if you need to access them multiple times.
-    public func mapRows() throws -> [[String: Any]] {
-        return try ResultMapper.rows(self)
-    }
-    
-    /// Maps the first row to a dictionary
-    public func mapFirstRow() throws -> [String: Any]? {
-        guard hasNext() else {
-            return nil
-        }
-        return try ResultMapper.row(self)
-    }
-    
-    // MARK: - Fluent API
-    
-    /// Maps each row with a transform function
-    public func map<T>(_ transform: ([String: Any]) throws -> T) throws -> [T] {
-        var results: [T] = []
+    /// Samples random rows using swift-algorithms
+    public func randomSample(count: Int) throws -> [[String: Any]] {
         let rows = try mapRows()
-        
-        for row in rows {
-            results.append(try transform(row))
-        }
-        
-        return results
+        return Array(rows.randomSample(count: count))
+    }
+    
+    /// Finds adjacent pairs of rows using swift-algorithms
+    public func adjacentPairs() throws -> [([String: Any], [String: Any])] {
+        let rows = try mapRows()
+        return rows.adjacentPairs().map { ($0, $1) }
+    }
+    
+    // MARK: - Transformation Operations
+    
+    /// Transforms each row with a function
+    public func map<T>(_ transform: ([String: Any]) throws -> T) throws -> [T] {
+        let rows = try mapRows()
+        return try rows.map(transform)
     }
     
     /// Filters rows based on a predicate
@@ -361,80 +263,146 @@ extension QueryResult {
         return try rows.filter(predicate)
     }
     
-    /// Transforms and filters in one operation
+    /// Transforms and filters in one operation using swift-algorithms
     public func compactMap<T>(_ transform: ([String: Any]) throws -> T?) throws -> [T] {
-        var results: [T] = []
         let rows = try mapRows()
-        
-        for row in rows {
-            if let transformed = try transform(row) {
-                results.append(transformed)
-            }
-        }
-        
-        return results
+        return try rows.compactMap(transform)
+    }
+    
+    /// FlatMaps rows using swift-algorithms
+    public func flatMap<T>(_ transform: ([String: Any]) throws -> [T]) throws -> [T] {
+        let rows = try mapRows()
+        return try rows.flatMap(transform)
+    }
+    
+    /// Reduces rows to a single value using swift-algorithms
+    public func reduce<T>(_ initialResult: T, _ nextPartialResult: (T, [String: Any]) throws -> T) throws -> T {
+        let rows = try mapRows()
+        return try rows.reduce(initialResult, nextPartialResult)
+    }
+    
+    /// Reduces rows into a result using swift-algorithms
+    public func reduce<T>(into initialResult: T, _ updateAccumulatingResult: (inout T, [String: Any]) throws -> Void) throws -> T {
+        let rows = try mapRows()
+        return try rows.reduce(into: initialResult, updateAccumulatingResult)
     }
     
     // MARK: - Convenience Methods
     
-    /// Returns true if the query has any results
+    /// Checks if result is empty
     public var isEmpty: Bool {
         return !hasNext()
     }
     
-    /// Counts the number of results
-    /// - Warning: This method consumes the QueryResult iterator. The QueryResult cannot be used after calling this method.
-    public func count() throws -> Int {
-        var count = 0
+    /// Returns all values as an array of arrays
+    public func allValues() throws -> [[Any]] {
+        var allRows: [[Any]] = []
+        let columnCount = getColumnCount()
+        
         while hasNext() {
-            _ = try getNext()
-            count += 1
-        }
-        return count
-    }
-    
-    /// Iterates over results with a closure
-    public func forEach(_ body: ([String: Any]) throws -> Void) throws {
-        let rows = try mapRows()
-        for row in rows {
-            try body(row)
-        }
-    }
-    
-    /// Returns the first N results
-    public func limit(_ count: Int) throws -> [[String: Any]] {
-        var results: [[String: Any]] = []
-        var current = 0
-        
-        while hasNext() && current < count {
-            results.append(try ResultMapper.row(self))
-            current += 1
+            guard let tuple = try getNext() else { break }
+            var row: [Any] = []
+            
+            for i in 0..<columnCount {
+                row.append(try decodeValue(tuple.getValue(UInt64(i))))
+            }
+            
+            allRows.append(row)
         }
         
-        return results
+        return allRows
+    }
+    
+    // MARK: - Private Helpers
+    
+    private func decodeValue(_ value: Any) throws -> Any {
+        // The value from tuple.getValue() is already decoded by Kuzu
+        // We handle arrays and dictionaries recursively
+        
+        switch value {
+        case let v as [Any]:
+            return try v.map { try decodeValue($0) }
+            
+        case let v as [String: Any]:
+            return try v.mapValues { try decodeValue($0) }
+            
+        default:
+            // Return the value as-is for all other types
+            // This includes primitive types and Kuzu's node/edge types
+            return value
+        }
+    }
+    
+    private func castValue<T>(_ value: Any?, to type: T.Type) throws -> T {
+        guard let value = value else {
+            throw GraphError.conversionFailed(from: "nil", to: String(describing: type))
+        }
+        
+        if let result = value as? T {
+            return result
+        }
+        
+        // Handle numeric conversions
+        if type == Int.self {
+            if let intVal = value as? Int64 {
+                return Int(intVal) as! T
+            }
+            if let doubleVal = value as? Double {
+                return Int(doubleVal) as! T
+            }
+        }
+        
+        if type == Int64.self {
+            if let intVal = value as? Int {
+                return Int64(intVal) as! T
+            }
+            if let doubleVal = value as? Double {
+                return Int64(doubleVal) as! T
+            }
+        }
+        
+        if type == Double.self {
+            if let intVal = value as? Int {
+                return Double(intVal) as! T
+            }
+            if let intVal = value as? Int64 {
+                return Double(intVal) as! T
+            }
+            if let floatVal = value as? Float {
+                return Double(floatVal) as! T
+            }
+        }
+        
+        if type == Float.self {
+            if let intVal = value as? Int {
+                return Float(intVal) as! T
+            }
+            if let intVal = value as? Int64 {
+                return Float(intVal) as! T
+            }
+            if let doubleVal = value as? Double {
+                return Float(doubleVal) as! T
+            }
+        }
+        
+        throw GraphError.conversionFailed(
+            from: String(describing: Swift.type(of: value)),
+            to: String(describing: type)
+        )
     }
 }
 
-// MARK: - Typed Extensions for Common Cases
+// MARK: - Dictionary Extensions for swift-algorithms
 
-extension QueryResult {
-    /// Maps a single-column result to an array of strings
-    public func mapStrings(at column: Int = 0) throws -> [String] {
-        return try mapAll(to: String.self, at: column)
-    }
-    
-    /// Maps a single-column result to an array of integers
-    public func mapInts(at column: Int = 0) throws -> [Int] {
-        return try mapAll(to: Int.self, at: column)
-    }
-    
-    /// Maps a single-column result to an array of doubles
-    public func mapDoubles(at column: Int = 0) throws -> [Double] {
-        return try mapAll(to: Double.self, at: column)
-    }
-    
-    /// Maps a single-column result to an array of booleans
-    public func mapBools(at column: Int = 0) throws -> [Bool] {
-        return try mapAll(to: Bool.self, at: column)
+extension Dictionary {
+    /// Compact map keys while preserving values
+    func compactMapKeys<T: Hashable>(_ transform: (Key) throws -> T?) rethrows -> [T: Value] {
+        var result: [T: Value] = [:]
+        for (key, value) in self {
+            if let newKey = try transform(key) {
+                result[newKey] = value
+            }
+        }
+        return result
     }
 }

@@ -168,7 +168,7 @@ struct TypeSafeAPITests {
             bindings: cypher.parameters
         )
         
-        let count = try result.mapFirst(to: Int64.self, at: 0) ?? 0
+        let count = try result.mapFirst(to: Int64.self) ?? 0
         if shouldMatch {
             #expect(count == 1, "Expected match for operation: \(operation)")
         } else {
@@ -195,7 +195,7 @@ struct TypeSafeAPITests {
         
         // Verify creation
         let result = try await context.raw("MATCH (u:TestUser) RETURN COUNT(u) as count")
-        let count = try result.mapFirst(to: Int64.self, at: 0) ?? 0
+        let count = try result.mapFirst(to: Int64.self) ?? 0
         #expect(count == 3)
         
         await context.close()
@@ -226,7 +226,7 @@ struct TypeSafeAPITests {
         
         // Verify update
         let result = try await context.raw("MATCH (u:TestUser) WHERE u.status = 'senior' RETURN COUNT(u) as count")
-        let count = try result.mapFirst(to: Int64.self, at: 0) ?? 0
+        let count = try result.mapFirst(to: Int64.self) ?? 0
         #expect(count == 2)
         
         await context.close()
@@ -257,12 +257,15 @@ struct TypeSafeAPITests {
         
         // Verify deletion
         let result = try await context.raw("MATCH (u:TestUser) RETURN COUNT(u) as count")
-        let count = try result.mapFirst(to: Int64.self, at: 0) ?? 0
+        let count = try result.mapFirst(to: Int64.self) ?? 0
         #expect(count == 1)
         
         // Verify remaining user
         let remainingResult = try await context.raw("MATCH (u:TestUser) RETURN u.name as name")
-        let name = try remainingResult.mapFirst(to: String.self, at: 0)
+        guard let row = try remainingResult.mapFirst() else {
+            throw GraphError.invalidOperation(message: "No rows returned")
+        }
+        let name = row["name"] as? String
         #expect(name == "Delete3")
         
         await context.close()
@@ -287,7 +290,7 @@ struct TypeSafeAPITests {
         
         // Test decode array
         let result = try await context.raw("MATCH (u:TestUser) RETURN u ORDER BY u.age")
-        let decodedUsers = try result.decode(TestUser.self, column: "u")
+        let decodedUsers = try result.decodeArray(TestUser.self)
         
         #expect(decodedUsers.count == 3)
         if decodedUsers.count >= 3 {
@@ -306,14 +309,30 @@ struct TypeSafeAPITests {
         try await insertUser(user, context: context)
         
         // Map strings
-        let namesResult = try await context.raw("MATCH (u:TestUser) RETURN u.name")
-        let names = try namesResult.mapStrings(at: 0)
+        let namesResult = try await context.raw("MATCH (u:TestUser) RETURN u.name AS name")
+        let nameRows = try namesResult.mapRows()
+        let names = nameRows.compactMap { row -> String? in
+            if let nameOpt = row["name"], let name = nameOpt as? String {
+                return name
+            }
+            return nil
+        }
         #expect(names.count == 1)
         #expect(names.first == "Mapper")
         
         // Map integers  
-        let agesResult = try await context.raw("MATCH (u:TestUser) RETURN u.age")
-        let ages = try agesResult.mapInts(at: 0)
+        let agesResult = try await context.raw("MATCH (u:TestUser) RETURN u.age AS age")
+        let ageRows = try agesResult.mapRows()
+        let ages = ageRows.compactMap { row -> Int? in
+            if let ageOpt = row["age"] {
+                if let age = ageOpt as? Int {
+                    return age
+                } else if let age64 = ageOpt as? Int64 {
+                    return Int(age64)
+                }
+            }
+            return nil
+        }
         #expect(ages.count == 1)
         #expect(ages.first == 25)
         

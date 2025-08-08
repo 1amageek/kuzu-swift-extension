@@ -179,7 +179,7 @@ struct GraphModelTests {
         
         // Query for users over 25 - using raw query since greaterThan may not exist
         let result = try await context.raw("MATCH (u:ModelTestUser) WHERE u.age > 25 RETURN u ORDER BY u.name")
-        let adults = try result.decode(ModelTestUser.self, column: "u")
+        let adults = try result.decodeArray(ModelTestUser.self)
         #expect(adults.count == 2)
         
         let adultNames = adults.map { $0.name }.sorted()
@@ -228,7 +228,7 @@ struct GraphModelTests {
         
         // Count adults (25-60) - using raw query since between may not exist
         let countResult = try await context.raw("MATCH (u:ModelTestUser) WHERE u.age >= 25 AND u.age <= 60 RETURN COUNT(u) as count")
-        let adultCount = try countResult.mapFirst(to: Int64.self, at: 0) ?? 0
+        let adultCount = try countResult.mapFirst(to: Int64.self) ?? 0
         #expect(adultCount == Int64(2))
         
         await context.close()

@@ -177,7 +177,7 @@ extension GraphContext {
             """
         
         let result = try await raw(cypher, bindings: ["nodeId": convertToSendable(nodeId)])
-        return try result.decode(N.self, column: "target")
+        return try result.decodeArray(N.self)
     }
     
     /// Finds nodes and their connecting edges
@@ -211,7 +211,23 @@ extension GraphContext {
             """
         
         let result = try await raw(cypher, bindings: ["nodeId": convertToSendable(nodeId)])
-        return try result.decodePairs(nodeType: N.self, edgeType: E.self, nodeColumn: "target", edgeColumn: "e")
+        
+        // Decode pairs manually since decodePairs doesn't exist
+        var pairs: [(node: N, edge: E)] = []
+        while result.hasNext() {
+            guard let tuple = try result.getNext() else { break }
+            let dict = try tuple.getAsDictionary()
+            
+            // Decode node and edge from the dictionary
+            let decoder = KuzuDecoder()
+            if let nodeData = dict["target"] as? [String: Any?],
+               let edgeData = dict["e"] as? [String: Any?] {
+                let node = try decoder.decode(N.self, from: nodeData)
+                let edge = try decoder.decode(E.self, from: edgeData)
+                pairs.append((node: node, edge: edge))
+            }
+        }
+        return pairs
     }
     
     // MARK: - Relationship Deletion
@@ -351,7 +367,7 @@ extension GraphContext {
             "toId": convertToSendable(toId)
         ])
         
-        if let row = try? result.mapFirstRow() {
+        if let row = try? result.mapFirst() {
             // Convert to Sendable dictionary
             var sendableRow: [String: any Sendable] = [:]
             for (key, value) in row {

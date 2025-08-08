@@ -38,7 +38,7 @@ public extension TransactionalGraphContext {
         @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> T {
         let result = try query(builder)
-        return try ResultMapper.value(result, at: column)
+        return try result.mapFirstRequired(to: T.self, at: column)
     }
     
     /// Executes a query and returns an optional value
@@ -48,7 +48,8 @@ public extension TransactionalGraphContext {
         @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> T? {
         let result = try query(builder)
-        return try ResultMapper.optionalValue(result, at: column)
+        guard result.hasNext() else { return nil }
+        return try result.mapFirstRequired(to: T.self, at: column)
     }
     
     /// Executes a query and returns an array of values from a specific column
@@ -58,20 +59,20 @@ public extension TransactionalGraphContext {
         @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> [T] {
         let result = try query(builder)
-        return try ResultMapper.column(result, at: column)
+        return try result.column(result.getColumnNames()[column], as: T.self)
     }
     
     /// Executes a query and returns a dictionary (single row)
     func queryRow(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> [String: Any]? {
         let result = try query(builder)
         guard result.hasNext() else { return nil }
-        return try ResultMapper.row(result)
+        return try result.mapFirst()
     }
     
     /// Executes a query and returns an array of dictionaries
     func queryRows(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> [[String: Any]] {
         let result = try query(builder)
-        return try ResultMapper.rows(result)
+        return try result.mapRows()
     }
 }
 
@@ -97,7 +98,7 @@ public extension TransactionalGraphContext {
         
         for alias in possibleAliases {
             if result.getColumnNames().contains(alias) {
-                return try result.decode(T.self, column: alias)
+                return try result.decodeArray(T.self)
             }
         }
         
@@ -112,7 +113,7 @@ public extension TransactionalGraphContext {
     ) throws -> Int {
         // Build the query with components and add count
         var components = builder()
-        components.append(Return.count())
+        components.append(Return.items([.count(nil)]))
         
         let countQuery = Query(components: components)
         let cypher = try CypherCompiler.compile(countQuery)

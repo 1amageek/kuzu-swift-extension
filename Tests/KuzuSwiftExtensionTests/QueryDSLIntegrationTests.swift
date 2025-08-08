@@ -146,7 +146,7 @@ struct QueryDSLIntegrationTests {
         // Test COUNT
         let countQuery = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
-            Return.count()
+            Return.items([.count(nil)])
         ])
         
         let countCypher = try CypherCompiler.compile(countQuery)
@@ -155,7 +155,9 @@ struct QueryDSLIntegrationTests {
         // Test AVG
         let avgQuery = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
-            Return.aggregate(.avg(PropertyReference(alias: "u", property: "age")), as: "avgAge")
+            Return.items([
+                .aliased(expression: "AVG(u.age)", alias: "avgAge")
+            ])
         ])
         
         let avgCypher = try CypherCompiler.compile(avgQuery)
@@ -165,11 +167,11 @@ struct QueryDSLIntegrationTests {
         // Test multiple aggregations
         let multiAggQuery = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
-            Return.aggregates(
-                (.count("u"), "total"),
-                (.max(PropertyReference(alias: "u", property: "age")), "maxAge"),
-                (.min(PropertyReference(alias: "u", property: "age")), "minAge")
-            )
+            Return.items([
+                .aliased(expression: "COUNT(u)", alias: "total"),
+                .aliased(expression: "MAX(u.age)", alias: "maxAge"),
+                .aliased(expression: "MIN(u.age)", alias: "minAge")
+            ])
         ])
         
         let multiCypher = try CypherCompiler.compile(multiAggQuery)
@@ -285,7 +287,7 @@ struct QueryDSLIntegrationTests {
         let query = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
             Match.pattern(.edge(type: "Follows", from: "u", to: "other", alias: "f", predicate: nil)),
-            Return.aggregate(.count("other"), as: "followerCount")
+            Return.items([.aliased(expression: "COUNT(other)", alias: "followerCount")])
         ])
         
         let analysis = try QueryIntrospection.analyze(query)

@@ -42,7 +42,7 @@ public actor GraphContext {
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
-        return try ResultMapper.value(result, at: column)
+        return try result.mapFirstRequired(to: T.self, at: column)
     }
     
     /// Executes a query and returns an optional value
@@ -51,7 +51,8 @@ public actor GraphContext {
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
-        return try ResultMapper.optionalValue(result, at: column)
+        guard result.hasNext() else { return nil }
+        return try result.mapFirstRequired(to: T.self, at: column)
     }
     
     /// Executes a query and returns an array of values
@@ -60,7 +61,7 @@ public actor GraphContext {
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
-        return try ResultMapper.column(result, at: column)
+        return try result.column(result.getColumnNames()[column], as: T.self)
     }
     
     /// Executes a query and returns a dictionary
@@ -69,7 +70,10 @@ public actor GraphContext {
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
-        return try ResultMapper.row(result)
+        guard let row = try result.mapFirst() else {
+            throw GraphError.invalidOperation(message: "No rows returned from query")
+        }
+        return row
     }
     
     /// Executes a query and returns an array of dictionaries
@@ -78,7 +82,7 @@ public actor GraphContext {
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
-        return try ResultMapper.rows(result)
+        return try result.mapRows()
     }
     
     /// Executes a query and decodes the result to a Codable type

@@ -69,7 +69,7 @@ struct QueryDSLAdvancedFeatureTests {
     func testQueryDebugInfo() throws {
         let query = Query(components: [
             Match.pattern(.node(type: "Person", alias: "p", predicate: nil)),
-            Return.count()
+            Return.items([.count(nil)])
         ])
         
         let debugInfo = try query.debugInfo()
@@ -99,7 +99,7 @@ struct QueryDSLAdvancedFeatureTests {
         // Scalar subquery
         let scalar = Subquery.scalar(Query(components: [
             Match.pattern(.node(type: "Test", alias: "t", predicate: nil)),
-            Return.count()
+            Return.items([.count(nil)])
         ]))
         
         let scalarCypher = try scalar.toCypher()
