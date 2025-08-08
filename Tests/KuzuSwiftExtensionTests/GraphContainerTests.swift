@@ -16,12 +16,20 @@ struct GraphContainerTests {
         )
         
         let container = try await GraphContainer(configuration: config)
+        // Cleanup will be at the end
         
-        // Test withConnection
+        // Test withConnection - verify actual result value
         let result = try await container.withConnection { connection in
             try connection.query("RETURN 1 AS value")
         }
-        #expect(Bool(true)) // Result retrieved successfully
+        #expect(result.hasNext())
+        
+        if let flatTuple = try result.getNext(),
+           let value = try flatTuple.getValue(0) as? Int64 {
+            #expect(value == 1)
+        } else {
+            Issue.record("Failed to get result value")
+        }
         
         // Test multiple concurrent connections
         async let result1 = container.withConnection { connection in
@@ -34,9 +42,11 @@ struct GraphContainerTests {
             try connection.query("RETURN 3 AS value")
         }
         
-        _ = try await (result1, result2, result3)
+        let results = try await (result1, result2, result3)
+        #expect(results.0.hasNext())
+        #expect(results.1.hasNext())
+        #expect(results.2.hasNext())
         
-        // Cleanup
         await container.close()
     }
     
@@ -46,6 +56,7 @@ struct GraphContainerTests {
         // Public users should use GraphContext.withTransaction instead
         let config = GraphConfiguration(databasePath: ":memory:")
         let container = try await GraphContainer(configuration: config)
+        // Cleanup will be at the end
         
         // Create a test table
         _ = try await container.withConnection { connection in
@@ -63,19 +74,20 @@ struct GraphContainerTests {
         }
         #expect(result.hasNext())
         
+        if let flatTuple = try result.getNext(),
+           let count = try flatTuple.getValue(0) as? Int64 {
+            #expect(count == 1, "Expected 1 node after successful transaction")
+        } else {
+            Issue.record("Failed to get count")
+        }
+        
         // Test failed transaction (should rollback)
-        do {
+        await #expect(throws: GraphError.self) {
             try await container.withTransaction { connection in
                 _ = try connection.query("CREATE (:TestNode {id: 2, name: 'test2'})")
                 // Force an error
                 throw GraphError.transactionFailed(reason: "Test error")
             }
-            #expect(Bool(false), "Expected transaction to fail")
-        } catch is GraphError {
-            // Expected
-            #expect(Bool(true))
-        } catch {
-            #expect(Bool(false), "Unexpected error: \(error)")
         }
         
         // Verify rollback worked (should still have only 1 node)
@@ -84,6 +96,13 @@ struct GraphContainerTests {
         }
         #expect(countResult.hasNext())
         
+        if let flatTuple = try countResult.getNext(),
+           let count = try flatTuple.getValue(0) as? Int64 {
+            #expect(count == 1, "Expected still 1 node after rollback")
+        } else {
+            Issue.record("Failed to get count after rollback")
+        }
+        
         await container.close()
     }
     
@@ -91,24 +110,26 @@ struct GraphContainerTests {
     func connectionErrors() async throws {
         let config = GraphConfiguration(databasePath: ":memory:")
         let container = try await GraphContainer(configuration: config)
+        // Cleanup will be at the end
         
         // Test that errors are properly propagated and connections are cleaned up
-        do {
+        await #expect(throws: Error.self, "Invalid query should fail") {
             _ = try await container.withConnection { connection in
                 // This should fail
                 try connection.query("INVALID CYPHER QUERY")
             }
-            #expect(Bool(false), "Expected query to fail")
-        } catch {
-            // Verify it's not our wrapping error
-            #expect(!(error is GraphError))
         }
         
         // Verify we can still use the container after an error
         let result = try await container.withConnection { connection in
             try connection.query("RETURN 1 AS value")
         }
-        #expect(Bool(true)) // Result retrieved successfully
+        #expect(result.hasNext())
+        
+        if let flatTuple = try result.getNext(),
+           let value = try flatTuple.getValue(0) as? Int64 {
+            #expect(value == 1, "Container should work after error")
+        }
         
         await container.close()
     }
@@ -117,6 +138,7 @@ struct GraphContainerTests {
     func transactionErrors() async throws {
         let config = GraphConfiguration(databasePath: ":memory:")
         let container = try await GraphContainer(configuration: config)
+        // Cleanup will be at the end
         
         // Create a test table
         _ = try await container.withConnection { connection in
@@ -124,21 +146,12 @@ struct GraphContainerTests {
         }
         
         // Test transaction with query error
-        do {
+        await #expect(throws: GraphError.self) {
             try await container.withTransaction { connection in
                 _ = try connection.query("CREATE (:TestNode {id: 1})")
                 // This should fail
                 _ = try connection.query("INVALID QUERY")
             }
-            #expect(Bool(false), "Expected transaction to fail")
-        } catch let error as GraphError {
-            if case .transactionFailed = error {
-                #expect(Bool(true)) // Expected
-            } else {
-                #expect(Bool(false), "Expected transactionFailed error")
-            }
-        } catch {
-            #expect(Bool(false), "Unexpected error: \(error)")
         }
         
         // Verify the transaction was rolled back
@@ -146,6 +159,13 @@ struct GraphContainerTests {
             try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
         }
         #expect(result.hasNext())
+        
+        if let flatTuple = try result.getNext(),
+           let count = try flatTuple.getValue(0) as? Int64 {
+            #expect(count == 0, "Transaction should have been rolled back")
+        } else {
+            Issue.record("Failed to verify rollback")
+        }
         
         await container.close()
     }

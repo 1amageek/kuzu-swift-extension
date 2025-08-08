@@ -52,46 +52,41 @@ struct DDLDebugTest {
     
     @Test("Debug DDL generation")
     func debugDDL() async throws {
-        print("=====================================")
-        print("DDLTestUser DDL: \(DDLTestUser._kuzuDDL)")
-        print("DDLTestUser Columns: \(DDLTestUser._kuzuColumns)")
-        print("=====================================")
+        // Verify DDL is generated correctly
+        #expect(!DDLTestUser._kuzuDDL.isEmpty, "User DDL should be generated")
+        #expect(!DDLTestUser._kuzuColumns.isEmpty, "User columns should be defined")
         
-        print("DDLTestPost DDL: \(DDLTestPost._kuzuDDL)")
-        print("DDLTestPost Columns: \(DDLTestPost._kuzuColumns)")
-        print("=====================================")
+        #expect(!DDLTestPost._kuzuDDL.isEmpty, "Post DDL should be generated")
+        #expect(!DDLTestPost._kuzuColumns.isEmpty, "Post columns should be defined")
         
-        print("DDLTestAuthored DDL: \(DDLTestAuthored._kuzuDDL)")
-        print("DDLTestAuthored Columns: \(DDLTestAuthored._kuzuColumns)")
-        print("=====================================")
+        #expect(!DDLTestAuthored._kuzuDDL.isEmpty, "Edge DDL should be generated")
+        #expect(!DDLTestAuthored._kuzuColumns.isEmpty, "Edge columns should be defined")
         
         // Try to create a context and schema
         let config = GraphConfiguration(databasePath: ":memory:")
         let context = try await GraphContext(configuration: config)
         
-        print("Creating schema...")
-        do {
-            try await context.createSchema(for: [
-                DDLTestUser.self,
-                DDLTestPost.self,
-                DDLTestAuthored.self
-            ])
-            print("Schema created successfully")
-            
-            // Try a simple insert
-            let user = DDLTestUser(email: "test@example.com", name: "Test", age: 30)
-            print("Attempting to save user...")
-            _ = try await context.save(user)
-            print("User saved successfully")
-            
-        } catch {
-            print("Operation failed: \(error)")
-            if let graphError = error as? GraphError {
-                print("GraphError details: \(graphError)")
-            }
-            throw error
-        }
+        // Schema creation should not throw
+        try await context.createSchema(for: [
+            DDLTestUser.self,
+            DDLTestPost.self,
+            DDLTestAuthored.self
+        ])
         
+        // Try a simple insert and verify it works
+        let user = DDLTestUser(email: "test@example.com", name: "Test", age: 30)
+        let savedUser = try await context.save(user)
+        // ID is non-optional UUID, no need to check for nil
+        #expect(savedUser.email == "test@example.com")
+        #expect(savedUser.name == "Test")
+        #expect(savedUser.age == 30)
+        #expect(savedUser.status == "active", "Default value should be applied")
+        
+        // Verify the user was actually saved
+        let count = try await context.count(DDLTestUser.self)
+        #expect(count == 1, "One user should be saved")
+        
+        // Cleanup
         await context.close()
     }
 }

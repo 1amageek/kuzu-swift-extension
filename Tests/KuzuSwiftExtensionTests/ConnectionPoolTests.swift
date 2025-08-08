@@ -2,7 +2,7 @@ import Testing
 import Kuzu
 @testable import KuzuSwiftExtension
 
-@Suite("Connection Pool Tests")
+@Suite("Connection Pool Tests", .serialized)
 struct ConnectionPoolTests {
     
     func createDatabase() throws -> Database {
@@ -19,37 +19,42 @@ struct ConnectionPoolTests {
             timeout: 1.0
         )
         
-        // Test checkout
+        // Test checkout - verify connection is valid
         let connection1 = try await pool.checkout()
-        #expect(Bool(true)) // Connection retrieved successfully
+        // Connection is non-optional, just verify we got here without error
         
-        // Test checkin
+        // Test checkin and reuse
         await pool.checkin(connection1)
         
-        // Test multiple checkouts
+        // Test multiple checkouts don't exceed max
         let conn1 = try await pool.checkout()
         let conn2 = try await pool.checkout()
         let conn3 = try await pool.checkout()
         
         // All connections are checked out, next checkout should wait
-        let checkoutTask = Task {
-            try await pool.checkout()
+        // Use confirmation to verify that checkout is blocked until a connection is returned
+        try await confirmation("Connection checkout completes after checkin") { checkoutCompleted in
+            let checkoutTask = Task {
+                let conn = try await pool.checkout()
+                checkoutCompleted()
+                return conn
+            }
+            
+            // Give the task a moment to start and hit the wait state
+            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            
+            // Return a connection to unblock the waiting checkout
+            await pool.checkin(conn1)
+            
+            // Wait for the checkout to complete
+            let conn4 = try await checkoutTask.value
+            
+            // Cleanup
+            await pool.checkin(conn2)
+            await pool.checkin(conn3)
+            await pool.checkin(conn4)
         }
         
-        // Give the task time to start waiting
-        try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-        
-        // Return a connection
-        await pool.checkin(conn1)
-        
-        // The waiting task should now succeed
-        let conn4 = try await checkoutTask.value
-        #expect(Bool(true)) // Connection retrieved successfully
-        
-        // Cleanup
-        await pool.checkin(conn2)
-        await pool.checkin(conn3)
-        await pool.checkin(conn4)
         await pool.drain()
     }
     
@@ -67,17 +72,23 @@ struct ConnectionPoolTests {
         let connection = try await pool.checkout()
         
         // Try to checkout another connection, should timeout
+        await #expect(throws: GraphError.self) {
+            _ = try await pool.checkout()
+        }
+        
+        // Verify the specific error type and duration
         do {
             _ = try await pool.checkout()
-            #expect(Bool(false), "Expected timeout error")
+            Issue.record("Expected timeout error but succeeded")
         } catch let error as GraphError {
             if case .connectionTimeout(let duration) = error {
-                #expect(duration == 0.5)
+                // Allow small tolerance for timing
+                #expect(abs(duration - 0.5) < 0.01, "Timeout duration mismatch: \(duration)")
             } else {
-                #expect(Bool(false), "Expected connectionTimeout error, got \(error)")
+                Issue.record("Expected connectionTimeout error, got \(error)")
             }
         } catch {
-            #expect(Bool(false), "Unexpected error: \(error)")
+            Issue.record("Unexpected error type: \(error)")
         }
         
         // Cleanup
@@ -98,31 +109,36 @@ struct ConnectionPoolTests {
         // Checkout the only connection
         let connection = try await pool.checkout()
         
-        // Start a checkout task that will wait
-        let checkoutTask = Task {
-            try await pool.checkout()
+        // Use confirmation to test cancellation behavior
+        // We expect either: task gets cancelled (0 confirmations) or task succeeds before cancel (1 confirmation)
+        try await confirmation("Checkout task behavior", expectedCount: 0...1) { checkoutOccurred in
+            let checkoutTask = Task {
+                let conn = try await pool.checkout()
+                checkoutOccurred()
+                return conn
+            }
+            
+            // Give the task a moment to start and hit the wait state
+            try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+            
+            // Cancel the task
+            checkoutTask.cancel()
+            
+            // Return the connection - this might unblock the task before cancellation takes effect
+            await pool.checkin(connection)
+            
+            // Check the task result
+            do {
+                let conn = try await checkoutTask.value
+                // Task succeeded before cancellation
+                await pool.checkin(conn)
+            } catch is CancellationError {
+                // Task was cancelled as expected
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
         }
         
-        // Give it time to start waiting
-        try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-        
-        // Return the connection to unblock the waiting task
-        await pool.checkin(connection)
-        
-        // Cancel the task after it might have already gotten a connection
-        checkoutTask.cancel()
-        
-        // The task might succeed or throw cancellation error
-        do {
-            let conn = try await checkoutTask.value
-            // This is OK - the task got a connection before being cancelled
-            await pool.checkin(conn)
-        } catch {
-            // Either CancellationError or the task succeeded - both are valid
-            #expect(error is CancellationError || error is GraphError)
-        }
-        
-        // Cleanup
         await pool.drain()
     }
     
@@ -131,40 +147,47 @@ struct ConnectionPoolTests {
         let database = try createDatabase()
         let pool = try await ConnectionPool(
             database: database,
-            maxConnections: 3,
-            minConnections: 1,
+            maxConnections: 2,  // Only 2 connections max
+            minConnections: 0,
             timeout: 1.0
         )
         
         // Checkout all available connections
-        let conn1 = try await pool.checkout()
-        let conn2 = try await pool.checkout()
-        let conn3 = try await pool.checkout()
+        let _ = try await pool.checkout()
+        let _ = try await pool.checkout()
         
-        // Start a waiting task that will actually wait
+        // Now pool is at max, next checkout will wait
         let waitingTask = Task {
-            try await pool.checkout()
+            do {
+                _ = try await pool.checkout()
+                Issue.record("Checkout succeeded when it should have failed")
+                return false
+            } catch let error as GraphError {
+                if case .connectionPoolExhausted = error {
+                    return true  // Got expected error
+                } else {
+                    Issue.record("Wrong error type: \(error)")
+                    return false
+                }
+            } catch {
+                Issue.record("Unexpected error type: \(error)")
+                return false
+            }
         }
         
-        // Give it time to start waiting
-        try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        // Give the task a moment to start and hit the wait state
+        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
         
-        // Drain the pool
+        // Drain the pool - this should interrupt the waiting task
         await pool.drain()
         
-        // The waiting task should fail
-        do {
-            _ = try await waitingTask.value
-            #expect(Bool(false), "Expected task to fail")
-        } catch let error as GraphError {
-            if case .connectionPoolExhausted = error {
-                // Expected
-                #expect(Bool(true))
-            } else {
-                #expect(Bool(false), "Expected connectionPoolExhausted error, got \(error)")
-            }
-        } catch {
-            #expect(Bool(false), "Unexpected error: \(error)")
+        // Check result
+        let gotExpectedError = try await waitingTask.value
+        #expect(gotExpectedError, "Waiting task should get connectionPoolExhausted error")
+        
+        // Verify pool is drained - new checkout should fail
+        await #expect(throws: GraphError.self) {
+            _ = try await pool.checkout()
         }
     }
 }

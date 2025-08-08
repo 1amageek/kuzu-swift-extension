@@ -43,6 +43,7 @@ actor ConnectionPool {
     private var availableConnections: [Connection] = []
     private var activeConnections: Set<ObjectIdentifier> = []
     private var waitingTasks: [WaitingTask] = []
+    private var isDrained = false
     
     private struct WaitingTask {
         let id: UUID
@@ -81,6 +82,10 @@ actor ConnectionPool {
     }
     
     func checkout() async throws -> Connection {
+        guard !isDrained else {
+            throw GraphError.connectionPoolExhausted
+        }
+        
         if let connection = availableConnections.popLast() {
             activeConnections.insert(ObjectIdentifier(connection))
             return connection
@@ -144,6 +149,8 @@ actor ConnectionPool {
     }
     
     func drain() async {
+        isDrained = true
+        
         for waitingTask in waitingTasks {
             waitingTask.cancel()
             waitingTask.continuation.resume(throwing: GraphError.connectionPoolExhausted)

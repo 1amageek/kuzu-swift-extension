@@ -294,9 +294,19 @@ struct GraphModelTests {
         let relationship = ModelAuthoredBy()
         try await context.createRelationship(from: savedUser, to: savedPost, edge: relationship)
         
-        // Verify relationship exists (this would need additional query methods)
-        // For now, just verify no error occurred
-        #expect(Bool(true)) // Placeholder - relationship creation succeeded
+        // Verify relationship exists
+        let result = try await context.raw("""
+            MATCH (:ModelTestUser {id: $userId})-[r:ModelAuthoredBy]->(:ModelTestPost {id: $postId})
+            RETURN count(r) as count
+            """, bindings: ["userId": savedUser.id, "postId": savedPost.id])
+        
+        #expect(result.hasNext())
+        if let flatTuple = try result.getNext(),
+           let count = try flatTuple.getValue(0) as? Int64 {
+            #expect(count > 0, "Relationship should exist")
+        } else {
+            Issue.record("Failed to verify relationship")
+        }
         
         await context.close()
     }
@@ -324,7 +334,7 @@ struct GraphModelTests {
                 throw TestError.intentionalError
             }
             
-            #expect(Bool(false), "Transaction should have failed")
+            Issue.record("Transaction should have failed")
         } catch {
             // Expected error
             #expect(error is TestError)

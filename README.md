@@ -33,6 +33,15 @@ let adults = try await graph.query {
 - 🎨 **Rich Attributes** - `@ID`, `@Index`, `@Unique`, `@FullTextSearch`, and more
 - ⚡ **High Performance** - Connection pooling and batch operations
 
+## Performance & Reliability
+
+The library includes several performance optimizations:
+
+- **Automatic PreparedStatement Caching** - Queries are automatically cached for better performance
+- **Connection Pooling** - Efficient connection management with configurable pool sizes
+- **Optimized Type Conversions** - Automatic handling of UUID, Date, and numeric type conversions
+- **Transaction Support** - ACID compliant transactions with automatic rollback on errors
+
 ## Installation
 
 ### Swift Package Manager
@@ -127,6 +136,30 @@ let filtered = try await graph.query {
 let search = try await graph.query {
     Match.node(User.self, alias: "u")
     Where.path(\.name, on: "u").contains("John")
+    Return.node("u")
+}
+
+// Complex predicates with ranges
+let ageRange = try await graph.query {
+    Match.node(User.self, alias: "u")
+    Where.path(\.age, on: "u").between(25, 65)
+    Return.node("u")
+}
+
+// IN operator for multiple values
+let cities = try await graph.query {
+    Match.node(User.self, alias: "u")
+    Where.path(\.city, on: "u").in(["Tokyo", "Osaka", "Kyoto"])
+    Return.node("u")
+}
+
+// Combining OR conditions
+let adminsOrWriters = try await graph.query {
+    Match.node(User.self, alias: "u")
+    Where.any([
+        path(\.role, on: "u") == "admin",
+        path(\.permissions, on: "u").contains("write")
+    ])
     Return.node("u")
 }
 ```
@@ -616,24 +649,31 @@ struct UserListView: View {
 
 The Query DSL is under active development. Here's the current status:
 
-### ✅ Working
-- Basic node matching with `Match.node()`
-- Property paths with `path()` and `prop()`
-- Simple predicates (`==`, `!=`, `>`, `<`, etc.)
-- Query compilation to Cypher
+### ✅ Stable Features
+- Basic node/edge matching with `Match.node()` and `Match.edge()`
+- Property paths with `path()` for type-safe property access
+- Predicates: `==`, `!=`, `>`, `<`, `>=`, `<=`, `between()`, `in()`, `contains()`
+- Logical operators: `Where.all()`, `Where.any()`, `Where.not()`
+- Create, Update (Set), Delete operations
+- Return with ordering, limiting, and distinct
+- Query compilation to parameterized Cypher
+- Transaction support with automatic rollback
+- Connection pooling and PreparedStatement caching
 
-### 🚧 In Progress
-- Edge matching improvements
-- Complex path queries
-- Aggregation functions
-- Full predicate support
+### 🚧 Beta Features
+- Complex path queries and pattern matching
+- Aggregation functions (count, sum, avg, max, min)
+- WITH clause for query pipelining
+- OPTIONAL MATCH patterns
+- EXISTS patterns for subquery conditions
 
-### 📋 Planned
-- Subqueries
-- Graph algorithms
+### 📋 Coming Soon
+- Subqueries with full composition
+- Graph algorithms (shortest path, etc.)
+- Advanced pattern matching
 - Full Cypher feature parity
 
-For production use, we recommend using `raw()` queries until the DSL is complete.
+For complex queries not yet supported by the DSL, use `raw()` queries for full Cypher access.
 
 ## Query DSL vs Raw Cypher
 
@@ -665,6 +705,8 @@ let results = try await graph.raw("""
 
 ## Advanced Configuration
 
+### Basic Configuration
+
 ```swift
 // Custom configuration
 let config = GraphConfiguration(
@@ -679,6 +721,45 @@ let config = GraphConfiguration(
 let context = try await GraphContext(configuration: config)
 ```
 
+### Connection Pool Configuration
+
+The library automatically manages a connection pool for optimal performance:
+
+```swift
+// Detailed connection pool configuration
+let config = GraphConfiguration(
+    databasePath: "/path/to/graph.db",
+    options: GraphConfiguration.Options(
+        maxConnections: 10,        // Maximum concurrent connections
+        minConnections: 2,         // Minimum connections to maintain
+        connectionTimeout: 30.0,   // Connection timeout in seconds
+        maxThreads: 4,            // Maximum threads for parallel operations
+        extensions: [.fts, .vector]
+    )
+)
+
+// Proper shutdown - ensures all connections are cleaned up
+let context = try await GraphContext(configuration: config)
+defer { 
+    await context.close()  // Drains the connection pool
+}
+```
+
+### Connection Pool Management
+
+The connection pool automatically manages connections, but you can control its lifecycle:
+
+```swift
+// Automatic management with GraphDatabase.shared
+let graph = try await GraphDatabase.shared.context()
+// Connections are pooled automatically
+
+// Manual management for custom scenarios
+let container = try await GraphContainer(configuration: config)
+// Use the container...
+await container.close()  // Drains the pool and prevents new connections
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -688,14 +769,48 @@ let context = try await GraphContext(configuration: config)
 3. **Type Mismatches**: Kuzu returns `Int64` for counts, handle accordingly
 4. **Memory Usage**: Ensure 8GB+ RAM for C++ compilation
 
+### Automatic Type Conversions
+
+The library handles common type conversions automatically:
+
+- **UUID** ↔ String conversion for storage
+- **Date** ↔ Timestamp conversion (ISO8601 format)
+- **Numeric types**: Flexible conversions between Int, Int64, Double, Float
+- **Arrays and Dictionaries**: Automatic encoding/decoding with proper reference handling
+- **Optional types**: Automatic wrapping/unwrapping
+
+This means you can use Swift native types without worrying about database representations:
+
+```swift
+@GraphNode
+struct User: Codable {
+    @ID var id: UUID = UUID()  // Automatically converted to/from String
+    var age: Int               // Works with Int64 from database
+    var score: Double          // Works with various numeric types
+    var tags: [String]         // Automatically encoded/decoded
+    var metadata: [String: Any]? // Dictionaries handled properly
+    @Timestamp var createdAt: Date = Date() // Converted to Timestamp
+}
+```
+
 ### Error Handling
+
+The library provides comprehensive error handling with specific error types:
 
 ```swift
 do {
     let results = try await graph.query { /* ... */ }
+} catch GraphError.connectionPoolExhausted {
+    // Connection pool has been drained (e.g., after calling close())
+    print("Connection pool is no longer available")
 } catch GraphError.connectionTimeout(let duration) {
-    print("Connection timed out after \(duration)s")
+    // Failed to acquire a connection within the timeout period
+    print("Failed to get connection within \(duration) seconds")
+} catch GraphError.transactionFailed(let reason) {
+    // Transaction was rolled back due to an error
+    print("Transaction failed: \(reason)")
 } catch GraphError.invalidConfiguration(let message) {
+    // Configuration issue
     print("Configuration error: \(message)")
 } catch {
     print("Unexpected error: \(error)")
