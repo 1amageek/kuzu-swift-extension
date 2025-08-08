@@ -6,8 +6,8 @@ import Kuzu
 public extension TransactionalGraphContext {
     
     /// Executes a query using the Query DSL within the transaction
-    func query(@QueryBuilder _ builder: () -> Query) throws -> QueryResult {
-        let query = builder()
+    func query(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> QueryResult {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         return try raw(cypher.query, bindings: cypher.parameters)
     }
@@ -15,7 +15,7 @@ public extension TransactionalGraphContext {
     /// Executes a query and returns an array of decoded results
     func queryArray<T: Decodable>(
         _ type: T.Type,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> [T] {
         let result = try query(builder)
         return try result.decodeArray(type)
@@ -24,7 +24,7 @@ public extension TransactionalGraphContext {
     /// Executes a query and returns a single decoded result
     func queryOne<T: Decodable>(
         _ type: T.Type,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> T? {
         let result = try query(builder)
         guard result.hasNext() else { return nil }
@@ -35,7 +35,7 @@ public extension TransactionalGraphContext {
     func queryValue<T>(
         _ type: T.Type = T.self,
         at column: Int = 0,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> T {
         let result = try query(builder)
         return try ResultMapper.value(result, at: column)
@@ -45,7 +45,7 @@ public extension TransactionalGraphContext {
     func queryOptional<T>(
         _ type: T.Type = T.self,
         at column: Int = 0,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> T? {
         let result = try query(builder)
         return try ResultMapper.optionalValue(result, at: column)
@@ -55,21 +55,21 @@ public extension TransactionalGraphContext {
     func queryColumn<T>(
         _ type: T.Type = T.self,
         at column: Int = 0,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> [T] {
         let result = try query(builder)
         return try ResultMapper.column(result, at: column)
     }
     
     /// Executes a query and returns a dictionary (single row)
-    func queryRow(@QueryBuilder _ builder: () -> Query) throws -> [String: Any]? {
+    func queryRow(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> [String: Any]? {
         let result = try query(builder)
         guard result.hasNext() else { return nil }
         return try ResultMapper.row(result)
     }
     
     /// Executes a query and returns an array of dictionaries
-    func queryRows(@QueryBuilder _ builder: () -> Query) throws -> [[String: Any]] {
+    func queryRows(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> [[String: Any]] {
         let result = try query(builder)
         return try ResultMapper.rows(result)
     }
@@ -82,7 +82,7 @@ public extension TransactionalGraphContext {
     /// Queries for nodes matching the DSL criteria
     func query<T: GraphNodeModel>(
         for type: T.Type,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> [T] {
         let result = try query(builder)
         let modelName = T.modelName
@@ -108,11 +108,10 @@ public extension TransactionalGraphContext {
     /// Counts nodes matching the DSL criteria
     func count<T: GraphNodeModel>(
         for type: T.Type,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> Int {
         // Build the query with components and add count
-        let baseQuery = builder()
-        var components = baseQuery.components
+        var components = builder()
         components.append(Return.count())
         
         let countQuery = Query(components: components)

@@ -153,8 +153,8 @@ struct ConnectionPoolTests {
         )
         
         // Checkout all available connections
-        let _ = try await pool.checkout()
-        let _ = try await pool.checkout()
+        let conn1 = try await pool.checkout()
+        let conn2 = try await pool.checkout()
         
         // Now pool is at max, next checkout will wait
         let waitingTask = Task {

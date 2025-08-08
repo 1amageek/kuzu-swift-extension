@@ -4,7 +4,7 @@ import Foundation
 public struct Exists {
     let pattern: ExistsPattern
     
-    private init(pattern: ExistsPattern) {
+    internal init(pattern: ExistsPattern) {
         self.pattern = pattern
     }
     
@@ -12,9 +12,11 @@ public struct Exists {
     public enum ExistsPattern {
         case node(type: String, alias: String, predicate: Predicate?)
         case edge(type: String, from: String, to: String, alias: String, predicate: Predicate?)
+        case relationship(from: (Any.Type, String), via: Any.Type, to: (Any.Type, String), edgeAlias: String)
         case path(from: String, to: String, edgeType: String?, minHops: Int?, maxHops: Int?)
         case pattern(MatchPattern)
         case subquery(Query)
+        case custom(String)
     }
     
     // MARK: - Node EXISTS
@@ -115,8 +117,8 @@ public struct Exists {
     // MARK: - Subquery EXISTS
     
     /// Creates an EXISTS check with a subquery
-    public static func subquery(@QueryBuilder _ builder: () -> Query) -> Exists {
-        Exists(pattern: .subquery(builder()))
+    public static func subquery(@QueryBuilder _ builder: () -> [QueryComponent]) -> Exists {
+        Exists(pattern: .subquery(Query(components: builder())))
     }
     
     // MARK: - Cypher Generation
@@ -176,6 +178,17 @@ public struct Exists {
             let subqueryCypher = try CypherCompiler.compile(subquery)
             let query = "EXISTS { \(subqueryCypher.query) }"
             return CypherFragment(query: query, parameters: subqueryCypher.parameters)
+            
+        case .relationship(let from, let via, let to, let edgeAlias):
+            let fromType = String(describing: from.0)
+            let toType = String(describing: to.0)
+            let viaType = String(describing: via)
+            let query = "EXISTS { MATCH (\(from.1):\(fromType))-[\(edgeAlias):\(viaType)]->(\(to.1):\(toType)) }"
+            return CypherFragment(query: query)
+            
+        case .custom(let customPattern):
+            let query = "EXISTS { \(customPattern) }"
+            return CypherFragment(query: query)
         }
     }
 }

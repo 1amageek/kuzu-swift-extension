@@ -6,6 +6,11 @@ public struct Query {
     public init(components: [QueryComponent]) {
         self.components = components
     }
+    
+    /// Creates a Query using the QueryBuilder DSL
+    public init(@QueryBuilder _ builder: () -> [QueryComponent]) {
+        self.components = builder()
+    }
 }
 
 public protocol QueryComponent {

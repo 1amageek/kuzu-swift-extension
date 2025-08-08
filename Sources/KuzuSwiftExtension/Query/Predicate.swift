@@ -49,6 +49,7 @@ public indirect enum PredicateNode {
     case regex(PropertyReference, pattern: String)
     case exists(Exists)
     case literal(Bool)
+    case custom(String, parameters: [String: any Sendable])
     
     public func toCypher() throws -> CypherFragment {
         switch self {
@@ -124,6 +125,9 @@ public indirect enum PredicateNode {
             
         case .literal(let value):
             return CypherFragment(query: value ? "true" : "false")
+            
+        case .custom(let query, let parameters):
+            return CypherFragment(query: query, parameters: parameters)
         }
     }
 }
@@ -151,6 +155,13 @@ public struct ComparisonExpression {
                 query: "\(lhs.cypher) \(op.rawValue) $\(paramName)",
                 parameters: [paramName: value]
             )
+            
+        case .ref(let ref):
+            let refCypher = try ref.toCypher()
+            return CypherFragment(
+                query: "\(lhs.cypher) \(op.rawValue) \(refCypher.query)",
+                parameters: refCypher.parameters
+            )
         }
     }
 }
@@ -169,6 +180,7 @@ public enum ComparisonOperator: String {
 public enum ComparisonValue {
     case property(PropertyReference)
     case value(any Sendable)
+    case ref(Ref)  // Add support for variable references
 }
 
 /// Reference to a property
@@ -195,7 +207,14 @@ public struct PropertyReference {
 
 /// Creates an equality predicate
 public func == (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
-    Predicate(node: .comparison(ComparisonExpression(
+    if let ref = rhs as? Ref {
+        return Predicate(node: .comparison(ComparisonExpression(
+            lhs: lhs,
+            op: .equal,
+            rhs: .ref(ref)
+        )))
+    }
+    return Predicate(node: .comparison(ComparisonExpression(
         lhs: lhs,
         op: .equal,
         rhs: .value(rhs)
@@ -204,7 +223,14 @@ public func == (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
 
 /// Creates an inequality predicate
 public func != (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
-    Predicate(node: .comparison(ComparisonExpression(
+    if let ref = rhs as? Ref {
+        return Predicate(node: .comparison(ComparisonExpression(
+            lhs: lhs,
+            op: .notEqual,
+            rhs: .ref(ref)
+        )))
+    }
+    return Predicate(node: .comparison(ComparisonExpression(
         lhs: lhs,
         op: .notEqual,
         rhs: .value(rhs)
@@ -213,7 +239,14 @@ public func != (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
 
 /// Creates a less than predicate
 public func < (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
-    Predicate(node: .comparison(ComparisonExpression(
+    if let ref = rhs as? Ref {
+        return Predicate(node: .comparison(ComparisonExpression(
+            lhs: lhs,
+            op: .lessThan,
+            rhs: .ref(ref)
+        )))
+    }
+    return Predicate(node: .comparison(ComparisonExpression(
         lhs: lhs,
         op: .lessThan,
         rhs: .value(rhs)
@@ -222,7 +255,14 @@ public func < (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
 
 /// Creates a less than or equal predicate
 public func <= (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
-    Predicate(node: .comparison(ComparisonExpression(
+    if let ref = rhs as? Ref {
+        return Predicate(node: .comparison(ComparisonExpression(
+            lhs: lhs,
+            op: .lessThanOrEqual,
+            rhs: .ref(ref)
+        )))
+    }
+    return Predicate(node: .comparison(ComparisonExpression(
         lhs: lhs,
         op: .lessThanOrEqual,
         rhs: .value(rhs)
@@ -231,7 +271,14 @@ public func <= (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
 
 /// Creates a greater than predicate
 public func > (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
-    Predicate(node: .comparison(ComparisonExpression(
+    if let ref = rhs as? Ref {
+        return Predicate(node: .comparison(ComparisonExpression(
+            lhs: lhs,
+            op: .greaterThan,
+            rhs: .ref(ref)
+        )))
+    }
+    return Predicate(node: .comparison(ComparisonExpression(
         lhs: lhs,
         op: .greaterThan,
         rhs: .value(rhs)
@@ -240,7 +287,14 @@ public func > (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
 
 /// Creates a greater than or equal predicate
 public func >= (lhs: PropertyReference, rhs: any Sendable) -> Predicate {
-    Predicate(node: .comparison(ComparisonExpression(
+    if let ref = rhs as? Ref {
+        return Predicate(node: .comparison(ComparisonExpression(
+            lhs: lhs,
+            op: .greaterThanOrEqual,
+            rhs: .ref(ref)
+        )))
+    }
+    return Predicate(node: .comparison(ComparisonExpression(
         lhs: lhs,
         op: .greaterThanOrEqual,
         rhs: .value(rhs)

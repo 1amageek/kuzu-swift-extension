@@ -37,8 +37,8 @@ public actor GraphContext {
     // MARK: - Query DSL
     
     /// Executes a query and returns a single value
-    public func queryValue<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> T {
-        let query = builder()
+    public func queryValue<T>(@QueryBuilder _ builder: () -> [QueryComponent], at column: Int = 0) async throws -> T {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
@@ -46,8 +46,8 @@ public actor GraphContext {
     }
     
     /// Executes a query and returns an optional value
-    public func queryOptional<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> T? {
-        let query = builder()
+    public func queryOptional<T>(@QueryBuilder _ builder: () -> [QueryComponent], at column: Int = 0) async throws -> T? {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
@@ -55,8 +55,8 @@ public actor GraphContext {
     }
     
     /// Executes a query and returns an array of values
-    public func queryArray<T>(@QueryBuilder _ builder: () -> Query, at column: Int = 0) async throws -> [T] {
-        let query = builder()
+    public func queryArray<T>(@QueryBuilder _ builder: () -> [QueryComponent], at column: Int = 0) async throws -> [T] {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
@@ -64,8 +64,8 @@ public actor GraphContext {
     }
     
     /// Executes a query and returns a dictionary
-    public func queryRow(@QueryBuilder _ builder: () -> Query) async throws -> [String: Any] {
-        let query = builder()
+    public func queryRow(@QueryBuilder _ builder: () -> [QueryComponent]) async throws -> [String: Any] {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
@@ -73,8 +73,8 @@ public actor GraphContext {
     }
     
     /// Executes a query and returns an array of dictionaries
-    public func queryRows(@QueryBuilder _ builder: () -> Query) async throws -> [[String: Any]] {
-        let query = builder()
+    public func queryRows(@QueryBuilder _ builder: () -> [QueryComponent]) async throws -> [[String: Any]] {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
@@ -82,8 +82,8 @@ public actor GraphContext {
     }
     
     /// Executes a query and decodes the result to a Codable type
-    public func query<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> Query) async throws -> T {
-        let query = builder()
+    public func query<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> [QueryComponent]) async throws -> T {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
@@ -91,8 +91,8 @@ public actor GraphContext {
     }
     
     /// Executes a query and decodes all results to an array of Codable types
-    public func queryArray<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> Query) async throws -> [T] {
-        let query = builder()
+    public func queryArray<T: Decodable>(_ type: T.Type, @QueryBuilder _ builder: () -> [QueryComponent]) async throws -> [T] {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         let result = try await raw(cypher.query, bindings: cypher.parameters)
         
@@ -100,8 +100,8 @@ public actor GraphContext {
     }
     
     /// Executes a query and returns the raw QueryResult
-    public func query(@QueryBuilder _ builder: () -> Query) async throws -> QueryResult {
-        let query = builder()
+    public func query(@QueryBuilder _ builder: () -> [QueryComponent]) async throws -> QueryResult {
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         
         return try await raw(cypher.query, bindings: cypher.parameters)

@@ -319,19 +319,129 @@ public struct QueryProfile: Sendable {
     }
 }
 
+// MARK: - Query Extension for Debug Support
+
+public extension Query {
+    /// Returns the compiled Cypher string
+    var cypherString: String? {
+        try? CypherCompiler.compile(self).query
+    }
+    
+    /// Returns debug information for the query
+    func debugInfo() throws -> QueryDebugInfo {
+        let compiled = try CypherCompiler.compile(self)
+        let analysis = try? QueryIntrospection.analyze(self)
+        
+        return QueryDebugInfo(
+            cypher: compiled.query,
+            parameters: compiled.parameters,
+            analysis: analysis
+        )
+    }
+    
+    /// Prints debug information to the console
+    func printDebug() throws {
+        let info = try debugInfo()
+        print(info.formattedDescription)
+    }
+    
+    /// Returns the query with explain plan
+    func explain() -> Query {
+        // Prepend EXPLAIN to the query
+        var explainComponents = components
+        if let firstComponent = explainComponents.first {
+            // Wrap the first component with EXPLAIN
+            explainComponents[0] = ExplainWrapper(component: firstComponent)
+        }
+        return Query(components: explainComponents)
+    }
+}
+
+/// Debug information for a query
+public struct QueryDebugInfo: CustomStringConvertible {
+    public let cypher: String
+    public let parameters: [String: any Sendable]
+    public let analysis: QueryAnalysis?
+    
+    public init(
+        cypher: String,
+        parameters: [String: any Sendable],
+        analysis: QueryAnalysis? = nil
+    ) {
+        self.cypher = cypher
+        self.parameters = parameters
+        self.analysis = analysis
+    }
+    
+    /// Formatted description for debugging
+    public var description: String {
+        formattedDescription
+    }
+    
+    /// Detailed formatted description
+    public var formattedDescription: String {
+        var output = "=== Query Debug Info ===\n"
+        output += "Cypher:\n\(cypher)\n\n"
+        
+        if !parameters.isEmpty {
+            output += "Parameters:\n"
+            for (key, value) in parameters.sorted(by: { $0.key < $1.key }) {
+                output += "  $\(key): \(value)\n"
+            }
+            output += "\n"
+        }
+        
+        if let analysis = analysis {
+            output += analysis.description + "\n"
+        }
+        
+        output += "========================"
+        return output
+    }
+    
+    /// Returns a compact single-line description
+    public var compactDescription: String {
+        var parts: [String] = []
+        
+        // Truncate cypher if too long
+        let truncatedCypher = cypher.count > 100 ? 
+            String(cypher.prefix(97)) + "..." : cypher
+        parts.append(truncatedCypher.replacingOccurrences(of: "\n", with: " "))
+        
+        if !parameters.isEmpty {
+            parts.append("[\(parameters.count) params]")
+        }
+        
+        return parts.joined(separator: " | ")
+    }
+}
+
+/// A wrapper component that adds EXPLAIN to a query
+private struct ExplainWrapper: QueryComponent {
+    let component: QueryComponent
+    
+    func toCypher() throws -> CypherFragment {
+        let inner = try component.toCypher()
+        return CypherFragment(
+            query: "EXPLAIN \(inner.query)",
+            parameters: inner.parameters
+        )
+    }
+}
+
 // MARK: - Debug Extensions
 
 public extension GraphContext {
     /// Executes a query with debugging enabled
     func debugQuery(
         debug: QueryDebug.Configuration = .verbose,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) async throws -> QueryResult {
         let previousConfig = QueryDebug.configuration
         QueryDebug.configuration = debug
         defer { QueryDebug.configuration = previousConfig }
         
-        let query = builder()
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         
         // Capture query and parameters locally to avoid sending non-Sendable types
@@ -354,8 +464,8 @@ public extension GraphContext {
     }
     
     /// Analyzes a query without executing it
-    func analyzeQuery(@QueryBuilder _ builder: () -> Query) throws -> QueryAnalysis {
-        let query = builder()
+    func analyzeQuery(@QueryBuilder _ builder: () -> [QueryComponent]) throws -> QueryAnalysis {
+        let query = Query(components: builder())
         return try QueryIntrospection.analyze(query)
     }
 }
@@ -364,13 +474,13 @@ public extension TransactionalGraphContext {
     /// Executes a query with debugging enabled within a transaction
     func debugQuery(
         debug: QueryDebug.Configuration = .verbose,
-        @QueryBuilder _ builder: () -> Query
+        @QueryBuilder _ builder: () -> [QueryComponent]
     ) throws -> QueryResult {
         let previousConfig = QueryDebug.configuration
         QueryDebug.configuration = debug
         defer { QueryDebug.configuration = previousConfig }
         
-        let query = builder()
+        let query = Query(components: builder())
         let cypher = try CypherCompiler.compile(query)
         
         let startTime = Date()
