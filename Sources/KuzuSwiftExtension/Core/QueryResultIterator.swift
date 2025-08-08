@@ -2,22 +2,10 @@ import Foundation
 import Kuzu
 
 public extension QueryResult {
-    var canReset: Bool {
-        return true
-    }
-    
-    func reset() {
-        self.resetIterator()
-    }
-    
-    var hasMultipleResults: Bool {
-        return self.hasNextQueryResult()
-    }
-    
-    func nextQueryResult() throws -> QueryResult? {
-        guard hasNextQueryResult() else { return nil }
-        return try self.getNextQueryResult()
-    }
+    // Removed redundant wrapper methods - use Kuzu's native methods directly:
+    // - resetIterator() instead of reset()
+    // - hasNextQueryResult() instead of hasMultipleResults
+    // - getNextQueryResult() instead of nextQueryResult()
     
     func iterateResults() -> QueryResultSequence {
         return QueryResultSequence(result: self)
