@@ -50,32 +50,21 @@ public struct Match: QueryComponent {
         self.patterns = patterns
     }
     
-    // MARK: - Type-safe API using ModelReference
+    // MARK: - Type-safe API
     
-    /// Type-safe node matching using ModelReference
-    public static func node<T: _KuzuGraphModel>(
-        _ modelRef: ModelReference<T>,
-        as alias: String? = nil,
-        where predicate: Predicate? = nil
-    ) -> Match {
-        let pattern = MatchPattern.node(
-            type: modelRef.cypherTypeName,
-            alias: alias ?? modelRef.defaultAlias,
-            predicate: predicate
-        )
-        return Match(patterns: [pattern])
-    }
-    
-    // MARK: - Existing API (maintained for compatibility)
-    
+    /// Creates a match pattern for a node of the specified type
     public static func node<T: _KuzuGraphModel>(
         _ type: T.Type,
         alias: String? = nil,
         where predicate: Predicate? = nil
     ) -> Match {
-        // Use ModelReference internally
-        let modelRef = ModelReference(type)
-        return node(modelRef, as: alias, where: predicate)
+        let typeInfo = TypeNameExtractor.extractTypeInfo(type)
+        let pattern = MatchPattern.node(
+            type: typeInfo.typeName,
+            alias: alias ?? typeInfo.defaultAlias,
+            predicate: predicate
+        )
+        return Match(patterns: [pattern])
     }
     
     public static func pattern(_ patterns: MatchPattern...) -> Match {

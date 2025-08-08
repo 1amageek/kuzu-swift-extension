@@ -9,48 +9,40 @@ public struct Create: QueryComponent {
         self.edge = edge
     }
     
-    // MARK: - Type-safe API using ModelReference
+    // MARK: - Type-safe API
     
-    /// Type-safe node creation using ModelReference
-    public static func node<T: _KuzuGraphModel>(
-        _ modelRef: ModelReference<T>,
-        as alias: String? = nil,
-        properties: [String: any Sendable] = [:]
-    ) -> Create {
-        let pattern = NodePattern(
-            type: modelRef.cypherTypeName,
-            alias: alias ?? modelRef.defaultAlias,
-            properties: properties
-        )
-        return Create(node: pattern)
-    }
-    
-    // MARK: - Existing API (maintained for compatibility)
-    
+    /// Creates a node of the specified type with optional properties
     public static func node<T: _KuzuGraphModel>(
         _ type: T.Type,
         alias: String? = nil,
         properties: [String: any Sendable] = [:]
     ) -> Create {
-        // Use ModelReference internally
-        let modelRef = ModelReference(type)
-        return node(modelRef, as: alias, properties: properties)
+        let typeInfo = TypeNameExtractor.extractTypeInfo(type)
+        let pattern = NodePattern(
+            type: typeInfo.typeName,
+            alias: alias ?? typeInfo.defaultAlias,
+            properties: properties
+        )
+        return Create(node: pattern)
     }
     
+    /// Creates a node from an encodable instance
     public static func node<T: _KuzuGraphModel & Encodable>(
         _ instance: T,
         alias: String? = nil
     ) throws -> Create {
         let encoder = KuzuEncoder()
         let properties = try encoder.encode(instance)
+        let typeInfo = TypeNameExtractor.extractTypeInfo(T.self)
         let pattern = NodePattern(
-            type: String(describing: T.self),
-            alias: alias ?? String(describing: T.self).lowercased(),
+            type: typeInfo.typeName,
+            alias: alias ?? typeInfo.defaultAlias,
             properties: properties
         )
         return Create(node: pattern)
     }
     
+    /// Creates an edge of the specified type between nodes
     public static func edge<T: _KuzuGraphModel>(
         _ type: T.Type,
         from: String,
@@ -58,11 +50,12 @@ public struct Create: QueryComponent {
         alias: String? = nil,
         properties: [String: any Sendable] = [:]
     ) -> Create {
+        let typeInfo = TypeNameExtractor.extractTypeInfo(type)
         let pattern = EdgePattern(
-            type: String(describing: type),
+            type: typeInfo.typeName,
             from: from,
             to: to,
-            alias: alias ?? String(describing: type).lowercased(),
+            alias: alias ?? typeInfo.defaultAlias,
             properties: properties
         )
         return Create(edge: pattern)
