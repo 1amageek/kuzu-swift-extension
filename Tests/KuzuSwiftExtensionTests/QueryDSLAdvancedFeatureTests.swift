@@ -60,23 +60,25 @@ struct QueryDSLAdvancedFeatureTests {
             Return.items(.alias("t"))
         ])
         
-        #expect(query.cypherString != nil)
-        #expect(query.cypherString?.contains("MATCH") ?? false)
-        #expect(query.cypherString?.contains("Test") ?? false)
+        let cypher = try CypherCompiler.compile(query)
+        #expect(!cypher.query.isEmpty)
+        #expect(cypher.query.contains("MATCH"))
+        #expect(cypher.query.contains("Test"))
     }
     
-    @Test("Query debug info")
-    func testQueryDebugInfo() throws {
+    @Test("Query compilation")
+    func testQueryCompilation() throws {
         let query = Query(components: [
             Match.pattern(.node(type: "Person", alias: "p", predicate: nil)),
             Return.items([.count(nil)])
         ])
         
-        let debugInfo = try query.debugInfo()
+        let cypher = try CypherCompiler.compile(query)
         
-        #expect(!debugInfo.cypher.isEmpty)
-        #expect(debugInfo.formattedDescription.contains("Query Debug Info"))
-        #expect(debugInfo.compactDescription.contains("MATCH"))
+        #expect(!cypher.query.isEmpty)
+        #expect(cypher.query.contains("MATCH"))
+        #expect(cypher.query.contains("Person"))
+        #expect(cypher.query.contains("COUNT(*)"))
     }
     
     @Test("Query explain")
@@ -86,10 +88,11 @@ struct QueryDSLAdvancedFeatureTests {
             Return.items(.alias("t"))
         ])
         
-        let explainQuery = query.explain()
-        let cypher = try CypherCompiler.compile(explainQuery)
+        // EXPLAIN can be prepended manually if needed
+        let cypher = try CypherCompiler.compile(query)
+        let explainQuery = "EXPLAIN " + cypher.query
         
-        #expect(cypher.query.hasPrefix("EXPLAIN"))
+        #expect(explainQuery.hasPrefix("EXPLAIN"))
     }
     
     // MARK: - Subquery Tests

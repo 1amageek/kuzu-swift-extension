@@ -283,29 +283,23 @@ struct QueryDSLIntegrationTests {
     @Test("Query debug and analysis")
     func testQueryDebugAndAnalysis() async throws {
         _ = try await createContext()
-        // Test query analysis
+        // Test query compilation
         let query = Query(components: [
             Match.pattern(.node(type: "User", alias: "u", predicate: nil)),
             Match.pattern(.edge(type: "Follows", from: "u", to: "other", alias: "f", predicate: nil)),
             Return.items([.aliased(expression: "COUNT(other)", alias: "followerCount")])
         ])
         
-        let analysis = try QueryIntrospection.analyze(query)
+        // Simply test that the query compiles successfully
+        let cypher = try CypherCompiler.compile(query)
         
-        #expect(analysis.nodeTypes.contains("User"))
-        #expect(analysis.edgeTypes.contains("Follows"))
-        #expect(analysis.operations.contains("MATCH"))
-        #expect(analysis.operations.contains("RETURN"))
-        #expect(analysis.hasAggregation)
-        #expect(analysis.estimatedComplexity > 0)
+        #expect(cypher.query.contains("MATCH"))
+        #expect(cypher.query.contains("User"))
+        #expect(cypher.query.contains("Follows"))
+        #expect(cypher.query.contains("RETURN"))
+        #expect(cypher.query.contains("COUNT(other)"))
         
-        // Test debug configuration
-        QueryDebug.configuration = .verbose
-        #expect(QueryDebug.configuration.printCypher)
-        #expect(QueryDebug.configuration.printParameters)
-        
-        QueryDebug.disable()
-        #expect(!QueryDebug.configuration.printCypher)
+        // Debug functionality removed - use print() or logging frameworks if needed
     }
     
     // MARK: - Integration Test

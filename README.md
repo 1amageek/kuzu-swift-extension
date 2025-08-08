@@ -420,24 +420,18 @@ try await graph.withTransaction { tx in
 
 #### Query Debugging and Analysis
 ```swift
-// Enable verbose debugging
-QueryDebug.enableVerbose()
-
-// Debug specific query
-let result = try await graph.debugQuery(debug: .verbose) {
-    Match.node(User.self)
+// Debug query by compiling and inspecting
+let query = Query(components: [
+    Match.node(User.self),
     Return.count()
-}
-// Outputs: Cypher, parameters, execution time, result count
+])
+let cypher = try CypherCompiler.compile(query)
+print("Query: \(cypher.query)")
+print("Parameters: \(cypher.parameters)")
 
-// Analyze query without execution
-let analysis = try graph.analyzeQuery {
-    Match.node(User.self, alias: "u")
-    Match.edge(Follows.self).from("u").to("other")
-    Return.nodes("u", "other")
-}
-print(analysis.description)
-// Shows: operations, node/edge types, complexity score
+// Inspect compiled query
+// The CypherCompiler provides all the information you need
+// No need for complex analysis tools
 
 // Profile query performance
 let (result, profile) = try await QueryProfiler.profile {
