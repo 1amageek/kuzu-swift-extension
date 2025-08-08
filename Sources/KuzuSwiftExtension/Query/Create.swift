@@ -83,7 +83,7 @@ struct NodePattern {
         var propStrings: [String] = []
         
         for (key, value) in properties {
-            let paramName = ParameterNameGenerator.generateSemantic(alias: alias, property: key)
+            let paramName = OptimizedParameterGenerator.semantic(alias: alias, property: key)
             params[paramName] = value
             propStrings.append("\(key): $\(paramName)")
         }
@@ -107,7 +107,7 @@ struct EdgePattern {
         var propStrings: [String] = []
         
         for (key, value) in properties {
-            let paramName = ParameterNameGenerator.generateSemantic(alias: alias, property: key)
+            let paramName = OptimizedParameterGenerator.semantic(alias: alias, property: key)
             params[paramName] = value
             propStrings.append("\(key): $\(paramName)")
         }

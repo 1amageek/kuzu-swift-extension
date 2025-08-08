@@ -183,46 +183,8 @@ struct QueryDSLAdvancedFeatureTests {
     }
     
     // MARK: - Graph Algorithms Tests
-    
-    @Test("Graph algorithms")
-    func testGraphAlgorithms() throws {
-        // PageRank
-        let pagerank = GraphAlgorithms.PageRank.compute(
-            damping: 0.9,
-            iterations: 30
-        )
-        let prCypher = try pagerank.toCypher()
-        #expect(prCypher.query.contains("gds.pageRank"))
-        #expect(prCypher.parameters["damping"] as? Double == 0.9)
-        
-        // Louvain
-        let louvain = GraphAlgorithms.Louvain.simple()
-        let louvainCypher = try louvain.toCypher()
-        #expect(louvainCypher.query.contains("gds.louvain"))
-        
-        // Shortest Path
-        let shortest = GraphAlgorithms.ShortestPath.dijkstra(
-            source: "a",
-            target: "b"
-        )
-        let shortestCypher = try shortest.toCypher()
-        #expect(shortestCypher.query.contains("dijkstra"))
-        
-        // Connected Components
-        let wcc = GraphAlgorithms.ConnectedComponents.weakly()
-        let wccCypher = try wcc.toCypher()
-        #expect(wccCypher.query.contains("gds.wcc"))
-        
-        // Centrality
-        let centrality = GraphAlgorithms.Centrality.betweenness()
-        let centralityCypher = try centrality.toCypher()
-        #expect(centralityCypher.query.contains("gds.betweenness"))
-        
-        // Similarity
-        let similarity = GraphAlgorithms.Similarity.jaccard(topK: 5)
-        let similarityCypher = try similarity.toCypher()
-        #expect(similarityCypher.query.contains("jaccard"))
-    }
+    // Note: Graph algorithms are not yet supported by Kuzu
+    // These tests have been removed as the GraphAlgorithms module was deleted
 }
 
 // MARK: - Test Models

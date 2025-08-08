@@ -5,49 +5,19 @@ import SwiftSyntaxMacros
 import SwiftDiagnostics
 import Foundation
 
-public struct IDMacro: PeerMacro {
-    public static func expansion(
-        of node: AttributeSyntax,
-        providingPeersOf declaration: some DeclSyntaxProtocol,
+// MARK: - Base Property Macro
+
+/// Base implementation for property-based macros
+protocol BasePropertyMacro: PeerMacro {
+    /// Validate specific requirements for this macro
+    static func validate(
+        _ node: AttributeSyntax,
+        _ declaration: VariableDeclSyntax,
         in context: some MacroExpansionContext
-    ) throws -> [DeclSyntax] {
-        
-        guard declaration.is(VariableDeclSyntax.self) else {
-            let diagnostic = Diagnostic(
-                node: declaration,
-                message: PropertyMacroDiagnostic.mustBeAppliedToProperty
-            )
-            context.diagnose(diagnostic)
-            return []
-        }
-        
-        // Generate metadata comment (no actual code generation needed)
-        return []
-    }
+    ) -> Bool
 }
 
-public struct IndexMacro: PeerMacro {
-    public static func expansion(
-        of node: AttributeSyntax,
-        providingPeersOf declaration: some DeclSyntaxProtocol,
-        in context: some MacroExpansionContext
-    ) throws -> [DeclSyntax] {
-        
-        guard declaration.is(VariableDeclSyntax.self) else {
-            let diagnostic = Diagnostic(
-                node: declaration,
-                message: PropertyMacroDiagnostic.mustBeAppliedToProperty
-            )
-            context.diagnose(diagnostic)
-            return []
-        }
-        
-        // Generate metadata comment (no actual code generation needed)
-        return []
-    }
-}
-
-public struct VectorMacro: PeerMacro {
+extension BasePropertyMacro {
     public static func expansion(
         of node: AttributeSyntax,
         providingPeersOf declaration: some DeclSyntaxProtocol,
@@ -55,33 +25,69 @@ public struct VectorMacro: PeerMacro {
     ) throws -> [DeclSyntax] {
         
         guard let variableDecl = declaration.as(VariableDeclSyntax.self) else {
-            let diagnostic = Diagnostic(
+            context.diagnose(Diagnostic(
                 node: declaration,
                 message: PropertyMacroDiagnostic.mustBeAppliedToProperty
-            )
-            context.diagnose(diagnostic)
+            ))
             return []
         }
         
+        // Perform specific validation for this macro type
+        _ = validate(node, variableDecl, in: context)
+        
+        // Generate metadata comment (no actual code generation needed)
+        return []
+    }
+}
+
+// MARK: - Simple Property Macros
+
+public struct IDMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
+        true // No additional validation needed
+    }
+}
+
+public struct IndexMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
+        true // No additional validation needed
+    }
+}
+
+public struct TimestampMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
+        true // No additional validation needed
+    }
+}
+
+public struct UniqueMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
+        true // No additional validation needed
+    }
+}
+
+// MARK: - Complex Property Macros
+
+public struct VectorMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
         // Validate Array<Double> or [Double] type
-        guard let binding = variableDecl.bindings.first,
+        guard let binding = declaration.bindings.first,
               let typeAnnotation = binding.typeAnnotation?.type else {
-            return []
+            return false
         }
         
-        let typeString = typeAnnotation.description.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let typeString = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
         let isValidType = typeString.contains("Array<Double>") || 
                          typeString.contains("[Double]") ||
                          typeString.contains("Array<Double>?") ||
                          typeString.contains("[Double]?")
         
         if !isValidType {
-            let diagnostic = Diagnostic(
+            context.diagnose(Diagnostic(
                 node: typeAnnotation,
                 message: PropertyMacroDiagnostic.vectorRequiresArray
-            )
-            context.diagnose(diagnostic)
-            return []
+            ))
+            return false
         }
         
         // Validate dimensions parameter
@@ -90,131 +96,52 @@ public struct VectorMacro: PeerMacro {
               let dimensionsExpr = dimensionsArg.expression.as(IntegerLiteralExprSyntax.self),
               let dimensions = Int(dimensionsExpr.literal.text),
               dimensions > 0 else {
-            let diagnostic = Diagnostic(
+            context.diagnose(Diagnostic(
                 node: node,
                 message: PropertyMacroDiagnostic.invalidVectorDimensions
-            )
-            context.diagnose(diagnostic)
-            return []
+            ))
+            return false
         }
         
-        // Generate metadata comment for debugging (no actual code generation needed)
-        return []
+        return true
     }
 }
 
-public struct FullTextSearchMacro: PeerMacro {
-    public static func expansion(
-        of node: AttributeSyntax,
-        providingPeersOf declaration: some DeclSyntaxProtocol,
-        in context: some MacroExpansionContext
-    ) throws -> [DeclSyntax] {
-        
-        guard let variableDecl = declaration.as(VariableDeclSyntax.self) else {
-            let diagnostic = Diagnostic(
-                node: declaration,
-                message: PropertyMacroDiagnostic.mustBeAppliedToProperty
-            )
-            context.diagnose(diagnostic)
-            return []
-        }
-        
+public struct FullTextSearchMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
         // Validate String type
-        guard let binding = variableDecl.bindings.first,
+        guard let binding = declaration.bindings.first,
               let typeAnnotation = binding.typeAnnotation?.type else {
-            return []
+            return false
         }
         
-        let typeString = typeAnnotation.description.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let typeString = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
         let isStringType = typeString == "String" || typeString == "String?"
         
         if !isStringType {
-            let diagnostic = Diagnostic(
+            context.diagnose(Diagnostic(
                 node: typeAnnotation,
                 message: MacroExpansionErrorMessage("@FullTextSearch can only be applied to String properties")
-            )
-            context.diagnose(diagnostic)
-            return []
+            ))
+            return false
         }
         
-        // Generate metadata comment (no actual code generation needed)
-        return []
+        return true
     }
 }
 
-public struct TimestampMacro: PeerMacro {
-    public static func expansion(
-        of node: AttributeSyntax,
-        providingPeersOf declaration: some DeclSyntaxProtocol,
-        in context: some MacroExpansionContext
-    ) throws -> [DeclSyntax] {
-        
-        guard declaration.is(VariableDeclSyntax.self) else {
-            let diagnostic = Diagnostic(
-                node: declaration,
-                message: PropertyMacroDiagnostic.mustBeAppliedToProperty
-            )
-            context.diagnose(diagnostic)
-            return []
-        }
-        
-        // Generate metadata comment (no actual code generation needed)
-        return []
-    }
-}
-
-public struct UniqueMacro: PeerMacro {
-    public static func expansion(
-        of node: AttributeSyntax,
-        providingPeersOf declaration: some DeclSyntaxProtocol,
-        in context: some MacroExpansionContext
-    ) throws -> [DeclSyntax] {
-        
-        guard declaration.is(VariableDeclSyntax.self) else {
-            let diagnostic = Diagnostic(
-                node: declaration,
-                message: PropertyMacroDiagnostic.mustBeAppliedToProperty
-            )
-            context.diagnose(diagnostic)
-            return []
-        }
-        
-        // Generate metadata comment (no actual code generation needed)
-        return []
-    }
-}
-
-public struct DefaultMacro: PeerMacro {
-    public static func expansion(
-        of node: AttributeSyntax,
-        providingPeersOf declaration: some DeclSyntaxProtocol,
-        in context: some MacroExpansionContext
-    ) throws -> [DeclSyntax] {
-        
-        guard declaration.is(VariableDeclSyntax.self) else {
-            let diagnostic = Diagnostic(
-                node: declaration,
-                message: PropertyMacroDiagnostic.mustBeAppliedToProperty
-            )
-            context.diagnose(diagnostic)
-            return []
-        }
-        
+public struct DefaultMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
         // Extract default value from arguments
         guard case .argumentList(let arguments) = node.arguments,
-              let firstArg = arguments.first else {
-            let diagnostic = Diagnostic(
+              arguments.first != nil else {
+            context.diagnose(Diagnostic(
                 node: node,
                 message: MacroExpansionErrorMessage("@Default requires a value argument")
-            )
-            context.diagnose(diagnostic)
-            return []
+            ))
+            return false
         }
         
-        let _ = firstArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Generate metadata comment (no actual code generation needed)
-        return []
+        return true
     }
 }
-

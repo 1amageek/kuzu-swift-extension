@@ -33,7 +33,7 @@ public struct Unwind: QueryComponent {
             return CypherFragment(query: "UNWIND \(paramRef) AS \(alias)")
         } else {
             // Encode the items as a parameter
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             return CypherFragment(
                 query: "UNWIND $\(paramName) AS \(alias)",
                 parameters: [paramName: items]

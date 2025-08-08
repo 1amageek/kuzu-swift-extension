@@ -86,35 +86,35 @@ public indirect enum PredicateNode {
             return CypherFragment(query: "\(prop.cypher) IS NOT NULL")
             
         case .inList(let prop, let values):
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             return CypherFragment(
                 query: "\(prop.cypher) IN $\(paramName)",
                 parameters: [paramName: values]
             )
             
         case .contains(let prop, let value):
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             return CypherFragment(
                 query: "\(prop.cypher) CONTAINS $\(paramName)",
                 parameters: [paramName: value]
             )
             
         case .startsWith(let prop, let value):
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             return CypherFragment(
                 query: "\(prop.cypher) STARTS WITH $\(paramName)",
                 parameters: [paramName: value]
             )
             
         case .endsWith(let prop, let value):
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             return CypherFragment(
                 query: "\(prop.cypher) ENDS WITH $\(paramName)",
                 parameters: [paramName: value]
             )
             
         case .regex(let prop, let pattern):
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             return CypherFragment(
                 query: "\(prop.cypher) =~ $\(paramName)",
                 parameters: [paramName: pattern]
@@ -150,7 +150,7 @@ public struct ComparisonExpression {
             return CypherFragment(query: "\(lhs.cypher) \(op.rawValue) \(prop.cypher)")
             
         case .value(let value):
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             return CypherFragment(
                 query: "\(lhs.cypher) \(op.rawValue) $\(paramName)",
                 parameters: [paramName: value]

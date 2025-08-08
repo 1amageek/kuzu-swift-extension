@@ -170,7 +170,7 @@ public struct Let: QueryComponent {
             expressionCypher = CypherFragment(query: ref.cypher)
             
         case .value(let value):
-            let paramName = ParameterNameGenerator.generateUUID()
+            let paramName = OptimizedParameterGenerator.lightweight()
             expressionCypher = CypherFragment(
                 query: "$\(paramName)",
                 parameters: [paramName: value]
