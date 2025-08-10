@@ -224,35 +224,55 @@ public struct MigrationManager {
     }
     
     private func applyMigration(diff: SchemaDiff) async throws {
-        var statements: [String] = []
+        var nodeStatements: [String] = []
+        var edgeStatements: [String] = []
+        var dropStatements: [String] = []
         
         // Add new nodes
         for node in diff.addedNodes {
-            statements.append(node.ddl)
+            nodeStatements.append(node.ddl)
         }
         
         // Add new edges
         for edge in diff.addedEdges {
-            statements.append(edge.ddl)
+            edgeStatements.append(edge.ddl)
         }
         
         // Drop edges (must be done before dropping nodes due to foreign key constraints)
         if policy.allowsDroppingTables {
             for edge in diff.droppedEdges {
-                statements.append("DROP TABLE \(edge.name)")
+                dropStatements.append("DROP TABLE \(edge.name)")
             }
         }
         
         // Drop nodes
         if policy.allowsDroppingTables {
             for node in diff.droppedNodes {
-                statements.append("DROP TABLE \(node.name)")
+                dropStatements.append("DROP TABLE \(node.name)")
             }
         }
         
-        // Execute all statements in a transaction
-        if !statements.isEmpty {
-            let statementsToExecute = statements.joined(separator: "; ")
+        // Execute drop statements first (if any)
+        if !dropStatements.isEmpty {
+            let statementsToExecute = dropStatements.joined(separator: "; ")
+            _ = try await context.withTransaction { txCtx in
+                return try txCtx.raw(statementsToExecute)
+            }
+        }
+        
+        // Execute node creation statements
+        if !nodeStatements.isEmpty {
+            let statementsToExecute = nodeStatements.joined(separator: "; ")
+            _ = try await context.withTransaction { txCtx in
+                return try txCtx.raw(statementsToExecute)
+            }
+        }
+        
+        // Execute edge creation statements in a separate transaction
+        // This is necessary because Kuzu requires nodes to be committed
+        // before edges can reference them
+        if !edgeStatements.isEmpty {
+            let statementsToExecute = edgeStatements.joined(separator: "; ")
             _ = try await context.withTransaction { txCtx in
                 return try txCtx.raw(statementsToExecute)
             }
