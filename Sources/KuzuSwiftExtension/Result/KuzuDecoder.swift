@@ -406,6 +406,57 @@ private struct _KuzuKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContain
             return convertedValue
         }
         
+        // Handle RawRepresentable enums BEFORE basic type check
+        // This allows Swift's automatic Codable synthesis for enums to work
+        // BUT: Skip if T is already a basic type to avoid infinite recursion
+        if !(type == String.self || type == Int.self || type == Int64.self || 
+             type == Float.self || type == Double.self || type == Bool.self) {
+            if let stringValue = value as? String {
+                let dict = ["": stringValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [key]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let intValue = value as? Int {
+                let dict = ["": intValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [key]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let int64Value = value as? Int64 {
+                let dict = ["": int64Value]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [key]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let floatValue = value as? Float {
+                // Try as Float first, then as Double for Double-based enums
+                let dict = ["": floatValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [key]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+                // Try converting to Double for Double-based enums
+                let doubleDict = ["": Double(floatValue)]
+                let doubleDecoder = _KuzuDecoder(dictionary: doubleDict, configuration: configuration)
+                doubleDecoder.codingPath = codingPath + [key]
+                if let decoded = try? T(from: doubleDecoder) {
+                    return decoded
+                }
+            } else if let doubleValue = value as? Double {
+                let dict = ["": doubleValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [key]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            }
+        }
+        
         // Handle basic types
         if let typedValue = value as? T {
             return typedValue
@@ -562,6 +613,57 @@ private struct _KuzuSingleValueDecodingContainer: SingleValueDecodingContainer, 
             return converted
         }
         
+        // Handle RawRepresentable enums (String, Int, Double raw values)
+        // This allows Swift's automatic Codable synthesis for enums to work
+        // BUT: Skip if T is already a basic type to avoid infinite recursion
+        if !(type == String.self || type == Int.self || type == Int64.self || 
+             type == Float.self || type == Double.self || type == Bool.self) {
+            if let stringValue = value as? String {
+                let dict = ["": stringValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let intValue = value as? Int {
+                let dict = ["": intValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let int64Value = value as? Int64 {
+                let dict = ["": int64Value]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let floatValue = value as? Float {
+                // Try as Float first, then as Double for Double-based enums
+                let dict = ["": floatValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+                // Try converting to Double for Double-based enums
+                let doubleDict = ["": Double(floatValue)]
+                let doubleDecoder = _KuzuDecoder(dictionary: doubleDict, configuration: configuration)
+                doubleDecoder.codingPath = codingPath
+                if let decoded = try? T(from: doubleDecoder) {
+                    return decoded
+                }
+            } else if let doubleValue = value as? Double {
+                let dict = ["": doubleValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            }
+        }
+        
         throw DecodingError.typeMismatch(
             type,
             DecodingError.Context(
@@ -630,11 +732,69 @@ private struct _KuzuUnkeyedDecodingContainer: UnkeyedDecodingContainer, KuzuDeco
             return converted
         }
         
+        // Handle arrays that need to be decoded as other types (like Set)
+        if let array = value as? [Any] {
+            let decoder = _KuzuArrayDecoder(array: array, configuration: configuration)
+            decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
+            return try T(from: decoder)
+        }
+        
         // Handle nested Decodable types
         if let dict = value as? [String: Any] {
             let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
             decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
             return try T(from: decoder)
+        }
+        
+        // Handle RawRepresentable enums (String, Int, Double raw values)
+        // This allows Swift's automatic Codable synthesis for enums to work
+        // BUT: Skip if T is already a basic type to avoid infinite recursion
+        if !(type == String.self || type == Int.self || type == Int64.self || 
+             type == Float.self || type == Double.self || type == Bool.self) {
+            if let stringValue = value as? String {
+                let dict = ["": stringValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let intValue = value as? Int {
+                let dict = ["": intValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let int64Value = value as? Int64 {
+                let dict = ["": int64Value]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            } else if let floatValue = value as? Float {
+                // Try as Float first, then as Double for Double-based enums
+                let dict = ["": floatValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+                // Try converting to Double for Double-based enums
+                let doubleDict = ["": Double(floatValue)]
+                let doubleDecoder = _KuzuDecoder(dictionary: doubleDict, configuration: configuration)
+                doubleDecoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
+                if let decoded = try? T(from: doubleDecoder) {
+                    return decoded
+                }
+            } else if let doubleValue = value as? Double {
+                let dict = ["": doubleValue]
+                let decoder = _KuzuDecoder(dictionary: dict, configuration: configuration)
+                decoder.codingPath = codingPath + [IndexKey(intValue: currentIndex - 1)]
+                if let decoded = try? T(from: decoder) {
+                    return decoded
+                }
+            }
         }
         
         throw DecodingError.typeMismatch(
