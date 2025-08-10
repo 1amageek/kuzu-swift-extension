@@ -63,7 +63,18 @@ public final class GraphDatabase {
             // Models registered after initialization won't be migrated automatically
             return
         }
-        registeredModels.append(contentsOf: models)
+        
+        // Prevent duplicate registration by checking type names
+        for model in models {
+            let modelName = String(describing: model)
+            let isAlreadyRegistered = registeredModels.contains { existingModel in
+                String(describing: existingModel) == modelName
+            }
+            
+            if !isAlreadyRegistered {
+                registeredModels.append(model)
+            }
+        }
     }
     
     /// Configure migration policy.

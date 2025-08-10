@@ -94,7 +94,9 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
             
             columns.append((propertyName, kuzuType, constraints))
             
-            var columnDef = "\(propertyName) \(kuzuType)"
+            // Escape property name if it's a reserved word
+            let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
+            var columnDef = "\(escapedName) \(kuzuType)"
             for constraint in constraints {
                 columnDef += " \(constraint)"
             }

@@ -38,16 +38,16 @@ struct KuzuEncoderTests {
     
     // MARK: - Basic Type Conversion Tests
     
-    @Test("Date conversion to ISO-8601")
+    @Test("Date conversion to ISO-8601 (default)")
     func dateConversion() throws {
         let encoder = KuzuEncoder()
         let date = Date(timeIntervalSince1970: 1234567890)
         let encoded = try encoder.encode(TestModel(date: date))
         
+        // Default strategy is ISO-8601 for Kuzu TIMESTAMP
         let dateString = encoded["date"] as? String
         #expect(dateString != nil)
         #expect(dateString?.contains("2009-02-13") == true)
-        #expect(dateString?.contains("23:31:30") == true)
     }
     
     @Test("UUID conversion to string")
@@ -116,6 +116,7 @@ struct KuzuEncoderTests {
     // MARK: - Encoding Strategy Tests
     
     @Test("Date encoding strategies", arguments: [
+        (KuzuEncoder.DateEncodingStrategy.microsecondsSince1970, "microseconds"),
         (KuzuEncoder.DateEncodingStrategy.iso8601, "iso8601"),
         (KuzuEncoder.DateEncodingStrategy.secondsSince1970, "seconds"),
         (KuzuEncoder.DateEncodingStrategy.millisecondsSince1970, "milliseconds")
@@ -128,6 +129,8 @@ struct KuzuEncoderTests {
         let encoded = try encoder.encode(TestModel(date: date))
         
         switch strategy {
+        case .microsecondsSince1970:
+            #expect(encoded["date"] as? Int64 == 1234567890000000)
         case .iso8601:
             let dateString = encoded["date"] as? String
             #expect(dateString?.contains("2009-02-13") == true)

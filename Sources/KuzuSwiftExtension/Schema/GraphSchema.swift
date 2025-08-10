@@ -12,6 +12,8 @@ public struct GraphSchema {
     public static func discover(from types: [any _KuzuGraphModel.Type]) -> GraphSchema {
         var nodes: [NodeSchema] = []
         var edges: [EdgeSchema] = []
+        var seenNodeNames = Set<String>()
+        var seenEdgeNames = Set<String>()
         
         for type in types {
             let ddl = type._kuzuDDL
@@ -19,6 +21,10 @@ public struct GraphSchema {
             
             if ddl.contains("CREATE NODE TABLE") {
                 let name = extractTableName(from: ddl)
+                // Skip if already processed (duplicate model)
+                guard !seenNodeNames.contains(name) else { continue }
+                seenNodeNames.insert(name)
+                
                 nodes.append(NodeSchema(
                     name: name,
                     columns: columns.map { Column(name: $0.name, type: $0.type, constraints: $0.constraints) },
@@ -26,6 +32,10 @@ public struct GraphSchema {
                 ))
             } else if ddl.contains("CREATE REL TABLE") {
                 let name = extractTableName(from: ddl)
+                // Skip if already processed (duplicate model)
+                guard !seenEdgeNames.contains(name) else { continue }
+                seenEdgeNames.insert(name)
+                
                 let (from, to) = extractRelationship(from: ddl)
                 edges.append(EdgeSchema(
                     name: name,

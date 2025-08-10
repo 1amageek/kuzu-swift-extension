@@ -58,7 +58,9 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                                 let dimensions = expr.literal.text
                                 columns.append((propertyName, "DOUBLE[\(dimensions)]", constraints))
                                 // Build DDL column with only supported inline constraints
-                                var columnDef = "\(propertyName) DOUBLE[\(dimensions)]"
+                                // Escape property name if it's a reserved word
+                                let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
+                                var columnDef = "\(escapedName) DOUBLE[\(dimensions)]"
                                 for constraint in constraints {
                                     if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
                                         columnDef += " \(constraint)"
@@ -106,7 +108,9 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                 columns.append((propertyName, kuzuType, constraints))
                 
                 // Build DDL column with only supported inline constraints
-                var columnDef = "\(propertyName) \(kuzuType)"
+                // Escape property name if it's a reserved word
+                let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
+                var columnDef = "\(escapedName) \(kuzuType)"
                 for constraint in constraints {
                     if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
                         columnDef += " \(constraint)"

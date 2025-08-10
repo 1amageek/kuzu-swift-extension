@@ -4,7 +4,7 @@ import Foundation
 public struct KuzuEncoder: Sendable {
     /// Configuration options for encoding
     public struct Configuration: Sendable {
-        public var dateEncodingStrategy: DateEncodingStrategy = .iso8601  // Kuzu expects ISO-8601 for TIMESTAMP
+        public var dateEncodingStrategy: DateEncodingStrategy = .iso8601  // Kuzu expects ISO-8601 string for TIMESTAMP with timestamp() function
         public var dataEncodingStrategy: DataEncodingStrategy = .base64
         public var keyEncodingStrategy: KeyEncodingStrategy = .useDefaultKeys
         public var userInfo: [CodingUserInfoKey: any Sendable] = [:]
@@ -14,6 +14,7 @@ public struct KuzuEncoder: Sendable {
     
     /// Strategy for encoding dates
     public enum DateEncodingStrategy: Sendable {
+        case microsecondsSince1970  // Default for Kuzu TIMESTAMP
         case iso8601
         case secondsSince1970
         case millisecondsSince1970
@@ -123,7 +124,8 @@ public struct KuzuEncoder: Sendable {
             return uuid.uuidString
         }
         
-        // Handle Date - Kuzu expects ISO-8601 formatted string for TIMESTAMP
+        // Handle Date - Kuzu expects ISO-8601 string for TIMESTAMP
+        // When used in queries, wrap with timestamp() function
         if let date = value as? Date {
             return TypeConversion.formatISO8601Date(date)
         }
@@ -144,6 +146,8 @@ internal protocol KuzuEncodingContainer {
 extension KuzuEncodingContainer {
     func encodeDate(_ date: Date) throws -> any Sendable {
         switch configuration.dateEncodingStrategy {
+        case .microsecondsSince1970:
+            return Int64(date.timeIntervalSince1970 * 1_000_000)
         case .iso8601:
             return TypeConversion.formatISO8601Date(date)
         case .secondsSince1970:
