@@ -36,18 +36,31 @@ public final class GraphDatabase {
         
         let dbPath = Self.defaultDatabasePath()
         let configuration = GraphConfiguration(
-            databasePath: dbPath
+            databasePath: dbPath,
+            migrationMode: .automatic  // Default to automatic migration
         )
         
         let context = try await GraphContext(configuration: configuration)
         
-        // Apply schema for registered models using MigrationManager
+        // Apply schema based on migration mode
         if !registeredModels.isEmpty {
-            let migrationManager = MigrationManager(
-                context: context,
-                policy: migrationPolicy
-            )
-            try await migrationManager.migrate(types: registeredModels)
+            switch configuration.migrationMode {
+            case .automatic:
+                // SwiftData-style: automatically create schemas, skip existing
+                try await context.createSchemasIfNotExist(for: registeredModels)
+                
+            case .managed(let policy):
+                // Traditional: use MigrationManager with policy
+                let migrationManager = MigrationManager(
+                    context: context,
+                    policy: policy
+                )
+                try await migrationManager.migrate(types: registeredModels)
+                
+            case .none:
+                // No automatic migration
+                break
+            }
         }
         
         self.context = context
@@ -96,17 +109,45 @@ public final class GraphDatabase {
         models: [any _KuzuGraphModel.Type] = [],
         migrationPolicy: MigrationPolicy = .safeOnly
     ) async throws -> GraphContext {
-        // Use in-memory database for tests to avoid file system issues
-        let configuration = GraphConfiguration(databasePath: ":memory:")
+        // Always use automatic migration for tests
+        return try await container(
+            for: models,
+            inMemory: true,
+            migrationMode: .automatic
+        )
+    }
+    
+    /// SwiftData-style container creation
+    /// Creates a new GraphContext with the specified models and configuration
+    public static func container(
+        for models: [any _KuzuGraphModel.Type],
+        inMemory: Bool = false,
+        migrationMode: GraphConfiguration.MigrationMode = .automatic
+    ) async throws -> GraphContext {
+        let configuration = GraphConfiguration(
+            databasePath: inMemory ? ":memory:" : defaultDatabasePath(),
+            migrationMode: migrationMode
+        )
+        
         let context = try await GraphContext(configuration: configuration)
         
-        // Apply schema if models provided
-        if !models.isEmpty {
+        // Apply schema based on migration mode
+        switch migrationMode {
+        case .automatic:
+            // SwiftData-style: automatically create schemas, skip existing
+            try await context.createSchemasIfNotExist(for: models)
+            
+        case .managed(let policy):
+            // Traditional: use MigrationManager with policy
             let migrationManager = MigrationManager(
                 context: context,
-                policy: migrationPolicy
+                policy: policy
             )
             try await migrationManager.migrate(types: models)
+            
+        case .none:
+            // No automatic migration
+            break
         }
         
         return context

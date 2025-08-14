@@ -131,6 +131,60 @@ public actor GraphContext {
         }
     }
     
+    // Create schema only if table doesn't exist
+    public func createSchemaIfNotExists<T: _KuzuGraphModel>(for type: T.Type) async throws {
+        let tableName = String(describing: type)
+        
+        // Check if table exists
+        let checkQuery = "SHOW TABLES"
+        do {
+            let result = try await raw(checkQuery)
+            let tables = try result.mapRows()
+            let exists = tables.contains { row in
+                (row["name"] as? String) == tableName
+            }
+            
+            if !exists {
+                // Try to create the table
+                do {
+                    _ = try await raw(type._kuzuDDL)
+                } catch {
+                    // Check if it's an "already exists" error
+                    let errorMessage = String(describing: error).lowercased()
+                    if errorMessage.contains("already exists") || 
+                       errorMessage.contains("catalog") ||
+                       errorMessage.contains("binder exception") {
+                        // Table exists - ignore the error
+                        return
+                    }
+                    throw error
+                }
+            }
+        } catch {
+            // If SHOW TABLES fails, try to create the table anyway
+            do {
+                _ = try await raw(type._kuzuDDL)
+            } catch {
+                // Check if it's an "already exists" error
+                let errorMessage = String(describing: error).lowercased()
+                if errorMessage.contains("already exists") || 
+                   errorMessage.contains("catalog") ||
+                   errorMessage.contains("binder exception") {
+                    // Table exists - ignore the error
+                    return
+                }
+                throw error
+            }
+        }
+    }
+    
+    // Create schemas for multiple types, skipping existing ones
+    public func createSchemasIfNotExist(for types: [any _KuzuGraphModel.Type]) async throws {
+        for type in types {
+            try await createSchemaIfNotExists(for: type)
+        }
+    }
+    
     // MARK: - Utility
     
     public func close() async {

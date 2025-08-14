@@ -10,8 +10,9 @@ public extension GraphContext {
     func save<T: GraphNodeModel>(_ model: T) async throws -> T {
         let columns = T._kuzuColumns
         
-        // Extract properties using the same pattern as Create.node
-        let properties = extractProperties(from: model, columns: columns)
+        // Extract properties using KuzuEncoder
+        let encoder = KuzuEncoder()
+        let properties = try encoder.encode(model)
         
         // Check if exists (assuming first column is ID)
         guard let idColumn = columns.first else {
@@ -20,17 +21,19 @@ public extension GraphContext {
         
         let idValue = properties[idColumn.name]
         
+        // Check if node exists
         let existsQuery = """
-            MATCH (n:\(T.modelName) {\(idColumn.name): $id})
-            RETURN count(n) > 0 as result
+            MATCH (n:\(T.modelName))
+            WHERE n.\(idColumn.name) = $id
+            RETURN n
             """
         
         let existsResult = try await raw(existsQuery, bindings: ["id": idValue ?? NSNull()])
-        let exists = try existsResult.mapFirstRequired(to: Bool.self, at: 0)
         
-        if exists {
-            // Update existing
-            let setClause = columns.dropFirst()
+        if existsResult.hasNext() {
+            // Update existing node (skip ID column as it's primary key)
+            let setClause = columns
+                .dropFirst()  // Skip the ID column
                 .map { column in
                     // Check if this is a TIMESTAMP column
                     if column.type == "TIMESTAMP" {
@@ -41,18 +44,18 @@ public extension GraphContext {
                 }
                 .joined(separator: ", ")
             
-            if !setClause.isEmpty {
-                let updateQuery = """
-                    MATCH (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
-                    SET \(setClause)
-                    RETURN n
-                    """
-                
-                let result = try await raw(updateQuery, bindings: properties)
-                return try result.decode(T.self)
-            }
+            let updateQuery = """
+                MATCH (n:\(T.modelName))
+                WHERE n.\(idColumn.name) = $\(idColumn.name)
+                SET \(setClause)
+                RETURN n
+                """
+            
+            
+            let result = try await raw(updateQuery, bindings: properties)
+            return try result.decode(T.self)
         } else {
-            // Insert new
+            // Create new node
             let propertyList = columns
                 .map { column in
                     // Check if this is a TIMESTAMP column
@@ -70,10 +73,9 @@ public extension GraphContext {
                 """
             
             let result = try await raw(createQuery, bindings: properties)
+            
             return try result.decode(T.self)
         }
-        
-        return model
     }
     
     /// Save multiple model instances

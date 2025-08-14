@@ -117,13 +117,16 @@ public struct KuzuDecoder: Sendable {
                 if let nodeProperties = extractNodeProperties(from: firstValue) {
                     let decoded = try decode(type, from: nodeProperties)
                     results.append(decoded)
+                    continue  // Add continue to skip the rest of the loop
                 }
                 // Handle plain dictionary
                 else if let nodeDict = firstValue as? [String: Any?] {
                     let decoded = try decode(type, from: nodeDict)
                     results.append(decoded)
+                    continue
                 }
-            } else {
+            }
+            else {
                 let decoded = try decode(type, from: dictionary)
                 results.append(decoded)
             }
@@ -159,6 +162,19 @@ public struct KuzuDecoder: Sendable {
     /// Extracts properties from a KuzuNode if the value is a node type
     private func extractNodeProperties(from value: Any?) -> [String: Any?]? {
         guard let value = value else { return nil }
+        
+        // First check if this is already a dictionary (common case from RETURN n)
+        if let dict = value as? [String: Any?] {
+            // Check if it looks like a node (has _ID and _LABEL)
+            if dict["_ID"] != nil && dict["_LABEL"] != nil {
+                // Remove internal fields and return user properties
+                var properties = dict
+                properties.removeValue(forKey: "_ID")
+                properties.removeValue(forKey: "_LABEL")
+                return properties
+            }
+            return dict
+        }
         
         // Use Mirror to access properties without importing Kuzu types
         let mirror = Mirror(reflecting: value)

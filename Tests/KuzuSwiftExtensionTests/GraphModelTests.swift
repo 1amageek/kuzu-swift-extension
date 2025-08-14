@@ -51,7 +51,9 @@ struct GraphModelTests {
     func createContext() async throws -> GraphContext {
         let config = GraphConfiguration(databasePath: ":memory:")
         let context = try await GraphContext(configuration: config)
+        
         try await context.createSchema(for: [ModelTestUser.self, ModelTestPost.self, ModelAuthoredBy.self])
+        
         return context
     }
     

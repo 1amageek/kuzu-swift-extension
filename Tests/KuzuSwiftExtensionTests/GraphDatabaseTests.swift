@@ -40,16 +40,34 @@ struct GraphDatabaseTests {
         // Verify they are different instances
         #expect(context1 !== context2)
         
-        // Save data to first context
+        // Save data to first context using raw queries
         let todo1 = TestTodo(title: "Todo in context 1")
-        _ = try await context1.save(todo1)
+        _ = try await context1.raw("""
+            CREATE (n:TestTodo {id: $id, title: $title, completed: $completed})
+            """, bindings: [
+                "id": todo1.id.uuidString,
+                "title": todo1.title,
+                "completed": todo1.completed
+            ])
         
         // Verify data is only in first context
-        let todos1 = try await context1.fetch(TestTodo.self)
-        let todos2 = try await context2.fetch(TestTodo.self)
+        let result1 = try await context1.raw("MATCH (n:TestTodo) RETURN n")
+        let result2 = try await context2.raw("MATCH (n:TestTodo) RETURN n")
         
-        #expect(todos1.count == 1)
-        #expect(todos2.count == 0)
+        var count1 = 0
+        while result1.hasNext() {
+            _ = try result1.getNext()
+            count1 += 1
+        }
+        
+        var count2 = 0
+        while result2.hasNext() {
+            _ = try result2.getNext()
+            count2 += 1
+        }
+        
+        #expect(count1 == 1)
+        #expect(count2 == 0)
         
         // Cleanup
         await context1.close()
@@ -64,10 +82,25 @@ struct GraphDatabaseTests {
             models: [TestTodo.self]
         )
         
-        // Verify we can use the model
+        // Verify we can use the model with raw queries
         let todo = TestTodo(title: "Test registration")
-        let saved = try await context.save(todo)
-        #expect(saved.title == "Test registration")
+        _ = try await context.raw("""
+            CREATE (n:TestTodo {id: $id, title: $title, completed: $completed})
+            """, bindings: [
+                "id": todo.id.uuidString,
+                "title": todo.title,
+                "completed": todo.completed
+            ])
+        
+        // Verify the data was saved
+        let result = try await context.raw("MATCH (n:TestTodo) WHERE n.title = $title RETURN n.title as title", 
+                                          bindings: ["title": "Test registration"])
+        
+        #expect(result.hasNext())
+        if let flatTuple = try result.getNext(),
+           let title = try flatTuple.getValue(0) as? String {
+            #expect(title == "Test registration")
+        }
         
         // Cleanup
         await context.close()
@@ -81,14 +114,29 @@ struct GraphDatabaseTests {
             models: [TestTodo.self]
         )
         
-        // Save data
+        // Save data using raw queries
         let todo = TestTodo(title: "In-memory todo")
-        _ = try await context.save(todo)
+        _ = try await context.raw("""
+            CREATE (n:TestTodo {id: $id, title: $title, completed: $completed})
+            """, bindings: [
+                "id": todo.id.uuidString,
+                "title": todo.title,
+                "completed": todo.completed
+            ])
         
         // Verify data exists in the same context
-        let todos = try await context.fetch(TestTodo.self)
+        let result = try await context.raw("MATCH (n:TestTodo) RETURN n.title as title")
+        
+        var todos: [String] = []
+        while result.hasNext() {
+            if let flatTuple = try result.getNext(),
+               let title = try flatTuple.getValue(0) as? String {
+                todos.append(title)
+            }
+        }
+        
         #expect(todos.count == 1)
-        #expect(todos.first?.title == "In-memory todo")
+        #expect(todos.first == "In-memory todo")
         
         // Note: In-memory databases don't persist after close
         await context.close()

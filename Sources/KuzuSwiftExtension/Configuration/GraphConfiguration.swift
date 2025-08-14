@@ -7,6 +7,7 @@ public struct GraphConfiguration: Sendable {
     public let decodingConfiguration: KuzuDecoder.Configuration
     public let statementCacheSize: Int
     public let statementCacheTTL: TimeInterval
+    public let migrationMode: MigrationMode
     
     public init(
         databasePath: String = ":memory:",
@@ -14,7 +15,8 @@ public struct GraphConfiguration: Sendable {
         encodingConfiguration: KuzuEncoder.Configuration = KuzuEncoder.Configuration(),
         decodingConfiguration: KuzuDecoder.Configuration = KuzuDecoder.Configuration(),
         statementCacheSize: Int = 100,
-        statementCacheTTL: TimeInterval = 3600
+        statementCacheTTL: TimeInterval = 3600,
+        migrationMode: MigrationMode = .automatic
     ) {
         self.databasePath = databasePath
         self.options = options
@@ -22,6 +24,19 @@ public struct GraphConfiguration: Sendable {
         self.decodingConfiguration = decodingConfiguration
         self.statementCacheSize = statementCacheSize
         self.statementCacheTTL = statementCacheTTL
+        self.migrationMode = migrationMode
+    }
+    
+    /// Migration mode for schema management
+    public enum MigrationMode: Sendable {
+        /// SwiftData-style: automatically create and update schemas (default)
+        case automatic
+        
+        /// Traditional: use differential migration with policy
+        case managed(policy: MigrationPolicy)
+        
+        /// No migration: schema management is handled externally
+        case none
     }
     
     public struct Options: Sendable {

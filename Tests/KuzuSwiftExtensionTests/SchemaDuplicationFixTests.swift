@@ -1,0 +1,203 @@
+import Testing
+import KuzuSwiftExtension
+@testable import KuzuSwiftExtension
+import struct Foundation.UUID
+import struct Foundation.Date
+
+// Test models to reproduce the reported issue
+@GraphNode
+struct Session {
+    @ID var id: UUID = UUID()
+    var title: String
+    var createdAt: Date = Date()
+}
+
+@GraphNode  
+struct TodoTask {
+    @ID var id: UUID = UUID()
+    var sessionId: UUID
+    var description: String
+    var completed: Bool = false
+}
+
+@Suite("Schema Duplication Fix Tests")
+struct SchemaDuplicationFixTests {
+    
+    @Test("No duplicate table error when creating schema multiple times")
+    func testNoDuplicateTableError() async throws {
+        // Create test context with automatic migration
+        let context = try await GraphDatabase.container(
+            for: [Session.self, TodoTask.self],
+            inMemory: true,
+            migrationMode: .automatic
+        )
+        
+        // Try to create schemas again - should not error
+        try await context.createSchemaIfNotExists(for: Session.self)
+        try await context.createSchemaIfNotExists(for: TodoTask.self)
+        
+        // Verify we can save data
+        let session = Session(title: "Test Session")
+        _ = try await context.save(session)
+        
+        let task = TodoTask(sessionId: session.id, description: "Test TodoTask")
+        _ = try await context.save(task)
+        
+        // Verify data was saved
+        let sessions = try await context.fetch(Session.self)
+        #expect(sessions.count == 1)
+        
+        let tasks = try await context.fetch(TodoTask.self)
+        #expect(tasks.count == 1)
+        
+        await context.close()
+    }
+    
+    @Test("Multiple test contexts are isolated")
+    func testMultipleContextsIsolation() async throws {
+        // Simulate the user's scenario with SessionManager and TodoTaskManager
+        // Each using their own context but same models
+        
+        // First context (SessionManager.shared)
+        let sessionContext = try await GraphDatabase.container(
+            for: [Session.self],
+            inMemory: true
+        )
+        
+        // Second context (TodoTaskManager.shared)
+        let taskContext = try await GraphDatabase.container(
+            for: [TodoTask.self],
+            inMemory: true
+        )
+        
+        // Both should work without conflicts
+        let session = Session(title: "Session in first context")
+        _ = try await sessionContext.save(session)
+        
+        let task = TodoTask(sessionId: session.id, description: "TodoTask in second context")
+        _ = try await taskContext.save(task)
+        
+        // Verify isolation
+        let sessionsInFirst = try await sessionContext.fetch(Session.self)
+        #expect(sessionsInFirst.count == 1)
+        
+        let tasksInSecond = try await taskContext.fetch(TodoTask.self)
+        #expect(tasksInSecond.count == 1)
+        
+        await sessionContext.close()
+        await taskContext.close()
+    }
+    
+    @Test("SwiftData-style API works correctly")
+    func testSwiftDataStyleAPI() async throws {
+        // Use the new SwiftData-style container API
+        let context = try await GraphDatabase.container(
+            for: [Session.self, TodoTask.self],
+            inMemory: true
+        )
+        
+        // Schema should be automatically created
+        let session = Session(title: "SwiftData Style")
+        _ = try await context.save(session)
+        
+        // Fetch should work
+        let sessions = try await context.fetch(Session.self)
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.title == "SwiftData Style")
+        
+        await context.close()
+    }
+    
+    @Test("Automatic migration mode skips existing tables")
+    func testAutomaticMigrationSkipsExisting() async throws {
+        let context = try await GraphDatabase.container(
+            for: [Session.self],
+            inMemory: true,
+            migrationMode: .automatic
+        )
+        
+        // Save initial data
+        let session1 = Session(title: "First")
+        _ = try await context.save(session1)
+        
+        // Try to create schema again with automatic mode
+        try await context.createSchemasIfNotExist(for: [Session.self])
+        
+        // Original data should still exist
+        let sessions = try await context.fetch(Session.self)
+        #expect(sessions.count == 1)
+        
+        // Can still add more data
+        let session2 = Session(title: "Second")
+        _ = try await context.save(session2)
+        
+        let allSessions = try await context.fetch(Session.self)
+        #expect(allSessions.count == 2)
+        
+        await context.close()
+    }
+    
+    @Test("MigrationManager safely handles existing tables")
+    func testMigrationManagerSafeTableCreation() async throws {
+        let context = try await GraphDatabase.container(
+            for: [],  // Start with no models
+            inMemory: true,
+            migrationMode: .none  // Manual control
+        )
+        
+        // Create schema manually
+        try await context.createSchema(for: Session.self)
+        
+        // Use MigrationManager to migrate - should handle existing table
+        let migrationManager = MigrationManager(
+            context: context,
+            policy: .safeOnly
+        )
+        
+        // This should not error even though Session already exists
+        try await migrationManager.migrateIfNeeded(types: [Session.self, TodoTask.self])
+        
+        // Verify both tables work
+        let session = Session(title: "Test")
+        _ = try await context.save(session)
+        
+        let task = TodoTask(sessionId: session.id, description: "Test TodoTask")
+        _ = try await context.save(task)
+        
+        await context.close()
+    }
+    
+    @Test("Test context always uses automatic migration")
+    func testTestContextAutomaticMigration() async throws {
+        // createTestContext should always use automatic migration
+        let context1 = try await GraphDatabase.createTestContext(
+            models: [Session.self]
+        )
+        
+        // Create same models in another test context - should not conflict
+        let context2 = try await GraphDatabase.createTestContext(
+            models: [Session.self]
+        )
+        
+        // Both contexts should work independently
+        let session1 = Session(title: "Context 1")
+        _ = try await context1.save(session1)
+        
+        let session2 = Session(title: "Context 2")
+        _ = try await context2.save(session2)
+        
+        // Verify isolation
+        let sessions1 = try await context1.fetch(Session.self)
+        let sessions2 = try await context2.fetch(Session.self)
+        
+        #expect(sessions1.count == 1)
+        #expect(sessions2.count == 1)
+        #expect(sessions1.first?.title == "Context 1")
+        #expect(sessions2.first?.title == "Context 2")
+        
+        await context1.close()
+        await context2.close()
+    }
+}
+
+// Extension removed - using actual implementation from GraphModel.swift
