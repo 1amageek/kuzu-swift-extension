@@ -65,7 +65,7 @@ struct ReservedWordTests {
         
         // Create context and migration manager
         let context = try await GraphContext(configuration: configuration)
-        let migrationManager = MigrationManager(context: context, policy: .safeOnly)
+        let migrationManager = MigrationManager(context: context, policy: .safe)
         
         // This should succeed even with reserved word properties
         try await migrationManager.migrate(types: [

@@ -5,7 +5,7 @@ public struct OptimizedParameterGenerator {
     nonisolated(unsafe) private static let counter = AtomicCounter()
     nonisolated(unsafe) private static let cache: NSCache<NSString, NSString> = {
         let cache = NSCache<NSString, NSString>()
-        cache.countLimit = QueryConstants.parameterCacheSize
+        cache.countLimit = 100 // Default cache size
         return cache
     }()
     

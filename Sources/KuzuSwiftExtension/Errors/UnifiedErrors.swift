@@ -2,6 +2,25 @@ import Foundation
 
 /// Unified error type for all Kuzu operations
 public enum KuzuError: LocalizedError {
+    // MARK: - Connection & Infrastructure
+    case connectionFailed(reason: String)
+    case databaseNotFound(path: String)
+    case invalidConfiguration(message: String)
+    case connectionPoolExhausted
+    case connectionTimeout(duration: TimeInterval)
+    case transactionFailed(reason: String)
+    case extensionLoadFailed(extension: String, reason: String)
+    case migrationFailed(reason: String)
+    case resourceCleanupFailed(reason: String)
+    case contextNotAvailable(reason: String)
+    case wrapped(underlyingError: Error)
+    case kuzuError(error: Error, query: String?)
+    
+    // MARK: - Model Operations
+    case missingIdentifier
+    case invalidOperation(message: String)
+    case conversionFailed(from: String, to: String)
+    
     // MARK: - Query Compilation
     case compilationFailed(query: String, reason: String)
     case invalidPattern(pattern: String, reason: String)
@@ -28,6 +47,41 @@ public enum KuzuError: LocalizedError {
     
     public var errorDescription: String? {
         switch self {
+        // Connection & Infrastructure
+        case .connectionFailed(let reason):
+            return "Failed to connect to database: \(reason)"
+        case .databaseNotFound(let path):
+            return "Database not found at path: \(path)"
+        case .invalidConfiguration(let message):
+            return "Invalid configuration: \(message)"
+        case .connectionPoolExhausted:
+            return "Connection pool exhausted. All connections are in use."
+        case .connectionTimeout(let duration):
+            return "Connection request timed out after \(duration) seconds"
+        case .transactionFailed(let reason):
+            return "Transaction failed: \(reason)"
+        case .extensionLoadFailed(let ext, let reason):
+            return "Failed to load extension '\(ext)': \(reason)"
+        case .migrationFailed(let reason):
+            return "Migration failed: \(reason)"
+        case .resourceCleanupFailed(let reason):
+            return "Failed to cleanup resources: \(reason)"
+        case .contextNotAvailable(let reason):
+            return "Database context not available: \(reason)"
+        case .wrapped(let underlyingError):
+            return "Error: \(underlyingError.localizedDescription)"
+        case .kuzuError(let error, let query):
+            let queryInfo = query.map { " (Query: \($0))" } ?? ""
+            return "Kuzu database error: \(error.localizedDescription)\(queryInfo)"
+            
+        // Model Operations
+        case .missingIdentifier:
+            return "Node model is missing an identifier (id property)"
+        case .invalidOperation(let message):
+            return "Invalid operation: \(message)"
+        case .conversionFailed(let from, let to):
+            return "Failed to convert value from type '\(from)' to type '\(to)'"
+            
         // Query Compilation
         case .compilationFailed(let query, let reason):
             return "Failed to compile query: \(reason)\nQuery: \(query)"
@@ -76,6 +130,41 @@ public enum KuzuError: LocalizedError {
     
     public var recoverySuggestion: String? {
         switch self {
+        // Connection & Infrastructure
+        case .connectionFailed:
+            return "Check database path and permissions"
+        case .databaseNotFound:
+            return "Ensure the database file exists or use ':memory:' for in-memory database"
+        case .invalidConfiguration:
+            return "Review your GraphConfiguration settings"
+        case .connectionPoolExhausted:
+            return "Increase maxConnections in configuration or wait for connections to be released"
+        case .connectionTimeout:
+            return "Increase connectionTimeout in configuration or reduce concurrent operations"
+        case .transactionFailed:
+            return "Check for concurrent modifications or constraint violations"
+        case .extensionLoadFailed:
+            return "Ensure the extension is properly installed and compatible"
+        case .migrationFailed:
+            return "Review migration policy and schema compatibility"
+        case .resourceCleanupFailed:
+            return "Check for resource leaks and ensure proper connection management"
+        case .contextNotAvailable:
+            return "Restart the application or create a new test context"
+        case .wrapped:
+            return "Check the underlying error for more details"
+        case .kuzuError:
+            return "Review the query syntax and ensure the database schema is correct"
+            
+        // Model Operations
+        case .missingIdentifier:
+            return "Ensure the model has an @ID property"
+        case .invalidOperation:
+            return "Review the operation parameters and requirements"
+        case .conversionFailed:
+            return "Ensure the value types are compatible or implement proper type conversion"
+            
+        // Query Compilation
         case .compilationFailed:
             return "Check Cypher syntax and ensure all referenced nodes/relationships exist"
         case .invalidPattern:
@@ -109,6 +198,9 @@ public enum KuzuError: LocalizedError {
 }
 
 // MARK: - Compatibility Type Aliases
+
+/// Compatibility alias for GraphError
+public typealias GraphError = KuzuError
 
 /// Compatibility alias for QueryError
 public typealias QueryError = KuzuError

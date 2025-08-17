@@ -81,16 +81,12 @@ public struct TransactionalGraphContext: Sendable {
         
         if exists {
             // Update existing
-            let setClause = columns.dropFirst()
-                .map { column in
-                    // Check if this is a TIMESTAMP column
-                    if column.type == "TIMESTAMP" {
-                        return "n.\(column.name) = CAST($\(column.name) AS TIMESTAMP)"
-                    } else {
-                        return "n.\(column.name) = $\(column.name)"
-                    }
-                }
-                .joined(separator: ", ")
+            let setClause = QueryHelpers.buildPropertyAssignments(
+                columns: Array(columns.dropFirst()),
+                isAssignment: true
+            )
+            .map { "n.\($0)" }
+            .joined(separator: ", ")
             
             if !setClause.isEmpty {
                 let updateQuery = """
@@ -103,16 +99,11 @@ public struct TransactionalGraphContext: Sendable {
             }
         } else {
             // Insert new
-            let propertyList = columns
-                .map { column in
-                    // Check if this is a TIMESTAMP column
-                    if column.type == "TIMESTAMP" {
-                        return "\(column.name): CAST($\(column.name) AS TIMESTAMP)"
-                    } else {
-                        return "\(column.name): $\(column.name)"
-                    }
-                }
-                .joined(separator: ", ")
+            let propertyList = QueryHelpers.buildPropertyAssignments(
+                columns: columns,
+                isAssignment: false
+            )
+            .joined(separator: ", ")
             
             let createQuery = """
                 CREATE (n:\(T.modelName) {\(propertyList)})

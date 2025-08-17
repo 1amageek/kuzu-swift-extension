@@ -219,11 +219,8 @@ public extension Predicate {
     /// Creates a predicate with an EXISTS subquery (safe version with error handling)
     static func safeExists(
         @QueryBuilder _ builder: () -> [QueryComponent],
-        onError strategy: ErrorStrategy = .defaultValue(false)
     ) -> Predicate {
-        return (try? QueryErrorHandler.handle({
-            try exists(builder)
-        }, strategy: strategy, context: "EXISTS subquery")) ?? Predicate(node: .literal(false))
+        return (try? exists(builder)) ?? Predicate(node: .literal(false))
     }
     
     /// Creates a predicate with a NOT EXISTS subquery (throwing version)
@@ -237,11 +234,8 @@ public extension Predicate {
     /// Creates a predicate with a NOT EXISTS subquery (safe version with error handling)
     static func safeNotExists(
         @QueryBuilder _ builder: () -> [QueryComponent],
-        onError strategy: ErrorStrategy = .defaultValue(false)
     ) -> Predicate {
-        return (try? QueryErrorHandler.handle({
-            try notExists(builder)
-        }, strategy: strategy, context: "NOT EXISTS subquery")) ?? Predicate(node: .literal(false))
+        return (try? notExists(builder)) ?? Predicate(node: .literal(false))
     }
 }
 
@@ -260,11 +254,8 @@ public extension Return {
     static func safeScalar(
         as alias: String,
         @QueryBuilder _ builder: () -> [QueryComponent],
-        onError strategy: ErrorStrategy = .defaultValue("null")
     ) -> Return {
-        return (try? QueryErrorHandler.handle({
-            try scalar(as: alias, builder)
-        }, strategy: strategy, context: "Scalar subquery")) ?? Return.items(.aliased(expression: "null", alias: alias))
+        return (try? scalar(as: alias, builder)) ?? Return.items(.aliased(expression: "null", alias: alias))
     }
     
     /// Returns a list subquery result (throwing version)
@@ -279,11 +270,8 @@ public extension Return {
     static func safeList(
         as alias: String,
         @QueryBuilder _ builder: () -> [QueryComponent],
-        onError strategy: ErrorStrategy = .defaultValue("[]")
     ) -> Return {
-        return (try? QueryErrorHandler.handle({
-            try list(as: alias, builder)
-        }, strategy: strategy, context: "List subquery")) ?? Return.items(.aliased(expression: "[]", alias: alias))
+        return (try? list(as: alias, builder)) ?? Return.items(.aliased(expression: "[]", alias: alias))
     }
 }
 
@@ -302,11 +290,8 @@ public extension With {
     static func safeScalar(
         _ variable: String,
         @QueryBuilder _ builder: () -> [QueryComponent],
-        onError strategy: ErrorStrategy = .defaultValue("null")
     ) -> With {
-        return (try? QueryErrorHandler.handle({
-            try scalar(variable, builder)
-        }, strategy: strategy, context: "WITH scalar subquery")) ?? With.items(.aliased(expression: "null", alias: variable))
+        return (try? scalar(variable, builder)) ?? With.items(.aliased(expression: "null", alias: variable))
     }
     
     /// Creates a WITH clause including a list subquery (throwing version)
@@ -321,10 +306,7 @@ public extension With {
     static func safeList(
         _ variable: String,
         @QueryBuilder _ builder: () -> [QueryComponent],
-        onError strategy: ErrorStrategy = .defaultValue("[]")
     ) -> With {
-        return (try? QueryErrorHandler.handle({
-            try list(variable, builder)
-        }, strategy: strategy, context: "WITH list subquery")) ?? With.items(.aliased(expression: "[]", alias: variable))
+        return (try? list(variable, builder)) ?? With.items(.aliased(expression: "[]", alias: variable))
     }
 }

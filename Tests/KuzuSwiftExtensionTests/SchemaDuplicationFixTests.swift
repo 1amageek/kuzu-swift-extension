@@ -151,7 +151,7 @@ struct SchemaDuplicationFixTests {
         // Use MigrationManager to migrate - should handle existing table
         let migrationManager = MigrationManager(
             context: context,
-            policy: .safeOnly
+            policy: .safe
         )
         
         // This should not error even though Session already exists

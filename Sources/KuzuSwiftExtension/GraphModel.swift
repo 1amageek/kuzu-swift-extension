@@ -32,17 +32,12 @@ public extension GraphContext {
         
         if existsResult.hasNext() {
             // Update existing node (skip ID column as it's primary key)
-            let setClause = columns
-                .dropFirst()  // Skip the ID column
-                .map { column in
-                    // Check if this is a TIMESTAMP column
-                    if column.type == "TIMESTAMP" {
-                        return "n.\(column.name) = CAST($\(column.name) AS TIMESTAMP)"
-                    } else {
-                        return "n.\(column.name) = $\(column.name)"
-                    }
-                }
-                .joined(separator: ", ")
+            let setClause = QueryHelpers.buildPropertyAssignments(
+                columns: Array(columns.dropFirst()),
+                isAssignment: true
+            )
+            .map { "n.\($0)" }
+            .joined(separator: ", ")
             
             let updateQuery = """
                 MATCH (n:\(T.modelName))
@@ -56,16 +51,11 @@ public extension GraphContext {
             return try result.decode(T.self)
         } else {
             // Create new node
-            let propertyList = columns
-                .map { column in
-                    // Check if this is a TIMESTAMP column
-                    if column.type == "TIMESTAMP" {
-                        return "\(column.name): CAST($\(column.name) AS TIMESTAMP)"
-                    } else {
-                        return "\(column.name): $\(column.name)"
-                    }
-                }
-                .joined(separator: ", ")
+            let propertyList = QueryHelpers.buildPropertyAssignments(
+                columns: columns,
+                isAssignment: false
+            )
+            .joined(separator: ", ")
             
             let createQuery = """
                 CREATE (n:\(T.modelName) {\(propertyList)})
@@ -207,21 +197,16 @@ public extension GraphContext {
         
         // Execute batch insert
         for (index, bindings) in allBindings.enumerated() {
-            let propertyList = columns
-                .map { column in
-                    let paramName = "\(column.name)_\(index)"
-                    // Check if this is a TIMESTAMP column
-                    if column.type == "TIMESTAMP" {
-                        return "\(column.name): CAST($\(paramName) AS TIMESTAMP)"
-                    } else {
-                        return "\(column.name): $\(paramName)"
-                    }
-                }
-                .joined(separator: ", ")
+            let propertyList = QueryHelpers.buildPropertyAssignments(
+                columns: columns,
+                parameterPrefix: "item\(index)",
+                isAssignment: false
+            )
+            .joined(separator: ", ")
             
             var renamedBindings: [String: any Sendable] = [:]
             for (key, value) in bindings {
-                renamedBindings["\(key)_\(index)"] = value
+                renamedBindings["item\(index)_\(key)"] = value
             }
             
             let createQuery = """
@@ -262,17 +247,12 @@ public extension GraphContext {
             edgeBindings["edge_\(key)"] = value
         }
         
-        let edgePropertyList = edgeColumns
-            .map { column in
-                let paramName = "edge_\(column.name)"
-                // Check if this is a TIMESTAMP column
-                if column.type == "TIMESTAMP" {
-                    return "\(column.name): CAST($\(paramName) AS TIMESTAMP)"
-                } else {
-                    return "\(column.name): $\(paramName)"
-                }
-            }
-            .joined(separator: ", ")
+        let edgePropertyList = QueryHelpers.buildPropertyAssignments(
+            columns: edgeColumns,
+            parameterPrefix: "edge",
+            isAssignment: false
+        )
+        .joined(separator: ", ")
         
         let query = """
             MATCH (from:\(From.modelName) {\(fromIdColumn.name): $fromId})

@@ -185,14 +185,14 @@ public struct MigrationManager {
     
     private func validateMigration(diff: SchemaDiff) throws {
         switch policy {
-        case .none:
+        case .manual:
             if !diff.isEmpty {
                 throw GraphError.migrationFailed(
                     reason: "Migration policy is set to .none but schema changes were detected"
                 )
             }
             
-        case .safeOnly:
+        case .safe:
             if !diff.droppedNodes.isEmpty || !diff.droppedEdges.isEmpty {
                 throw GraphError.migrationFailed(
                     reason: "Destructive changes detected but migration policy is .safeOnly"
@@ -217,9 +217,28 @@ public struct MigrationManager {
                 }
             }
             
-        case .allowDestructive:
+        case .destructive:
             // All changes allowed
             break
+            
+        case .automatic:
+            // Automatic migration applies all changes
+            break
+            
+        case .custom(let rules):
+            // Apply custom rules validation
+            if !diff.droppedNodes.isEmpty && !rules.allowTableDeletion {
+                throw GraphError.migrationFailed(
+                    reason: "Table deletion not allowed by custom migration rules"
+                )
+            }
+            // Check for dropped columns in modified nodes/edges
+            let hasDroppedColumns = !diff.modifiedNodes.isEmpty || !diff.modifiedEdges.isEmpty
+            if hasDroppedColumns && !rules.allowColumnDeletion {
+                throw GraphError.migrationFailed(
+                    reason: "Column deletion not allowed by custom migration rules"
+                )
+            }
         }
     }
     
@@ -280,14 +299,14 @@ public struct MigrationManager {
         }
         
         // Drop edges (must be done before dropping nodes due to foreign key constraints)
-        if policy.allowsDroppingTables {
+        if case .destructive = policy {
             for edge in diff.droppedEdges {
                 dropStatements.append("DROP TABLE \(edge.name)")
             }
         }
         
         // Drop nodes
-        if policy.allowsDroppingTables {
+        if case .destructive = policy {
             for node in diff.droppedNodes {
                 dropStatements.append("DROP TABLE \(node.name)")
             }

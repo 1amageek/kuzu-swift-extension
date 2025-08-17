@@ -52,7 +52,7 @@ struct SimpleSchemaDuplicationTest {
         // Now use MigrationManager - should not error
         let migrationManager = MigrationManager(
             context: context,
-            policy: .safeOnly
+            policy: .safe
         )
         
         // This should handle the existing table gracefully

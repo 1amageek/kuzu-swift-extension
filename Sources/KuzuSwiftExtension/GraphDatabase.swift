@@ -13,7 +13,7 @@ public final class GraphDatabase {
     
     private var context: GraphContext?
     private var registeredModels: [any _KuzuGraphModel.Type] = []
-    private var migrationPolicy: MigrationPolicy = .safeOnly
+    private var migrationPolicy: MigrationPolicy = .safe
     private var isInitialized = false
     
     private init() {
@@ -107,7 +107,7 @@ public final class GraphDatabase {
     public static func createTestContext(
         name: String = UUID().uuidString,
         models: [any _KuzuGraphModel.Type] = [],
-        migrationPolicy: MigrationPolicy = .safeOnly
+        migrationPolicy: MigrationPolicy = .safe
     ) async throws -> GraphContext {
         // Always use automatic migration for tests
         return try await container(

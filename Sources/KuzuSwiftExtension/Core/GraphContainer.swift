@@ -44,8 +44,8 @@ public actor GraphContainer {
         do {
             for ext in configuration.options.extensions {
                 do {
-                    _ = try connection.query(ext.installCommand)
-                    _ = try connection.query(ext.loadCommand)
+                    _ = try connection.query("INSTALL \(ext.extensionName)")
+                    _ = try connection.query("LOAD EXTENSION \(ext.extensionName)")
                 } catch {
                     await connectionPool.checkin(connection)
                     throw GraphError.extensionLoadFailed(

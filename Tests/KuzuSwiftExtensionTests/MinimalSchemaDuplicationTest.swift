@@ -72,7 +72,7 @@ struct MinimalSchemaDuplicationTest {
         // Now use MigrationManager - should not error on existing table
         let manager = MigrationManager(
             context: context,
-            policy: .safeOnly
+            policy: .safe
         )
         
         try await manager.migrateIfNeeded(types: [DuplicationTestNode.self])
