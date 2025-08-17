@@ -1,8 +1,8 @@
-# Kuzu Swift Extension (Beta 1)
+# Kuzu Swift Extension (Beta 2)
 
 **Type-Safe Graph Database for Swift** - A declarative, SwiftUI-like query DSL for the Kuzu graph database
 
-![Beta](https://img.shields.io/badge/status-Beta%201-yellow.svg)
+![Beta](https://img.shields.io/badge/status-Beta%202-yellow.svg)
 ![Swift 6.1+](https://img.shields.io/badge/Swift-6.1+-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20iOS%20|%20tvOS%20|%20watchOS-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -47,6 +47,7 @@ The library has been optimized for production use:
 - **Connection Pooling** - Efficient connection management with configurable pool sizes
 - **Smart Type Conversions** - Automatic handling of UUID, Date, and numeric types
 - **Transaction Support** - ACID compliant transactions with automatic rollback
+- **Enhanced Node Handling** - Seamless KuzuNode to Swift type mapping (Beta 2)
 
 ## Installation
 
@@ -118,30 +119,30 @@ The Query DSL brings Swift's type safety and expressiveness to graph databases w
 ### Basic Queries
 
 ```swift
-// Find users by name
-let results = try await graph.query {
+// Find users by name (Beta 2: Direct node returns)
+let results = try await graph.queryArray(User.self) {
     Match.node(User.self, alias: "u")
-    Where.path(\.name, on: "u") == "Alice"
-    Return.node("u")
+    Where(path(\User.name, on: "u") == "Alice")
+    Return.node("u")  // Returns KuzuNode, automatically decoded to User
 }
 
 // Multiple conditions
-let filtered = try await graph.query {
+let filtered = try await graph.queryArray(User.self) {
     Match.node(User.self, alias: "u")
     Where.all([
-        path(\.age, on: "u") >= 25,
-        path(\.age, on: "u") <= 65,
-        path(\.city, on: "u") == "Tokyo"
+        path(\User.age, on: "u") >= 25,
+        path(\User.age, on: "u") <= 65,
+        path(\User.city, on: "u") == "Tokyo"
     ])
     Return.node("u")
-        .orderBy(path(\.name, on: "u"))
+        .orderBy(.ascending("u.name"))
         .limit(10)
 }
 
 // String operations
-let search = try await graph.query {
+let search = try await graph.queryArray(User.self) {
     Match.node(User.self, alias: "u")
-    Where.path(\.name, on: "u").contains("John")
+    Where(path(\User.name, on: "u").contains("John"))
     Return.node("u")
 }
 
@@ -474,7 +475,7 @@ let count = try await graph.count(User.self)
 For complex queries, use the stable `raw()` method:
 
 ```swift
-// Relationship queries
+// Relationship queries (Beta 2: Automatic node handling)
 let result = try await graph.raw(
     """
     MATCH (u:User {name: $name})-[:FOLLOWS]->(f:User)
@@ -482,6 +483,8 @@ let result = try await graph.raw(
     """,
     bindings: ["name": "Alice"]
 )
+// The returned KuzuNode is automatically handled
+let followers = try result.map(to: User.self)
 
 // Aggregations
 let countResult = try await graph.raw(
@@ -649,19 +652,20 @@ For complex queries not yet supported by the DSL, use `raw()` queries for full C
 Both approaches are production-ready with different strengths:
 
 ```swift
-// Declarative Query DSL - Type-safe and readable
-let results = try await graph.query {
+// Declarative Query DSL - Type-safe and readable (Beta 2: Enhanced)
+let results = try await graph.queryArray(User.self) {
     Match.node(User.self, alias: "u")
-    Where.path(\.age, on: "u") > 25
-    Return.node("u")
+    Where(path(\User.age, on: "u") > 25)
+    Return.node("u")  // Direct node returns now supported
 }
 
 // Raw Cypher - Full flexibility for complex queries
-let results = try await graph.raw("""
+let result = try await graph.raw("""
     MATCH (u:User)
     WHERE u.age > $minAge
     RETURN u
     """, bindings: ["minAge": 25])
+let users = try result.map(to: User.self)  // Beta 2: Automatic KuzuNode handling
 ```
 
 Use Query DSL for type safety and better IDE support. Use raw Cypher when you need specific Cypher features not yet in the DSL.
@@ -797,15 +801,22 @@ do {
 - macOS 14+, iOS 17+, tvOS 17+, watchOS 10+
 - Xcode 16+
 
-## Beta 1 Status
+## Beta 2 Status
+
+### What's New in Beta 2
+- ✅ **Enhanced Node Handling** - Direct KuzuNode to Swift type mapping
+- ✅ **Improved Query DSL** - `Return.node()` now works seamlessly
+- ✅ **Better Type Safety** - Full KeyPath support in queries
+- ✅ **ResultMapper Improvements** - Automatic node property extraction
 
 ### What's Working
 - ✅ Core CRUD operations
-- ✅ Raw Cypher execution
+- ✅ Raw Cypher execution with automatic node handling
 - ✅ Transactions with automatic rollback
 - ✅ Basic Query DSL (Match, Where, Return, Create, Set, Delete)
 - ✅ Type-safe model declarations with macros
 - ✅ Connection pooling
+- ✅ Direct node returns and mapping
 
 ### What's Beta
 - 🚧 Advanced Query DSL features

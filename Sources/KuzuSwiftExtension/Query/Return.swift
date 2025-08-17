@@ -146,6 +146,13 @@ public enum ReturnItem {
     }
 }
 
+// MARK: - Public API Extensions
+public extension Return {
+    static func node(_ alias: String) -> Return {
+        Return(items: [.node(alias)])
+    }
+}
+
 public struct OrderByItem {
     let expression: String
     let ascending: Bool

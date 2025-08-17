@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Status: Beta 1**
+**Status: Beta 2**
 
 A Swift extension library for [kuzu-swift](https://github.com/kuzudb/kuzu-swift) that provides a declarative, type-safe interface for working with the Kuzu graph database. The library implements a comprehensive DSL for graph operations, automatic schema management, and Swift-native query building.
 
@@ -79,9 +79,15 @@ export KUZU_BINARY_URL="https://github.com/1amageek/kuzu-swift/releases/download
 export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28eb2bf0de49c1f9"
 ```
 
-## Beta 1 Changes
+## Beta 2 Changes
 
-### Recent Code Cleanup
+### New Features in Beta 2
+- **Enhanced ResultMapper** - Automatic KuzuNode to Swift type mapping
+- **Improved Query DSL** - Added `Return.node()` for direct node returns
+- **Better Node Handling** - Single column KuzuNode results are automatically decoded
+- **Raw Query Improvements** - `result.map(to:)` now handles KuzuNode transparently
+
+### Recent Code Cleanup (Beta 1)
 - Removed `QueryDebug.swift` and `QueryDebuggable.swift` - unnecessary complexity
 - Deleted `ParameterNameGenerator.swift` - consolidated into `OptimizedParameterGenerator`
 - Removed `GraphAlgorithms.swift` - Kuzu doesn't support graph algorithms
@@ -92,6 +98,7 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 - Stabilizing core APIs for 1.0 release
 - Completing Query DSL coverage
 - Improving error messages and documentation
+- Enhancing type safety and developer experience
 
 ## Development Guidelines
 
@@ -107,8 +114,8 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 
 ### Type Conversions
 - **KuzuEncoder**: UUID→String, Date→Timestamp, automatic numeric conversions
-- **KuzuDecoder**: Flexible numeric conversions (Int64↔Int, Double→Float)
-- **ResultMapper**: Handles query result mapping with type flexibility
+- **KuzuDecoder**: Flexible numeric conversions (Int64↔Int, Double→Float), KuzuNode handling
+- **ResultMapper**: Enhanced in Beta 2 - Automatic KuzuNode property extraction and mapping
 
 ### Testing Strategy
 - Unit tests for each component
@@ -127,21 +134,23 @@ try await graph.withTransaction { tx in
 }
 ```
 
-### Query DSL
+### Query DSL (Beta 2: Enhanced)
 ```swift
-let results = try await graph.query {
+let results = try await graph.queryArray(User.self) {
     Match.node(User.self, alias: "u")
-    Where(path(\.age, on: "u") > 25)
-    Return.node("u")
+    Where(path(\User.age, on: "u") > 25)
+    Return.node("u")  // Beta 2: Direct node returns now supported
 }
 ```
 
-### Raw Cypher
+### Raw Cypher (Beta 2: Enhanced)
 ```swift
 let result = try await graph.raw(
     "MATCH (u:User) WHERE u.age > $minAge RETURN u",
     bindings: ["minAge": 25]
 )
+// Beta 2: Automatic KuzuNode handling
+let users = try result.map(to: User.self)
 ```
 
 ## Troubleshooting

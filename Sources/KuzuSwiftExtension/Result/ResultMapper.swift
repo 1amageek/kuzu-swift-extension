@@ -17,7 +17,14 @@ public extension QueryResult {
             var row: [String: Any] = [:]
             
             for (index, columnName) in columnNames.enumerated() {
-                row[columnName] = try decodeValue(tuple.getValue(UInt64(index)))
+                let value = try tuple.getValue(UInt64(index))
+                
+                // KuzuNode handling: when a node is returned, use its properties
+                if let node = value as? KuzuNode {
+                    row[columnName] = node.properties
+                } else {
+                    row[columnName] = try decodeValue(value)
+                }
             }
             
             rows.append(row)
@@ -37,7 +44,14 @@ public extension QueryResult {
         var row: [String: Any] = [:]
         
         for (index, columnName) in columnNames.enumerated() {
-            row[columnName] = try decodeValue(tuple.getValue(UInt64(index)))
+            let value = try tuple.getValue(UInt64(index))
+            
+            // KuzuNode handling: when a node is returned, use its properties
+            if let node = value as? KuzuNode {
+                row[columnName] = node.properties
+            } else {
+                row[columnName] = try decodeValue(value)
+            }
         }
         
         return row
@@ -60,19 +74,74 @@ public extension QueryResult {
     
     /// Maps rows to a specific Decodable type
     public func map<T: Decodable>(to type: T.Type) throws -> [T] {
-        let rows = try mapRows()
+        var results: [T] = []
         let decoder = KuzuDecoder()
+        let columnNames = getColumnNames()
         
-        // Use swift-algorithms for efficient mapping
-        return try rows.map { row in
-            try decoder.decode(type, from: row)
+        while hasNext() {
+            guard let tuple = try getNext() else { break }
+            
+            // Special handling for single column with KuzuNode
+            if columnNames.count == 1 {
+                let value = try tuple.getValue(0)
+                if let node = value as? KuzuNode {
+                    // Decode directly from node properties
+                    let decoded = try decoder.decode(type, from: node.properties)
+                    results.append(decoded)
+                    continue
+                }
+            }
+            
+            // Standard processing: build dictionary from row
+            var row: [String: Any] = [:]
+            for (index, columnName) in columnNames.enumerated() {
+                let value = try tuple.getValue(UInt64(index))
+                
+                // KuzuNode handling: when a node is returned, use its properties
+                if let node = value as? KuzuNode {
+                    row[columnName] = node.properties
+                } else {
+                    row[columnName] = try decodeValue(value)
+                }
+            }
+            
+            let decoded = try decoder.decode(type, from: row)
+            results.append(decoded)
         }
+        
+        return results
     }
     
     /// Maps the first row to a specific Decodable type
     public func mapFirst<T: Decodable>(to type: T.Type) throws -> T? {
-        guard let row = try mapFirst() else { return nil }
+        guard hasNext() else { return nil }
+        
+        guard let tuple = try getNext() else { return nil }
         let decoder = KuzuDecoder()
+        let columnNames = getColumnNames()
+        
+        // Special handling for single column with KuzuNode
+        if columnNames.count == 1 {
+            let value = try tuple.getValue(0)
+            if let node = value as? KuzuNode {
+                // Decode directly from node properties
+                return try decoder.decode(type, from: node.properties)
+            }
+        }
+        
+        // Standard processing: build dictionary from row
+        var row: [String: Any] = [:]
+        for (index, columnName) in columnNames.enumerated() {
+            let value = try tuple.getValue(UInt64(index))
+            
+            // KuzuNode handling: when a node is returned, use its properties
+            if let node = value as? KuzuNode {
+                row[columnName] = node.properties
+            } else {
+                row[columnName] = try decodeValue(value)
+            }
+        }
+        
         return try decoder.decode(type, from: row)
     }
     
