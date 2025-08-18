@@ -183,9 +183,9 @@ public final class GraphDatabase {
         let directoryName: String
         let processName = ProcessInfo.processInfo.processName
         
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
-           processName.contains("xctest") || 
-           processName.contains("testing") {
+        if ProcessInfo.processInfo.environment["SWIFT_TESTING"] != nil ||
+           processName.contains("testing") ||
+           processName.hasSuffix("PackageTests") {
             // テスト環境: 一時ディレクトリを使用
             let tempDir = FileManager.default.temporaryDirectory
             let appDir = tempDir.appendingPathComponent("kuzu-tests/\(processName)")

@@ -1,59 +1,31 @@
-# Kuzu Swift Extension (Beta 2)
+# KuzuSwiftExtension
 
-**Type-Safe Graph Database for Swift** - A declarative, SwiftUI-like query DSL for the Kuzu graph database
+**SwiftUI-like Query DSL for Graph Databases** - Type-safe, declarative graph database operations in Swift
 
-![Beta](https://img.shields.io/badge/status-Beta%202-yellow.svg)
-![Swift 6.1+](https://img.shields.io/badge/Swift-6.1+-orange.svg)
+![Swift 6.2+](https://img.shields.io/badge/Swift-6.2+-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20iOS%20|%20tvOS%20|%20watchOS-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-> ⚠️ **Beta Software**: This library is in beta. APIs may change between releases. See [SPECIFICATION.md](SPECIFICATION.md) for current feature status.
+## Overview
 
-## Why This Library?
-
-Graph databases are powerful but often require learning complex query languages. This library brings Swift's type safety and declarative syntax to graph databases, making them as easy to use as SwiftUI.
+KuzuSwiftExtension brings SwiftUI's declarative approach to graph databases. Write type-safe queries with Swift's native syntax instead of error-prone string queries.
 
 ```swift
-// Instead of error-prone string queries:
-// "MATCH (u:User) WHERE u.age > 25 RETURN u"
+// Single component returns its result type directly
+let adults: [User] = try await graph.query {
+    User.where(\.age > 25)
+}
 
-// Write type-safe, declarative queries:
-let adults = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Where.path(\.age, on: "u") > 25
-    Return.node("u")
+// Multiple components return a tuple
+let (users, posts) = try await graph.query {
+    User.match().where(\.active == true)
+    Post.match().orderBy(\.createdAt, .descending)
 }
 ```
-
-## Features
-
-- 🎯 **Declarative Query DSL** - SwiftUI-like syntax for graph queries
-- 🔒 **100% Type-Safe** - Compile-time validation with Swift KeyPaths
-- ✨ **Zero Configuration** - Start immediately with `GraphDatabase.shared`
-- 🚀 **Modern Swift** - Full async/await and Swift 6 concurrency support
-- 🔄 **Automatic Schema** - Generates DDL from your Swift models
-- 💾 **ACID Transactions** - Full transaction support with automatic rollback
-- 🎨 **Rich Attributes** - `@ID`, `@Index`, `@Unique`, `@FullTextSearch`, and more
-- ⚡ **High Performance** - Connection pooling and batch operations
-
-## Performance & Reliability
-
-The library has been optimized for production use:
-
-- **Streamlined Codebase** - 11% reduction in code size for better maintainability
-- **Unified Error Handling** - Single KuzuError type for all operations
-- **Optimized Parameter Generation** - Lightweight parameter naming with caching
-- **Automatic PreparedStatement Caching** - Queries are automatically cached
-- **Connection Pooling** - Efficient connection management with configurable pool sizes
-- **Smart Type Conversions** - Automatic handling of UUID, Date, and numeric types
-- **Transaction Support** - ACID compliant transactions with automatic rollback
-- **Enhanced Node Handling** - Seamless KuzuNode to Swift type mapping (Beta 2)
 
 ## Installation
 
 ### Swift Package Manager
-
-Add to your `Package.swift`:
 
 ```swift
 dependencies: [
@@ -61,21 +33,9 @@ dependencies: [
 ]
 ```
 
-Then add to your target:
-
-```swift
-.target(
-    name: "YourApp",
-    dependencies: [
-        .product(name: "KuzuSwiftExtension", package: "kuzu-swift-extension"),
-        .product(name: "KuzuSwiftMacros", package: "kuzu-swift-extension")
-    ]
-)
-```
-
 ## Quick Start
 
-### 1. Define Your Model
+### 1. Define Your Models
 
 ```swift
 import KuzuSwiftExtension
@@ -94,432 +54,288 @@ struct Follows: Codable {
 }
 ```
 
-### 2. Use It Immediately
+### 2. Start Using Immediately
 
 ```swift
-// Get the shared graph context
+// Zero configuration - just start using
 let graph = try await GraphDatabase.shared.context()
 
-// Save a user
+// Save data
 let alice = User(name: "Alice", age: 30)
 try await graph.save(alice)
 
 // Query with type-safe DSL
 let adults = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Where.path(\.age, on: "u") >= 18
-    Return.node("u")
+    User.where(\.age >= 18)
 }
 ```
 
-## Declarative Query DSL
+## Core Features
 
-The Query DSL brings Swift's type safety and expressiveness to graph databases with a comprehensive set of features:
-
-### Basic Queries
+### CRUD Operations
 
 ```swift
-// Find users by name (Beta 2: Direct node returns)
-let results = try await graph.queryArray(User.self) {
-    Match.node(User.self, alias: "u")
-    Where(path(\User.name, on: "u") == "Alice")
-    Return.node("u")  // Returns KuzuNode, automatically decoded to User
-}
+// Create
+let user = User(name: "Bob", age: 25)
+try await graph.save(user)
 
-// Multiple conditions
-let filtered = try await graph.queryArray(User.self) {
-    Match.node(User.self, alias: "u")
-    Where.all([
-        path(\User.age, on: "u") >= 25,
-        path(\User.age, on: "u") <= 65,
-        path(\User.city, on: "u") == "Tokyo"
-    ])
-    Return.node("u")
-        .orderBy(.ascending("u.name"))
-        .limit(10)
-}
-
-// String operations
-let search = try await graph.queryArray(User.self) {
-    Match.node(User.self, alias: "u")
-    Where(path(\User.name, on: "u").contains("John"))
-    Return.node("u")
-}
-
-// Complex predicates with ranges
-let ageRange = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Where.path(\.age, on: "u").between(25, 65)
-    Return.node("u")
-}
-
-// IN operator for multiple values
-let cities = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Where.path(\.city, on: "u").in(["Tokyo", "Osaka", "Kyoto"])
-    Return.node("u")
-}
-
-// Combining OR conditions
-let adminsOrWriters = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Where.any([
-        path(\.role, on: "u") == "admin",
-        path(\.permissions, on: "u").contains("write")
-    ])
-    Return.node("u")
-}
-```
-
-### Relationship Queries
-
-```swift
-// Who does Alice follow?
-let following = try await graph.query {
-    Match.node(User.self, alias: "alice")
-        .where(path(\.name, on: "alice") == "Alice")
-    Match.edge(Follows.self)
-        .from("alice")
-        .to(User.self, alias: "friend")
-    Return.node("friend")
-}
-
-// Find mutual friends
-let mutual = try await graph.query {
-    Match.node(User.self, alias: "user1")
-        .where(path(\.id, on: "user1") == userId1)
-    Match.node(User.self, alias: "user2")
-        .where(path(\.id, on: "user2") == userId2)
-    Match.edge(Follows.self).from("user1").to(User.self, alias: "mutual")
-    Match.edge(Follows.self).from("user2").to("mutual")
-    Return.distinct("mutual")
-}
-
-// Friends of friends (2 hops)
-let friendsOfFriends = try await graph.query {
-    Match.node(User.self, alias: "me")
-        .where(path(\.id, on: "me") == myId)
-    Match.path(
-        from: "me",
-        to: (User.self, "fof"),
-        via: Follows.self,
-        hops: 2
-    )
-    Where.not(path(\.id, on: "fof") == myId)
-    Return.distinct("fof")
-}
-```
-
-### Creating and Updating
-
-```swift
-// Create nodes and relationships
-try await graph.query {
-    Create.node(User.self, alias: "u1")
-        .set(\.name, to: "Alice")
-        .set(\.age, to: 30)
-    Create.node(User.self, alias: "u2")
-        .set(\.name, to: "Bob")
-        .set(\.age, to: 25)
-    Create.edge(Follows.self)
-        .from("u1")
-        .to("u2")
-        .set(\.since, to: Date())
-}
-
-// Update existing nodes
-try await graph.query {
-    Match.node(User.self, alias: "u")
-        .where(path(\.id, on: "u") == userId)
-    Set.property(\.lastActive, on: "u", to: Date())
-    Set.property(\.loginCount, on: "u", to: path(\.loginCount, on: "u") + 1)
-    Return.node("u")
-}
-
-// Delete operations
-try await graph.query {
-    Match.node(User.self, alias: "u")
-        .where(path(\.isDeleted, on: "u") == true)
-    Delete.node("u")
-}
-```
-
-### Aggregations
-
-```swift
-// Count followers
-let followerCount = try await graph.queryValue(Int.self) {
-    Match.node(User.self, alias: "u")
-        .where(path(\.id, on: "u") == userId)
-    Match.edge(Follows.self)
-        .from(User.self, alias: "follower")
-        .to("u")
-    Return.count("follower")
-}
-
-// Advanced aggregations with type safety
-let stats = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Match.edge(Post.self, alias: "p")
-        .from("u")
-        .to(Post.self)
-    Return.aggregates(
-        (.count("p"), "postCount"),
-        (.avg(path(\.likes, on: "p")), "avgLikes"),
-        (.max(path(\.createdAt, on: "p")), "lastPost")
-    ).groupBy(path(\.name, on: "u"))
-     .orderBy("postCount", .descending)
-}
-```
-
-### Advanced Features
-
-#### Edge Properties with Type Safety
-```swift
-// Query edge properties
-let recentFollows = try await graph.query {
-    Match.edge(Follows.self, alias: "f")
-        .from("a")
-        .to("b")
-    Where(edge(\.since, on: "f") > oneWeekAgo)
-    Return.property(edge(\.since, on: "f"), as: "followDate")
-}
-```
-
-#### OPTIONAL MATCH
-```swift
-// Find users and their optional profiles
-let usersWithProfiles = try await graph.query {
-    Match.node(User.self, alias: "u")
-    OptionalMatch.node(Profile.self, alias: "p")
-        .where(path(\.userId, on: "p") == path(\.id, on: "u"))
-    Return.nodes("u", "p")
-}
-```
-
-#### WITH Clause for Query Pipelining
-```swift
-// Multi-stage query with WITH
-let results = try await graph.query {
-    Match.node(User.self, alias: "u")
-    With.aggregate(.count("u"), as: "userCount")
-        .and("u")
-        .limit(100)
-    Match.edge(Follows.self)
-        .from("u")
-        .to("other")
-    Return.node("other")
-}
-```
-
-#### EXISTS Patterns
-```swift
-// Find users who have posted
-let activeUsers = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Where(Predicate.exists(
-        Exists.edge(Post.self, from: "u", to: "p")
-    ))
-    Return.node("u")
-}
-
-// Complex EXISTS with subqueries
-let popularUsers = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Where(Predicate.exists(
-        Exists.subquery {
-            Match.edge(Follows.self).to("u")
-            Return.count() > 100
-        }
-    ))
-    Return.node("u")
-}
-```
-
-#### Path Patterns
-```swift
-// Shortest path
-let shortestPath = try await graph.query {
-    Match.path(
-        PathPattern.shortest(
-            from: "alice",
-            to: "bob",
-            via: Follows.self,
-            maxHops: 5,
-            as: "p"
-        )
-    )
-    Return.pathLength("p", as: "distance")
-}
-
-// Variable length paths
-let friends = try await graph.query {
-    Match.path(
-        PathPattern.variablePath(
-            from: "user",
-            to: "friend",
-            via: Follows.self,
-            hops: 1...3,
-            as: "friendship"
-        )
-    )
-    Return.distinct("friend")
-}
-
-// All paths with constraints
-let paths = try await graph.query {
-    Match.path(
-        PathPattern.allPaths(
-            from: "start",
-            to: "end",
-            via: Follows.self,
-            maxHops: 4
-        )
-    )
-    Where(Predicate.pathLength("path", .lessThanOrEqual, 3))
-    Return.pathNodes("path")
-}
-```
-
-#### Batch Operations with UNWIND
-```swift
-// Batch create
-let users = [user1, user2, user3]
-try await graph.createMany(users)
-
-// Batch update with conditions
-try await graph.updateMany(
-    User.self,
-    matching: path(\.age, on: "u") < 18,
-    set: ["category": "minor"]
-)
-
-// Batch merge (upsert)
-try await graph.mergeMany(
-    users,
-    matchOn: "id",
-    onCreate: ["createdAt": Date()],
-    onMatch: ["updatedAt": Date()]
-)
-```
-
-#### Query Within Transactions
-```swift
-try await graph.withTransaction { tx in
-    // Use Query DSL within transactions
-    let user = try tx.queryOne(User.self) {
-        Match.node(User.self, alias: "u")
-        Where(path(\.id, on: "u") == userId)
-        Return.node("u")
-    }
-    
-    // Update using DSL
-    try tx.query {
-        Match.node(User.self, alias: "u")
-        Where(path(\.id, on: "u") == userId)
-        Set.property(\.lastActive, on: "u", to: Date())
-        Return.node("u")
-    }
-    
-    // Transaction automatically commits or rolls back
-}
-```
-
-#### Query Compilation and Inspection
-```swift
-// Compile and inspect queries before execution
-let query = Query(components: [
-    Match.node(User.self),
-    Return.count()
-])
-let cypher = try CypherCompiler.compile(query)
-print("Query: \(cypher.query)")
-print("Parameters: \(cypher.parameters)")
-
-// The CypherCompiler provides all the information you need
-// for debugging and optimization
-```
-
-## What Works Today
-
-### SwiftData-like CRUD Operations ✅
-
-These methods are stable and ready for production use:
-
-```swift
-let graph = try await GraphDatabase.shared.context()
-
-// Save
-let user = User(name: "Charlie", age: 28)
-let saved = try await graph.save(user)
-
-// Fetch
+// Read
 let users = try await graph.fetch(User.self)
-let charlie = try await graph.fetchOne(User.self, id: saved.id)
-let adults = try await graph.fetch(User.self, where: "age", equals: 18)
+let bob = try await graph.fetchOne(User.self, id: user.id)
 
 // Update
-saved.age = 29
-try await graph.save(saved)
+user.age = 26
+try await graph.save(user)
 
 // Delete
-try await graph.delete(saved)
-try await graph.deleteAll(User.self)
+try await graph.delete(user)
 
 // Count
 let count = try await graph.count(User.self)
 ```
 
-### Raw Cypher Queries ✅
+### Declarative Query DSL
 
-For complex queries, use the stable `raw()` method:
+The Query DSL provides comprehensive, type-safe query building:
+
+#### Node Operations
 
 ```swift
-// Relationship queries (Beta 2: Automatic node handling)
-let result = try await graph.raw(
-    """
-    MATCH (u:User {name: $name})-[:FOLLOWS]->(f:User)
-    RETURN f
-    """,
-    bindings: ["name": "Alice"]
-)
-// The returned KuzuNode is automatically handled
-let followers = try result.map(to: User.self)
+// Match nodes with conditions
+let users = try await graph.query {
+    User.match()
+        .where(\.age >= 18)
+        .orderBy(\.name)
+        .limit(10)
+}
 
-// Aggregations
-let countResult = try await graph.raw(
-    """
-    MATCH (u:User)
-    WHERE u.age > $minAge
-    RETURN count(u) as userCount
-    """,
-    bindings: ["minAge": 25]
-)
+// Optional match for nullable results
+let maybeUsers = try await graph.query {
+    User.optional()
+        .where(\.city == "Tokyo")
+}
+
+// Create nodes declaratively
+try await graph.query {
+    Create.node(User.self, properties: [
+        "name": "Charlie",
+        "age": 28
+    ])
+}
+
+// Merge (upsert) operations
+try await graph.query {
+    User.merge(on: \.email, equals: "alice@example.com")
+        .onCreate(set: ["createdAt": Date()])
+        .onMatch(set: ["lastLogin": Date()])
+}
 ```
 
-## Transactions ✅
-
-Ensure data consistency with ACID transactions:
+#### Edge Operations
 
 ```swift
-// All operations succeed or fail together
-try await graph.withTransaction { txContext in
-    let user = User(name: "Alice", age: 30)
-    try txContext.save(user)
+// Create edges between nodes
+try await graph.query {
+    let alice = User.match().where(\.name == "Alice")
+    let bob = User.match().where(\.name == "Bob")
     
-    let post = Post(title: "Hello Graph", authorId: user.id)
-    try txContext.save(post)
+    Create.edge(Follows.self, from: alice, to: bob, properties: [
+        "since": Date()
+    ])
+}
+
+// Match edges with conditions
+let followers = try await graph.query {
+    let user = User.match().where(\.id == userId)
+    Follows.match()
+        .from(User.match())
+        .to(user)
+        .where("since", .greaterThan, oneMonthAgo)
+}
+
+// Merge edges (create if not exists)
+try await graph.query {
+    Follows.merge(from: alice, to: bob)
+        .onCreate(set: ["since": Date()])
+        .onMatch(set: ["lastInteraction": Date()])
+}
+```
+
+#### Aggregations
+
+```swift
+// Count
+let userCount = try await graph.query {
+    Count<User>(nodeRef: User.match())
+}
+
+// Average
+let avgAge = try await graph.query {
+    Average(nodeRef: User.match(), keyPath: \User.age)
+}
+
+// Sum
+let totalLikes = try await graph.query {
+    Sum(Post.match(), keyPath: \Post.likes)
+}
+
+// Min/Max
+let oldest = try await graph.query {
+    Max(nodeRef: User.match(), keyPath: \User.age)
+}
+
+// Collect nodes into array
+let allUsers = try await graph.query {
+    Collect(nodeRef: User.match())
+}
+```
+
+#### Complex Queries
+
+```swift
+// Multiple operations in one query
+try await graph.query {
+    // Match existing nodes
+    let alice = User.match().where(\.name == "Alice")
+    let bob = User.match().where(\.name == "Bob")
     
-    // If any operation fails, everything is rolled back
-    guard post.title.count > 5 else {
-        throw ValidationError.titleTooShort
+    // Create new edge
+    Create.edge(Follows.self, from: alice, to: bob)
+    
+    // Update properties
+    SetProperties(alice.alias)
+        .set("lastActive", to: Date())
+    
+    // Delete old edges
+    let oldFollows = Follows.match()
+        .where("since", .lessThan, oneYearAgo)
+    Delete(oldFollows.alias)
+}
+
+// Conditional queries
+@QueryBuilder
+func buildConditionalQuery(includeInactive: Bool) -> some QueryComponent {
+    if includeInactive {
+        User.match()
+    } else {
+        User.match().where(\.active == true)
+    }
+}
+
+// Loops with ForEach
+let queries = users.map { user in
+    User.merge(on: \.id, equals: user.id)
+        .onCreate(set: ["name": user.name])
+}
+try await graph.query {
+    ForEachQuery(queries)
+}
+```
+
+### Tuple Queries with Parameter Packs
+
+The library uses Swift 6.2's parameter pack features for type-safe tuple queries:
+
+```swift
+// Single component - returns the component's Result type
+let users: [User] = try await graph.query {
+    User.match().where(\.active == true)
+}
+
+// Two components - returns a tuple (T1.Result, T2.Result)
+let (users, posts) = try await graph.query {
+    User.match().where(\.active == true)
+    Post.match().where(\.published == true)
+}
+
+// Three or more components - returns an expanded tuple
+let (users, posts, comments) = try await graph.query {
+    User.match().where(\.active == true)
+    Post.match().where(\.published == true)
+    Comment.match().orderBy(\.createdAt, .descending)
+}
+
+// The @QueryBuilder automatically creates:
+// - Single component: T
+// - Multiple components: TupleQuery<repeat each T> where Result = (repeat (each T).Result)
+```
+
+### Component Types
+
+#### Create Operations
+```swift
+// Create nodes
+Create.node(User.self, properties: ["name": "Alice", "age": 30])
+Create.node(user) // From instance
+
+// Create edges
+Create.edge(Follows.self, from: alice, to: bob)
+Create.edge(followsInstance, from: alice, to: bob)
+```
+
+#### Merge Operations
+```swift
+// Merge nodes (upsert)
+Merge(User.self, matching: ["email": email])
+    .onCreate(set: ["createdAt": Date()])
+    .onMatch(set: ["updatedAt": Date()])
+
+// Merge edges
+Follows.merge(from: alice, to: bob)
+    .onCreate(set: ["since": Date()])
+```
+
+#### Update Operations
+```swift
+// Set properties on nodes or edges
+SetProperties("nodeAlias")
+    .set("property", to: value)
+    .set("computed", to: { $0.value + 1 })
+```
+
+#### Delete Operations
+```swift
+// Delete nodes or edges
+Delete("nodeAlias")
+Delete("edgeAlias", detach: true) // Detach delete for nodes with edges
+```
+
+### Raw Cypher Support
+
+For queries not yet expressible in the DSL, use raw Cypher:
+
+```swift
+let result = try await graph.raw("""
+    MATCH (u:User)-[:FOLLOWS]->(f:User)
+    WHERE u.name = $name
+    RETURN f
+    """, bindings: ["name": "Alice"])
+let followers = try result.map(to: User.self)
+```
+
+### Transactions
+
+```swift
+try await graph.withTransaction { tx in
+    let user = User(name: "Charlie", age: 28)
+    try tx.save(user)
+    
+    // Use Query DSL within transactions
+    try tx.query {
+        Create.edge(Follows.self, 
+            from: User.match().where(\.id == currentUserId),
+            to: User.match().where(\.id == user.id)
+        )
+    }
+    
+    // Automatic rollback on error
+    guard user.age >= 18 else {
+        throw ValidationError.tooYoung
     }
 }
 ```
 
-## Property Attributes
-
-Enhance your models with powerful attributes:
+### Property Attributes
 
 ```swift
 @GraphNode
@@ -534,77 +350,9 @@ struct Article: Codable {
 }
 ```
 
-## Real-World Examples
+## Advanced Features
 
-### Social Network
-
-```swift
-// Find influencers (users with many followers)
-let influencers = try await graph.query {
-    Match.node(User.self, alias: "u")
-    Match.edge(Follows.self)
-        .from(User.self, alias: "follower")
-        .to("u")
-    Return.items(
-        .alias("u"),
-        .count("follower", as: "followerCount")
-    )
-    .groupBy("u")
-    .having("followerCount", .greaterThan, 1000)
-    .orderBy("followerCount", .descending)
-    .limit(100)
-}
-```
-
-### E-Commerce Recommendations
-
-```swift
-// Users who bought this also bought
-let recommendations = try await graph.query {
-    Match.node(Product.self, alias: "product")
-        .where(path(\.id, on: "product") == productId)
-    Match.edge(Purchased.self)
-        .from(User.self, alias: "buyer")
-        .to("product")
-    Match.edge(Purchased.self)
-        .from("buyer")
-        .to(Product.self, alias: "otherProduct")
-    Where.not(path(\.id, on: "otherProduct") == productId)
-    Return.items(
-        .alias("otherProduct"),
-        .count("buyer", as: "purchaseCount")
-    )
-    .groupBy("otherProduct")
-    .orderBy("purchaseCount", .descending)
-    .limit(10)
-}
-```
-
-### Content Management
-
-```swift
-// Find related articles by tags
-let related = try await graph.query {
-    Match.node(Article.self, alias: "article")
-        .where(path(\.id, on: "article") == articleId)
-    Match.edge(HasTag.self)
-        .from("article")
-        .to(Tag.self, alias: "tag")
-    Match.edge(HasTag.self)
-        .from(Article.self, alias: "related")
-        .to("tag")
-    Where.not(path(\.id, on: "related") == articleId)
-    Return.items(
-        .alias("related"),
-        .count("tag", as: "commonTags")
-    )
-    .groupBy("related")
-    .orderBy("commonTags", .descending)
-    .limit(5)
-}
-```
-
-## SwiftUI Integration
+### SwiftUI Integration
 
 ```swift
 struct UserListView: View {
@@ -616,74 +364,109 @@ struct UserListView: View {
             UserRow(user: user)
         }
         .searchable(text: $searchText)
-        .onChange(of: searchText) { _, newValue in
+        .onChange(of: searchText) { _, query in
             Task {
-                await searchUsers(newValue)
+                await searchUsers(query)
             }
-        }
-        .task {
-            await loadUsers()
         }
     }
     
     func searchUsers(_ query: String) async {
         let graph = try? await GraphDatabase.shared.context()
         users = try? await graph?.query {
-            Match.node(User.self, alias: "u")
-            Where.path(\.name, on: "u").contains(query)
-            Return.node("u")
+            User.match()
+                .where(\.name.contains(query))
                 .limit(50)
         } ?? []
     }
 }
 ```
 
-## Documentation
+## Real-World Examples
 
-- 📋 [SPECIFICATION.md](SPECIFICATION.md) - Complete feature specification
-- 🚦 [API_STATUS.md](API_STATUS.md) - API stability status
-- 🤖 [CLAUDE.md](CLAUDE.md) - AI assistant guidance
-- 📚 [Wiki](https://github.com/1amageek/kuzu-swift-extension/wiki) - Additional documentation
-
-For complex queries not yet supported by the DSL, use `raw()` queries for full Cypher access.
-
-## Query DSL vs Raw Cypher
-
-Both approaches are production-ready with different strengths:
+### Social Network
 
 ```swift
-// Declarative Query DSL - Type-safe and readable (Beta 2: Enhanced)
-let results = try await graph.queryArray(User.self) {
-    Match.node(User.self, alias: "u")
-    Where(path(\User.age, on: "u") > 25)
-    Return.node("u")  // Direct node returns now supported
+// Find mutual friends
+let mutualFriends = try await graph.query {
+    let user1 = User.match().where(\.id == userId1)
+    let user2 = User.match().where(\.id == userId2)
+    let mutual = User.match(alias: "mutual")
+    
+    Follows.match().from(user1).to(mutual)
+    Follows.match().from(user2).to(mutual)
+    
+    Collect(nodeRef: mutual)
 }
 
-// Raw Cypher - Full flexibility for complex queries
-let result = try await graph.raw("""
-    MATCH (u:User)
-    WHERE u.age > $minAge
-    RETURN u
-    """, bindings: ["minAge": 25])
-let users = try result.map(to: User.self)  // Beta 2: Automatic KuzuNode handling
+// Find influencers
+let influencers = try await graph.query {
+    let user = User.match(alias: "u")
+    let follower = User.match(alias: "follower")
+    
+    Follows.match().from(follower).to(user)
+    
+    Count<User>(nodeRef: follower)
+        .groupBy(user)
+        .having(count > 1000)
+        .orderBy(.descending)
+}
 ```
 
-Use Query DSL for type safety and better IDE support. Use raw Cypher when you need specific Cypher features not yet in the DSL.
+### E-Commerce
+
+```swift
+// Product recommendations
+let recommendations = try await graph.query {
+    let product = Product.match().where(\.id == productId)
+    let buyer = User.match(alias: "buyer")
+    let otherProduct = Product.match(alias: "other")
+        .where(\.id != productId)
+    
+    Purchase.match().from(buyer).to(product)
+    Purchase.match().from(buyer).to(otherProduct)
+    
+    Collect(nodeRef: otherProduct)
+        .groupBy(otherProduct)
+        .orderBy(count, .descending)
+        .limit(10)
+}
+```
+
+### Content Management
+
+```swift
+// Find related articles
+let related = try await graph.query {
+    let article = Article.match().where(\.id == articleId)
+    let tag = Tag.match(alias: "tag")
+    let relatedArticle = Article.match(alias: "related")
+        .where(\.id != articleId)
+    
+    HasTag.match().from(article).to(tag)
+    HasTag.match().from(relatedArticle).to(tag)
+    
+    Count<Tag>(nodeRef: tag)
+        .groupBy(relatedArticle)
+        .orderBy(count, .descending)
+        .limit(5)
+}
+```
 
 ## Performance Tips
 
 1. **Use Indexes**: Add `@Index` to frequently queried properties
-2. **Batch Operations**: Use `createMany()` for bulk inserts
-3. **Connection Pooling**: Automatically managed with optimized parameters
-4. **Limit Results**: Always use `.limit()` for large datasets
-5. **Use Transactions**: Group related operations for better performance
-6. **Parameter Caching**: Query parameters are automatically cached for reuse
+2. **Batch Operations**: Use `ForEachQuery` for bulk operations
+3. **Limit Results**: Always use `.limit()` for large datasets
+4. **Transactions**: Group related operations for better performance
+5. **Connection Pooling**: Automatically managed with configurable parameters
 
-## Advanced Configuration
-
-### Basic Configuration
+## Configuration
 
 ```swift
+// Default configuration - works out of the box
+let graph = try await GraphDatabase.shared.context()
+
 // Custom configuration
 let config = GraphConfiguration(
     databasePath: "/custom/path/graph.db",
@@ -693,147 +476,61 @@ let config = GraphConfiguration(
         extensions: [.fts, .vector]
     )
 )
-
 let context = try await GraphContext(configuration: config)
 ```
 
-### Connection Pool Configuration
-
-The library automatically manages a connection pool for optimal performance:
+## Testing
 
 ```swift
-// Detailed connection pool configuration
-let config = GraphConfiguration(
-    databasePath: "/path/to/graph.db",
-    options: GraphConfiguration.Options(
-        maxConnections: 10,        // Maximum concurrent connections
-        minConnections: 2,         // Minimum connections to maintain
-        connectionTimeout: 30.0,   // Connection timeout in seconds
-        maxThreads: 4,            // Maximum threads for parallel operations
-        extensions: [.fts, .vector]
-    )
-)
-
-// Proper shutdown - ensures all connections are cleaned up
-let context = try await GraphContext(configuration: config)
-defer { 
-    await context.close()  // Drains the connection pool
+// Automatically uses in-memory database in tests
+@Test
+func testUserCreation() async throws {
+    let graph = try await GraphDatabase.test.context()
+    
+    let user = User(name: "Test", age: 25)
+    try await graph.save(user)
+    
+    let fetched = try await graph.fetchOne(User.self, id: user.id)
+    #expect(fetched?.name == "Test")
 }
 ```
 
-### Connection Pool Management
+## Type Conversions
 
-The connection pool automatically manages connections, but you can control its lifecycle:
+The library handles type conversions automatically:
 
-```swift
-// Automatic management with GraphDatabase.shared
-let graph = try await GraphDatabase.shared.context()
-// Connections are pooled automatically
+- **UUID** ↔ String
+- **Date** ↔ Timestamp (ISO8601)
+- **Int** ↔ Int64
+- **Double** ↔ Float
+- **Arrays & Dictionaries** - Automatic encoding/decoding
+- **Optional types** - Automatic wrapping/unwrapping
 
-// Manual management for custom scenarios
-let container = try await GraphContainer(configuration: config)
-// Use the container...
-await container.close()  // Drains the pool and prevents new connections
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Reserved Keywords**: Avoid Cypher reserved words (e.g., use `result` instead of `exists`)
-2. **Build Times**: First build compiles Kuzu C++ (~5-10 minutes). Use incremental builds.
-3. **Type Mismatches**: Kuzu returns `Int64` for counts, automatic conversion is provided
-4. **Memory Usage**: Ensure 8GB+ RAM for C++ compilation
-5. **Parameter Names**: Use OptimizedParameterGenerator for consistent parameter naming
-
-### Automatic Type Conversions
-
-The library handles common type conversions automatically:
-
-- **UUID** ↔ String conversion for storage
-- **Date** ↔ Timestamp conversion (ISO8601 format)
-- **Numeric types**: Flexible conversions between Int, Int64, Double, Float
-- **Arrays and Dictionaries**: Automatic encoding/decoding
-- **Optional types**: Automatic wrapping/unwrapping
-- **Custom types**: Encodable/Decodable support via KuzuEncoder/KuzuDecoder
-
-This means you can use Swift native types without worrying about database representations:
-
-```swift
-@GraphNode
-struct User: Codable {
-    @ID var id: UUID = UUID()  // Automatically converted to/from String
-    var age: Int               // Works with Int64 from database
-    var score: Double          // Works with various numeric types
-    var tags: [String]         // Automatically encoded/decoded
-    var metadata: [String: Any]? // Dictionaries handled properly
-    @Timestamp var createdAt: Date = Date() // Converted to Timestamp
-}
-```
-
-### Error Handling
-
-The library provides unified error handling with KuzuError:
+## Error Handling
 
 ```swift
 do {
     let results = try await graph.query { /* ... */ }
 } catch KuzuError.compilationFailed(let query, let reason) {
     print("Query compilation failed: \(reason)")
-} catch KuzuError.executionFailed(let query, let reason) {
-    print("Query execution failed: \(reason)")
-} catch KuzuError.typeMismatch(let expected, let actual, let field) {
-    print("Type mismatch in \(field ?? "result"): expected \(expected), got \(actual)")
 } catch KuzuError.noResults {
-    print("Query returned no results")
-} catch GraphError.connectionPoolExhausted {
-    print("Connection pool is no longer available")
+    print("No results found")
 } catch GraphError.transactionFailed(let reason) {
     print("Transaction failed: \(reason)")
-} catch {
-    print("Unexpected error: \(error)")
 }
 ```
 
 ## Requirements
 
-- Swift 6.1+
+- Swift 6.2+
 - macOS 14+, iOS 17+, tvOS 17+, watchOS 10+
 - Xcode 16+
-
-## Beta 2 Status
-
-### What's New in Beta 2
-- ✅ **Enhanced Node Handling** - Direct KuzuNode to Swift type mapping
-- ✅ **Improved Query DSL** - `Return.node()` now works seamlessly
-- ✅ **Better Type Safety** - Full KeyPath support in queries
-- ✅ **ResultMapper Improvements** - Automatic node property extraction
-
-### What's Working
-- ✅ Core CRUD operations
-- ✅ Raw Cypher execution with automatic node handling
-- ✅ Transactions with automatic rollback
-- ✅ Basic Query DSL (Match, Where, Return, Create, Set, Delete)
-- ✅ Type-safe model declarations with macros
-- ✅ Connection pooling
-- ✅ Direct node returns and mapping
-
-### What's Beta
-- 🚧 Advanced Query DSL features
-- 🚧 Path operations and aggregations
-- 🚧 Schema migration
-
-### What's Not Available
-- ❌ Graph algorithms (Kuzu doesn't support them)
-- ❌ Some advanced Cypher features
-
-See [API_STATUS.md](API_STATUS.md) for detailed API stability information.
 
 ## Documentation
 
 - [API Documentation](https://github.com/1amageek/kuzu-swift-extension/wiki)
-- [Query DSL Reference](https://github.com/1amageek/kuzu-swift-extension/wiki/Query-DSL)
-- [Migration Guide](https://github.com/1amageek/kuzu-swift-extension/wiki/Migration)
+- [SPECIFICATION.md](SPECIFICATION.md) - Complete feature specification
+- [API_STATUS.md](API_STATUS.md) - API stability tracking
 
 ## Contributing
 
@@ -845,6 +542,4 @@ MIT License
 
 ## Acknowledgments
 
-Built on the excellent [Kuzu](https://kuzudb.com) embedded graph database and its [Swift bindings](https://github.com/kuzudb/kuzu-swift).
-
-Special thanks to the Kuzu team for creating such a powerful and easy-to-use graph database.
+Built on [Kuzu](https://kuzudb.com) embedded graph database and its [Swift bindings](https://github.com/kuzudb/kuzu-swift).

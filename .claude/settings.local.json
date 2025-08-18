@@ -37,7 +37,8 @@
       "mcp__deepwiki__ask_question",
       "WebFetch(domain:developer.apple.com)",
       "Bash(remark:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(true)"
     ],
     "deny": []
   }

@@ -17,4 +17,10 @@ internal struct KeyPathUtilities {
         }
         return keyPathString
     }
+    
+    /// Extracts property name from a PartialKeyPath
+    static func propertyName<T>(from keyPath: PartialKeyPath<T>, on type: T.Type) -> String {
+        let keyPathString = String(describing: keyPath)
+        return extractPropertyName(from: keyPathString)
+    }
 }

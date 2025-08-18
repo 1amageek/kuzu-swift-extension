@@ -28,6 +28,16 @@ public struct Predicate {
         Predicate(node: .not(predicate.node))
     }
     
+    /// Combines this predicate with another using AND
+    public func and(_ other: Predicate) -> Predicate {
+        Predicate(node: .and(self.node, other.node))
+    }
+    
+    /// Combines this predicate with another using OR
+    public func or(_ other: Predicate) -> Predicate {
+        Predicate(node: .or(self.node, other.node))
+    }
+    
     /// Converts the predicate to a Cypher fragment
     public func toCypher() throws -> CypherFragment {
         return try node.toCypher()

@@ -48,6 +48,30 @@ public struct TransactionalGraphContext: Sendable {
         }
     }
     
+    // MARK: - New Query DSL
+    
+    /// Execute a query using the new type-safe DSL
+    public func query<T: QueryComponent>(@QueryBuilder _ builder: () -> T) throws -> T.Result {
+        let queryComponent = builder()
+        let cypher = try queryComponent.toCypher()
+        
+        // Check if we need to add RETURN clause
+        let needsReturn = queryComponent.isReturnable && !cypher.query.contains("RETURN")
+        var finalQuery = cypher.query
+        
+        if needsReturn {
+            // Auto-generate RETURN clause for returnable components
+            if let aliased = queryComponent as? any AliasedComponent {
+                finalQuery += " RETURN \(aliased.alias)"
+            }
+        }
+        
+        let result = try raw(finalQuery, bindings: cypher.parameters)
+        
+        // Map result based on component type
+        return try mapResult(result, to: T.Result.self)
+    }
+    
     // MARK: - Model Operations
     
     /// Save a model instance within the transaction
@@ -157,6 +181,62 @@ public struct TransactionalGraphContext: Sendable {
             """
         let result = try raw(query)
         return try result.decodeArray(T.self)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func mapResult<T>(_ result: QueryResult, to type: T.Type) throws -> T {
+        // This is a simplified implementation
+        // Real implementation would need proper type mapping based on T
+        let decoder = KuzuDecoder()
+        
+        if type == Void.self {
+            return () as! T
+        }
+        
+        if type == Int64.self {
+            guard result.hasNext() else {
+                return 0 as! T
+            }
+            guard let row = try result.getNext() else {
+                return 0 as! T
+            }
+            let value = try row.getValue(0)
+            return (value as? Int64 ?? 0) as! T
+        }
+        
+        // For array types
+        if let arrayType = type as? any Collection.Type {
+            var items: [Any] = []
+            while result.hasNext() {
+                guard let row = try result.getNext() else {
+                    continue
+                }
+                let value = try row.getValue(0)
+                items.append(value)
+            }
+            return items as! T
+        }
+        
+        // Default: try to decode first row
+        guard result.hasNext() else {
+            throw GraphError.invalidOperation(message: "No results to map")
+        }
+        
+        guard let row = try result.getNext() else {
+            throw GraphError.noResults
+        }
+        let value = try row.getValue(0)
+        
+        if let decodableType = type as? any Decodable.Type {
+            if let kuzuNode = value as? KuzuNode {
+                return try decoder.decode(decodableType, from: kuzuNode.properties) as! T
+            } else if let properties = value as? [String: Any] {
+                return try decoder.decode(decodableType, from: properties) as! T
+            }
+        }
+        
+        return value as! T
     }
 }
 
