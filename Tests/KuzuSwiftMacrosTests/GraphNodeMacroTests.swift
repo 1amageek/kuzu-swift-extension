@@ -39,8 +39,8 @@ struct GraphNodeMacroTests {
         )
     }
     
-    @Test("GraphNode with Vector")
-    func graphNodeWithVector() throws {
+    @Test("GraphNode with Double Vector")
+    func graphNodeWithDoubleVector() throws {
         assertMacroExpansion(
             """
             @GraphNode
@@ -55,13 +55,42 @@ struct GraphNodeMacroTests {
                 var id: String
                 var content: String
                 var embedding: [Double]
-            
+
                 public static let _kuzuDDL: String = "CREATE NODE TABLE Document (id STRING PRIMARY KEY, content STRING, embedding DOUBLE[1536])"
-            
+
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "content", type: "STRING", constraints: []), (name: "embedding", type: "DOUBLE[1536]", constraints: [])]
             }
-            
+
             extension Document: GraphNodeModel {
+            }
+            """,
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Vector": VectorMacro.self]
+        )
+    }
+
+    @Test("GraphNode with Float Vector")
+    func graphNodeWithFloatVector() throws {
+        assertMacroExpansion(
+            """
+            @GraphNode
+            struct Item {
+                @ID var id: String
+                var name: String
+                @Vector(dimensions: 384) var embedding: [Float]
+            }
+            """,
+            expandedSource: """
+            struct Item {
+                var id: String
+                var name: String
+                var embedding: [Float]
+
+                public static let _kuzuDDL: String = "CREATE NODE TABLE Item (id STRING PRIMARY KEY, name STRING, embedding FLOAT[384])"
+
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "name", type: "STRING", constraints: []), (name: "embedding", type: "FLOAT[384]", constraints: [])]
+            }
+
+            extension Item: GraphNodeModel {
             }
             """,
             macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Vector": VectorMacro.self]

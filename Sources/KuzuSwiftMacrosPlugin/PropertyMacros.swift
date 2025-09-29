@@ -70,18 +70,22 @@ public struct UniqueMacro: BasePropertyMacro {
 
 public struct VectorMacro: BasePropertyMacro {
     static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
-        // Validate Array<Double> or [Double] type
+        // Validate Array<Float>, Array<Double>, [Float], or [Double] type
         guard let binding = declaration.bindings.first,
               let typeAnnotation = binding.typeAnnotation?.type else {
             return false
         }
-        
+
         let typeString = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isValidType = typeString.contains("Array<Double>") || 
+        let isValidType = typeString.contains("Array<Double>") ||
                          typeString.contains("[Double]") ||
                          typeString.contains("Array<Double>?") ||
-                         typeString.contains("[Double]?")
-        
+                         typeString.contains("[Double]?") ||
+                         typeString.contains("Array<Float>") ||
+                         typeString.contains("[Float]") ||
+                         typeString.contains("Array<Float>?") ||
+                         typeString.contains("[Float]?")
+
         if !isValidType {
             context.diagnose(Diagnostic(
                 node: typeAnnotation,
