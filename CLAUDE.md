@@ -15,10 +15,54 @@ A Swift extension library for [kuzu-swift](https://github.com/kuzudb/kuzu-swift)
 The library follows a clean layered architecture:
 
 1. **Model Declaration Layer** - `@GraphNode`, `@GraphEdge` annotations that generate schema definitions
-2. **Schema Generation Layer** - Automatic DDL generation and migration from Swift models  
+2. **Schema Generation Layer** - Automatic DDL generation and migration from Swift models
 3. **Persistence Layer** - `GraphConfiguration`, `GraphContainer`, `GraphContext` for managing connections
 4. **Query DSL Layer** - Type-safe DSL that compiles to Cypher queries with parameter binding
 5. **Result Processing Layer** - `KuzuEncoder`/`KuzuDecoder`, `ResultMapper` for type conversions
+
+## Extension Support
+
+### Static Linking Only
+kuzu-swift-extension supports **static linking only** for Kuzu extensions. Dynamic library loading is not supported, especially on iOS platforms due to security restrictions.
+
+### Vector Extension
+The vector extension is statically linked in kuzu-swift, providing:
+- Vector data storage with `FLOAT[n]` or `DOUBLE[n]` types
+- HNSW index support for similarity search
+- Built-in vector functions
+- **No `LOAD EXTENSION` required** - already built into the library
+- Full support on iOS/tvOS/watchOS platforms
+
+### Available Extensions
+| Extension | Status | Platform Support | Notes |
+|-----------|--------|-----------------|-------|
+| Vector | ✅ Static | All platforms | Built-in, no loading required |
+| FTS | ✅ Static | All platforms | Full-text search |
+| JSON | ✅ Static | All platforms | JSON operations |
+| httpfs | ❌ | macOS only | Requires dynamic loading |
+
+### Vector Operations Syntax
+```swift
+// Create table with vector column
+CREATE NODE TABLE items(
+    id INT64 PRIMARY KEY,
+    embedding FLOAT[384]  // Use FLOAT[] for vectors
+)
+
+// Create HNSW index
+CALL CREATE_VECTOR_INDEX('items', 'embedding_idx', 'embedding',
+    metric := 'l2')
+
+// Vector similarity search
+CALL QUERY_VECTOR_INDEX('items', 'embedding_idx',
+    CAST([0.1, 0.2, ...] AS FLOAT[384]), 10)
+RETURN node, distance ORDER BY distance
+
+// Built-in functions
+array_cosine_similarity(vec1, vec2)
+array_distance(vec1, vec2)  // L2 distance
+array_inner_product(vec1, vec2)
+```
 
 ## Key Components
 
@@ -154,12 +198,32 @@ let result = try await graph.raw(
 let users = try result.map(to: User.self)
 ```
 
+## Platform-Specific Considerations
+
+### iOS/tvOS/watchOS
+- All extensions are statically linked
+- No dynamic library loading support
+- Vector operations fully supported
+- HNSW indexes work out of the box
+- No need for `LOAD EXTENSION` statements
+
+### macOS
+- Static extensions work identically to iOS
+- Some additional dynamic extensions available
+- Better performance for large datasets
+
 ## Troubleshooting
+
+### Extension Loading
+- **"Extension not found" error**: Extensions are statically linked, no loading needed
+- **Vector functions not available**: Check if using correct syntax (FLOAT[] not DOUBLE[])
+- **HNSW index creation fails**: Ensure column is FLOAT[n] or DOUBLE[n] type
 
 ### Type Mismatches
 - Count queries return `Int64`, not `Int`
 - Use flexible numeric conversion in decoders
 - UUID automatically converts to/from String
+- Vector columns must use fixed-size arrays: `FLOAT[384]` not `FLOAT[]`
 
 ### Reserved Keywords
 - Avoid Cypher reserved words in aliases (e.g., use `result` not `exists`)

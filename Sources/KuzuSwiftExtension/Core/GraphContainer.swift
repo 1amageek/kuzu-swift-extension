@@ -53,10 +53,28 @@ public actor GraphContainer {
             do {
                 // Vector extension is statically linked in kuzu-swift
                 if ext == .vector {
-                    // Vector extension is built into kuzu-swift
-                    // No need to explicitly load it
-                    loadedExtensions.append(ext)
-                    print("Vector extension enabled (statically linked)")
+                    // Check if vector functions are available
+                    do {
+                        // Check loaded extensions
+                        let extensionCheck = try connection.query("CALL SHOW_LOADED_EXTENSIONS()")
+
+                        // Vector extension is built into kuzu-swift via static linking
+                        // We can also verify with array functions
+                        _ = try connection.query("RETURN CAST([1.0, 2.0, 3.0] AS FLOAT[3]) AS test")
+
+                        loadedExtensions.append(ext)
+                        print("Vector extension enabled (statically linked)")
+                    } catch {
+                        // Try to explicitly load if not available
+                        do {
+                            _ = try connection.query("LOAD EXTENSION vector")
+                            loadedExtensions.append(ext)
+                            print("Vector extension loaded dynamically")
+                        } catch {
+                            print("Vector extension not available: \(error)")
+                            failedExtensions.append((ext, error.localizedDescription))
+                        }
+                    }
                     continue
                 }
 
