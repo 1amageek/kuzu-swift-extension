@@ -56,11 +56,12 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                         for arg in args {
                             if let expr = arg.expression.as(IntegerLiteralExprSyntax.self) {
                                 let dimensions = expr.literal.text
-                                columns.append((propertyName, "DOUBLE[\(dimensions)]", constraints))
+                                // Use FLOAT[] type for vectors (as per Kuzu documentation)
+                                columns.append((propertyName, "FLOAT[\(dimensions)]", constraints))
                                 // Build DDL column with only supported inline constraints
                                 // Escape property name if it's a reserved word
                                 let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
-                                var columnDef = "\(escapedName) DOUBLE[\(dimensions)]"
+                                var columnDef = "\(escapedName) FLOAT[\(dimensions)]"
                                 for constraint in constraints {
                                     if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
                                         columnDef += " \(constraint)"

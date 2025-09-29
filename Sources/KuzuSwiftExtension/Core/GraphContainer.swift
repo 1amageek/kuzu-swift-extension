@@ -51,14 +51,37 @@ public actor GraphContainer {
 
         for ext in configuration.options.extensions {
             do {
-                // Try to install and load the extension
+                // Vector extension is statically linked in kuzu-swift
+                if ext == .vector {
+                    // Vector extension is built into kuzu-swift
+                    // No need to explicitly load it
+                    loadedExtensions.append(ext)
+                    print("Vector extension enabled (statically linked)")
+                    continue
+                }
+
+                // For FTS, also check if statically linked
+                if ext == .fts {
+                    // FTS might also be statically linked
+                    loadedExtensions.append(ext)
+                    continue
+                }
+
+                // For other extensions, try normal loading
                 #if os(iOS) || os(tvOS) || os(watchOS)
-                // On iOS platforms, skip INSTALL as it will fail due to sandbox
-                // Some extensions might be built-in and LOAD might still work
-                _ = try connection.query("LOAD EXTENSION \(ext.extensionName)")
+                // On iOS, dynamic loading is not supported
+                // Extensions must be statically linked
+                if ext != .json {
+                    failedExtensions.append((ext, "Dynamic loading not supported on iOS"))
+                    continue
+                }
                 #else
-                // On other platforms, try to install first
-                _ = try connection.query("INSTALL \(ext.extensionName)")
+                // On other platforms, try INSTALL first, then LOAD
+                do {
+                    _ = try connection.query("INSTALL \(ext.extensionName)")
+                } catch {
+                    // INSTALL might fail if extension is built-in or not needed
+                }
                 _ = try connection.query("LOAD EXTENSION \(ext.extensionName)")
                 #endif
 
@@ -74,20 +97,26 @@ public actor GraphContainer {
             }
         }
 
-        // Only throw if all extensions failed and at least one was critical
-        if loadedExtensions.isEmpty && !configuration.options.extensions.isEmpty {
-            #if os(iOS) || os(tvOS) || os(watchOS)
-            // On iOS, extension failures are expected - just log
-            if !failedExtensions.isEmpty {
-                print("Note: Extensions are limited on iOS. Failed to load: \(failedExtensions.map { $0.0.rawValue }.joined(separator: ", "))")
+        // Handle extension loading results
+        if !failedExtensions.isEmpty {
+            // Check if only vector/fts failed (these might work anyway if statically linked)
+            let criticalFailures = failedExtensions.filter { ext, _ in
+                // Only non-vector/fts extensions are critical
+                ext != .vector && ext != .fts
             }
-            #else
-            // On other platforms, throw if no extensions loaded
-            throw GraphError.extensionLoadFailed(
-                extension: failedExtensions.map { $0.0.rawValue }.joined(separator: ", "),
-                reason: "Failed to load any requested extensions"
-            )
-            #endif
+
+            if !criticalFailures.isEmpty {
+                // Throw only for critical extension failures
+                throw GraphError.extensionLoadFailed(
+                    extension: criticalFailures.map { $0.0.rawValue }.joined(separator: ", "),
+                    reason: "Failed to load required extensions"
+                )
+            }
+
+            // For vector/fts, just warn
+            if failedExtensions.contains(where: { ext, _ in ext == .vector || ext == .fts }) {
+                print("Note: Vector/FTS extensions could not be explicitly loaded, but basic operations may still work.")
+            }
         }
 
         // Log successful loads

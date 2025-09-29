@@ -122,6 +122,7 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 - Integration tests with in-memory database
 - Use `swift test --filter` during development for speed
 - All tests must pass before committing
+- Implement Swift Testing only
 
 ## Common Patterns
 

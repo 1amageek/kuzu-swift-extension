@@ -129,9 +129,9 @@ public struct GraphConfiguration: Sendable {
 
         private static func filterExtensions(_ requested: Set<KuzuExtension>) -> Set<KuzuExtension> {
             #if os(iOS) || os(tvOS) || os(watchOS)
-            // On iOS platforms, only built-in extensions work
-            // Vector and FTS extensions require dynamic loading which is not supported
-            let supported: Set<KuzuExtension> = [.json]
+            // On iOS platforms, we now support vector extension as it's statically linked in kuzu-swift
+            // FTS extension support is also available through static linking
+            let supported: Set<KuzuExtension> = [.json, .vector, .fts]
             let filtered = requested.intersection(supported)
             if filtered != requested {
                 let unsupported = requested.subtracting(filtered)

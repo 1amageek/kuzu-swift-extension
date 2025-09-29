@@ -68,7 +68,10 @@ let package = Package(
         // Test targets
         .testTarget(
             name: "KuzuSwiftExtensionTests",
-            dependencies: ["KuzuSwiftExtension"]
+            dependencies: [
+                "KuzuSwiftExtension",
+                .product(name: "Kuzu", package: "kuzu-swift")
+            ]
         ),
         .testTarget(
             name: "KuzuSwiftMacrosTests",

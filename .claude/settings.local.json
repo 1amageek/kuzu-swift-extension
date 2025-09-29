@@ -38,7 +38,10 @@
       "WebFetch(domain:developer.apple.com)",
       "Bash(remark:*)",
       "Bash(rm:*)",
-      "Bash(true)"
+      "Bash(true)",
+      "Read(//Users/1amageek/Desktop/kuzu-swift/**)",
+      "mcp__deepwiki__read_wiki_contents",
+      "mcp__deepwiki__read_wiki_structure"
     ],
     "deny": []
   }
