@@ -38,26 +38,63 @@ public actor GraphContainer {
     
     private func loadExtensions() async throws {
         guard !configuration.options.extensions.isEmpty else { return }
-        
+
         let connection = try await connectionPool.checkout()
-        
-        do {
-            for ext in configuration.options.extensions {
-                do {
-                    _ = try connection.query("INSTALL \(ext.extensionName)")
-                    _ = try connection.query("LOAD EXTENSION \(ext.extensionName)")
-                } catch {
-                    await connectionPool.checkin(connection)
-                    throw GraphError.extensionLoadFailed(
-                        extension: ext.rawValue,
-                        reason: error.localizedDescription
-                    )
-                }
+        defer {
+            Task {
+                await connectionPool.checkin(connection)
             }
-            await connectionPool.checkin(connection)
-        } catch {
-            // Connection already checked in if extension load failed
-            throw error
+        }
+
+        var loadedExtensions: [KuzuExtension] = []
+        var failedExtensions: [(KuzuExtension, String)] = []
+
+        for ext in configuration.options.extensions {
+            do {
+                // Try to install and load the extension
+                #if os(iOS) || os(tvOS) || os(watchOS)
+                // On iOS platforms, skip INSTALL as it will fail due to sandbox
+                // Some extensions might be built-in and LOAD might still work
+                _ = try connection.query("LOAD EXTENSION \(ext.extensionName)")
+                #else
+                // On other platforms, try to install first
+                _ = try connection.query("INSTALL \(ext.extensionName)")
+                _ = try connection.query("LOAD EXTENSION \(ext.extensionName)")
+                #endif
+
+                loadedExtensions.append(ext)
+            } catch {
+                // Log the failure but don't throw immediately
+                let reason = error.localizedDescription
+                failedExtensions.append((ext, reason))
+
+                #if DEBUG
+                print("Warning: Failed to load extension '\(ext.extensionName)': \(reason)")
+                #endif
+            }
+        }
+
+        // Only throw if all extensions failed and at least one was critical
+        if loadedExtensions.isEmpty && !configuration.options.extensions.isEmpty {
+            #if os(iOS) || os(tvOS) || os(watchOS)
+            // On iOS, extension failures are expected - just log
+            if !failedExtensions.isEmpty {
+                print("Note: Extensions are limited on iOS. Failed to load: \(failedExtensions.map { $0.0.rawValue }.joined(separator: ", "))")
+            }
+            #else
+            // On other platforms, throw if no extensions loaded
+            throw GraphError.extensionLoadFailed(
+                extension: failedExtensions.map { $0.0.rawValue }.joined(separator: ", "),
+                reason: "Failed to load any requested extensions"
+            )
+            #endif
+        }
+
+        // Log successful loads
+        if !loadedExtensions.isEmpty {
+            #if DEBUG
+            print("Successfully loaded extensions: \(loadedExtensions.map { $0.rawValue }.joined(separator: ", "))")
+            #endif
         }
     }
     

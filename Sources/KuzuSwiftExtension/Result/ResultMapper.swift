@@ -3,7 +3,7 @@ import Kuzu
 import Algorithms
 
 /// Provides convenient mapping and transformation methods for query results
-public extension QueryResult {
+extension QueryResult {
     
     // MARK: - Basic Mapping
     
