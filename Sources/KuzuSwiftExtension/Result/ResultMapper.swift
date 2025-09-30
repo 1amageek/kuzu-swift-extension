@@ -39,16 +39,19 @@ extension QueryResult {
     /// Maps the first row to a dictionary
     public func mapFirst() throws -> [String: Any]? {
         guard hasNext() else { return nil }
-        
+
         guard let tuple = try getNext() else {
             throw GraphError.invalidOperation(message: "Failed to get next tuple")
         }
         let columnNames = getColumnNames()
         var row: [String: Any] = [:]
-        
+
         for (index, columnName) in columnNames.enumerated() {
-            let value = try tuple.getValue(UInt64(index))
-            
+            guard let value = try tuple.getValue(UInt64(index)) else {
+                row[columnName] = NSNull()
+                continue
+            }
+
             // KuzuNode handling: when a node is returned, use its properties
             if let node = value as? KuzuNode {
                 row[columnName] = node.properties
@@ -56,7 +59,7 @@ extension QueryResult {
                 row[columnName] = try decodeValue(value)
             }
         }
-        
+
         return row
     }
     
@@ -65,12 +68,17 @@ extension QueryResult {
         guard hasNext() else {
             throw GraphError.invalidOperation(message: "No rows returned from query")
         }
-        
+
         guard let tuple = try getNext() else {
             throw GraphError.invalidOperation(message: "Failed to get next tuple")
         }
-        let value = try decodeValue(tuple.getValue(UInt64(columnIndex)))
-        return try castValue(value, to: type)
+
+        guard let value = try tuple.getValue(UInt64(columnIndex)) else {
+            throw GraphError.invalidOperation(message: "NULL value at column index \(columnIndex), but a non-null value is required")
+        }
+
+        let decodedValue = try decodeValue(value)
+        return try castValue(decodedValue, to: type)
     }
     
     // MARK: - Type-Safe Mapping
@@ -138,8 +146,11 @@ extension QueryResult {
         // Standard processing: build dictionary from row
         var row: [String: Any] = [:]
         for (index, columnName) in columnNames.enumerated() {
-            let value = try tuple.getValue(UInt64(index))
-            
+            guard let value = try tuple.getValue(UInt64(index)) else {
+                row[columnName] = NSNull()
+                continue
+            }
+
             // KuzuNode handling: when a node is returned, use its properties
             if let node = value as? KuzuNode {
                 row[columnName] = node.properties
@@ -147,7 +158,7 @@ extension QueryResult {
                 row[columnName] = try decodeValue(value)
             }
         }
-        
+
         return try decoder.decode(type, from: row)
     }
     
@@ -373,18 +384,22 @@ extension QueryResult {
     public func allValues() throws -> [[Any]] {
         var allRows: [[Any]] = []
         let columnCount = getColumnCount()
-        
+
         while hasNext() {
             guard let tuple = try getNext() else { break }
             var row: [Any] = []
-            
+
             for i in 0..<columnCount {
-                row.append(try decodeValue(tuple.getValue(UInt64(i))))
+                if let value = try tuple.getValue(UInt64(i)) {
+                    row.append(try decodeValue(value))
+                } else {
+                    row.append(NSNull())
+                }
             }
-            
+
             allRows.append(row)
         }
-        
+
         return allRows
     }
     
