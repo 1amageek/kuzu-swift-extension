@@ -66,7 +66,6 @@ public struct GraphConfiguration: Sendable {
         public let maxConnections: Int
         public let minConnections: Int
         public let connectionTimeout: TimeInterval
-        public let extensions: Set<KuzuExtension>
         public let enableLogging: Bool
         public let maxNumThreadsPerQuery: Int?
         public let queryTimeout: TimeInterval?
@@ -76,7 +75,6 @@ public struct GraphConfiguration: Sendable {
             maxConnections: Int? = nil,
             minConnections: Int = 1,
             connectionTimeout: TimeInterval = 30.0,
-            extensions: Set<KuzuExtension> = [],
             enableLogging: Bool = false,
             maxNumThreadsPerQuery: Int? = nil,
             queryTimeout: TimeInterval? = nil,
@@ -86,7 +84,6 @@ public struct GraphConfiguration: Sendable {
             self.maxConnections = maxConnections ?? Self.defaultMaxConnections
             self.minConnections = minConnections
             self.connectionTimeout = connectionTimeout
-            self.extensions = Self.filterExtensions(extensions)
             self.enableLogging = enableLogging
             self.maxNumThreadsPerQuery = maxNumThreadsPerQuery
             self.queryTimeout = queryTimeout ?? Self.defaultQueryTimeout
@@ -126,40 +123,6 @@ public struct GraphConfiguration: Sendable {
             return 256 * 1024 * 1024  // 256MB
             #endif
         }
-
-        private static func filterExtensions(_ requested: Set<KuzuExtension>) -> Set<KuzuExtension> {
-            #if os(iOS) || os(tvOS) || os(watchOS)
-            // On iOS platforms, we now support vector extension as it's statically linked in kuzu-swift
-            // FTS extension support is also available through static linking
-            let supported: Set<KuzuExtension> = [.json, .vector, .fts]
-            let filtered = requested.intersection(supported)
-            if filtered != requested {
-                let unsupported = requested.subtracting(filtered)
-                print("Warning: Extensions \(unsupported) are not supported on this platform")
-            }
-            return filtered
-            #else
-            return requested
-            #endif
-        }
-    }
-}
-
-// MARK: - Kuzu Extensions
-
-/// Represents available Kuzu extensions
-public enum KuzuExtension: String, CaseIterable, Sendable, Hashable {
-    case httpfs
-    case json
-    case fts  // Full-text search
-    case vector  // Vector similarity search
-    
-    public var extensionName: String {
-        return self.rawValue
-    }
-    
-    public var loadStatement: String {
-        return "LOAD EXTENSION \(extensionName)"
     }
 }
 

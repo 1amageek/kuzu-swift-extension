@@ -22,24 +22,14 @@ The library follows a clean layered architecture:
 
 ## Extension Support
 
-### Static Linking Only
-kuzu-swift-extension supports **static linking only** for Kuzu extensions. Dynamic library loading is not supported, especially on iOS platforms due to security restrictions.
+All extensions (Vector, FTS, JSON) are **statically linked** in kuzu-swift and available by default on all platforms. No configuration or loading required.
 
 ### Vector Extension
 The vector extension is statically linked in kuzu-swift, providing:
 - Vector data storage with `FLOAT[n]` or `DOUBLE[n]` types
 - HNSW index support for similarity search
 - Built-in vector functions
-- **No `LOAD EXTENSION` required** - already built into the library
-- Full support on iOS/tvOS/watchOS platforms
-
-### Available Extensions
-| Extension | Status | Platform Support | Notes |
-|-----------|--------|-----------------|-------|
-| Vector | ✅ Static | All platforms | Built-in, no loading required |
-| FTS | ✅ Static | All platforms | Full-text search |
-| JSON | ✅ Static | All platforms | JSON operations |
-| httpfs | ❌ | macOS only | Requires dynamic loading |
+- Full support on all platforms (iOS/tvOS/watchOS/macOS)
 
 ### Vector Operations Syntax
 ```swift
@@ -214,20 +204,16 @@ let users = try result.map(to: User.self)
 
 ### iOS/tvOS/watchOS
 - All extensions are statically linked
-- No dynamic library loading support
-- Vector operations fully supported
+- Vector, FTS, and JSON operations fully supported
 - HNSW indexes work out of the box
-- No need for `LOAD EXTENSION` statements
 
 ### macOS
 - Static extensions work identically to iOS
-- Some additional dynamic extensions available
 - Better performance for large datasets
 
 ## Troubleshooting
 
-### Extension Loading
-- **"Extension not found" error**: Extensions are statically linked, no loading needed
+### Vector Operations
 - **Vector functions not available**: Check if using correct syntax (FLOAT[] not DOUBLE[])
 - **HNSW index creation fails**: Ensure column is FLOAT[n] or DOUBLE[n] type
 
