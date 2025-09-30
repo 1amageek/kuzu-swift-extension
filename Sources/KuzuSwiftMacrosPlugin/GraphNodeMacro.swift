@@ -5,7 +5,35 @@ import SwiftSyntaxMacros
 import SwiftDiagnostics
 
 public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
-    
+
+    /// Extract CodingKeys from the struct if explicitly defined
+    private static func extractCodingKeys(from members: MemberBlockItemListSyntax) -> Set<String>? {
+        for member in members {
+            guard let enumDecl = member.decl.as(EnumDeclSyntax.self),
+                  enumDecl.name.text == "CodingKeys" else {
+                continue
+            }
+
+            var keys = Set<String>()
+            for caseMember in enumDecl.memberBlock.members {
+                guard let caseDecl = caseMember.decl.as(EnumCaseDeclSyntax.self) else {
+                    continue
+                }
+
+                for element in caseDecl.elements {
+                    keys.insert(element.name.text)
+                }
+            }
+            return keys
+        }
+        return nil
+    }
+
+    /// Check if a property is a computed property (has accessor block)
+    private static func isComputedProperty(_ binding: PatternBindingSyntax) -> Bool {
+        return binding.accessorBlock != nil
+    }
+
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -19,14 +47,17 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             context.diagnose(diagnostic)
             return []
         }
-        
+
         let structName = structDecl.name.text
         let members = structDecl.memberBlock.members
-        
+
+        // Extract explicit CodingKeys if present
+        let explicitCodingKeys = extractCodingKeys(from: members)
+
         var columns: [(name: String, type: String, constraints: [String])] = []
         var ddlColumns: [String] = []
         var idProperties: [(name: String, location: SyntaxProtocol)] = []
-        
+
         for member in members {
             guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
                   let binding = variableDecl.bindings.first,
@@ -34,8 +65,20 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                   let typeAnnotation = binding.typeAnnotation?.type else {
                 continue
             }
-            
+
             let propertyName = pattern.identifier.text
+
+            // Skip computed properties (mimicking Codable behavior)
+            if isComputedProperty(binding) {
+                continue
+            }
+
+            // If explicit CodingKeys exist, only process properties listed there
+            if let codingKeys = explicitCodingKeys {
+                guard codingKeys.contains(propertyName) else {
+                    continue
+                }
+            }
             let swiftType = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
             let kuzuType = MacroUtilities.mapSwiftTypeToKuzuType(swiftType)
             

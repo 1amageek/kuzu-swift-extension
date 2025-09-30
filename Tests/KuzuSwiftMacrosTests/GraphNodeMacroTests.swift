@@ -144,16 +144,147 @@ struct GraphNodeMacroTests {
                 var username: String
                 var status: String
                 var balance: Double
-            
+
                 public static let _kuzuDDL: String = "CREATE NODE TABLE Account (id STRING PRIMARY KEY, username STRING UNIQUE, status STRING DEFAULT 'active', balance DOUBLE)"
-            
+
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "username", type: "STRING", constraints: ["UNIQUE"]), (name: "status", type: "STRING", constraints: ["DEFAULT 'active'"]), (name: "balance", type: "DOUBLE", constraints: [])]
             }
-            
+
             extension Account: GraphNodeModel {
             }
             """,
             macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Unique": UniqueMacro.self, "Default": DefaultMacro.self]
+        )
+    }
+
+    @Test("GraphNode with computed properties should exclude them")
+    func graphNodeWithComputedProperties() throws {
+        assertMacroExpansion(
+            """
+            @GraphNode
+            struct PhotoAsset {
+                @ID var id: String
+                @Vector(dimensions: 3) var labColor: [Float]
+                var enabled: Bool
+                var creationDate: Date?
+
+                var labColorObject: LabColor {
+                    return LabColor(L: labColor[0], a: labColor[1], b: labColor[2])
+                }
+            }
+            """,
+            expandedSource: """
+            struct PhotoAsset {
+                var id: String
+                var labColor: [Float]
+                var enabled: Bool
+                var creationDate: Date?
+
+                var labColorObject: LabColor {
+                    return LabColor(L: labColor[0], a: labColor[1], b: labColor[2])
+                }
+
+                public static let _kuzuDDL: String = "CREATE NODE TABLE PhotoAsset (id STRING PRIMARY KEY, labColor FLOAT[3], enabled BOOLEAN, creationDate TIMESTAMP)"
+
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "labColor", type: "FLOAT[3]", constraints: []), (name: "enabled", type: "BOOLEAN", constraints: []), (name: "creationDate", type: "TIMESTAMP", constraints: [])]
+            }
+
+            extension PhotoAsset: GraphNodeModel {
+            }
+            """,
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Vector": VectorMacro.self]
+        )
+    }
+
+    @Test("GraphNode with explicit CodingKeys should respect them")
+    func graphNodeWithExplicitCodingKeys() throws {
+        assertMacroExpansion(
+            """
+            @GraphNode
+            struct Product {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case price
+                }
+
+                @ID var id: String
+                var name: String
+                var price: Double
+                var internalNotes: String
+            }
+            """,
+            expandedSource: """
+            struct Product {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case name
+                    case price
+                }
+
+                var id: String
+                var name: String
+                var price: Double
+                var internalNotes: String
+
+                public static let _kuzuDDL: String = "CREATE NODE TABLE Product (id STRING PRIMARY KEY, name STRING, price DOUBLE)"
+
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "name", type: "STRING", constraints: []), (name: "price", type: "DOUBLE", constraints: [])]
+            }
+
+            extension Product: GraphNodeModel {
+            }
+            """,
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self]
+        )
+    }
+
+    @Test("GraphNode with both CodingKeys and computed properties")
+    func graphNodeWithCodingKeysAndComputedProperties() throws {
+        assertMacroExpansion(
+            """
+            @GraphNode
+            struct Order {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case amount
+                    case createdAt
+                }
+
+                @ID var id: String
+                var amount: Double
+                @Timestamp var createdAt: Date
+                var computedTax: Double {
+                    return amount * 0.1
+                }
+                var internalMemo: String
+            }
+            """,
+            expandedSource: """
+            struct Order {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case amount
+                    case createdAt
+                }
+
+                var id: String
+                var amount: Double
+                var createdAt: Date
+                var computedTax: Double {
+                    return amount * 0.1
+                }
+                var internalMemo: String
+
+                public static let _kuzuDDL: String = "CREATE NODE TABLE Order (id STRING PRIMARY KEY, amount DOUBLE, createdAt TIMESTAMP)"
+
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "amount", type: "DOUBLE", constraints: []), (name: "createdAt", type: "TIMESTAMP", constraints: [])]
+            }
+
+            extension Order: GraphNodeModel {
+            }
+            """,
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Timestamp": TimestampMacro.self]
         )
     }
 }
