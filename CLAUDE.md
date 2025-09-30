@@ -170,18 +170,30 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 
 ## Common Patterns
 
+### Basic Usage (SwiftData-style)
+```swift
+// Create container with models
+let container = try await GraphContainer(for: User.self, Post.self)
+let context = GraphContext(container)
+
+// Insert and save
+let user = User(name: "Alice", age: 30)
+context.insert(user)
+try await context.save()
+```
+
 ### Transaction Usage
 ```swift
-try await graph.withTransaction { tx in
-    // All operations use same connection
-    try tx.save(node)
-    let result = try tx.raw("MATCH (n) RETURN n")
+try await context.transaction {
+    context.insert(user1)
+    context.insert(user2)
+    // Automatically saved when block completes
 }
 ```
 
 ### Query DSL (Beta 2: Enhanced)
 ```swift
-let results = try await graph.queryArray(User.self) {
+let results = try await context.queryArray(User.self) {
     Match.node(User.self, alias: "u")
     Where(path(\User.age, on: "u") > 25)
     Return.node("u")  // Beta 2: Direct node returns now supported
@@ -190,7 +202,7 @@ let results = try await graph.queryArray(User.self) {
 
 ### Raw Cypher (Beta 2: Enhanced)
 ```swift
-let result = try await graph.raw(
+let result = try await context.raw(
     "MATCH (u:User) WHERE u.age > $minAge RETURN u",
     bindings: ["minAge": 25]
 )

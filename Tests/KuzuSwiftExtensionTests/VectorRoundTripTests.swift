@@ -30,7 +30,11 @@ struct VectorRoundTripTests {
     @Test("Complete round trip: create, save, and retrieve with vector search")
     func testCompleteRoundTrip() async throws {
         // 1. Create context with model registration
-        let context = try await GraphDatabase.createTestContext(models: [RoundTripPhoto.self])
+        let container = try await GraphContainer(
+            for: RoundTripPhoto.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // 2. Create test data
         let photos = [
@@ -86,7 +90,11 @@ struct VectorRoundTripTests {
 
     @Test("Vector search returns correct data types")
     func testVectorSearchDataTypes() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [RoundTripPhoto.self])
+        let container = try await GraphContainer(
+            for: RoundTripPhoto.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Insert a photo
         let photo = RoundTripPhoto(
@@ -127,7 +135,11 @@ struct VectorRoundTripTests {
     @Test("Update existing photo with vector property",
           .disabled("KuzuDB vector index may not update immediately after DELETE+CREATE"))
     func testUpdateWithVectorProperty() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [RoundTripPhoto.self])
+        let container = try await GraphContainer(
+            for: RoundTripPhoto.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Insert initial photo
         let photo1 = RoundTripPhoto(
@@ -188,7 +200,11 @@ struct VectorRoundTripTests {
 
     @Test("Multiple models with vectors can coexist")
     func testMultipleModelsWithVectors() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [RoundTripDocument.self, RoundTripImage.self])
+        let container = try await GraphContainer(
+            for: RoundTripDocument.self, RoundTripImage.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Insert document
         let doc = RoundTripDocument(
@@ -241,7 +257,11 @@ struct VectorRoundTripTests {
 
     @Test("Vector search with K-nearest neighbors")
     func testKNearestNeighbors() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [RoundTripPhoto.self])
+        let container = try await GraphContainer(
+            for: RoundTripPhoto.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Create a cluster of photos with similar colors
         let photos = [

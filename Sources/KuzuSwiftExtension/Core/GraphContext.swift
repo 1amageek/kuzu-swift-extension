@@ -39,9 +39,11 @@ public final class GraphContext: Sendable {
         var deletesByType: [String: [any GraphNodeModel]] = [:]
     }
 
-    public init(configuration: GraphConfiguration = GraphConfiguration()) async throws {
-        self.configuration = configuration
-        self.container = try await GraphContainer(configuration: configuration)
+    /// Primary initializer - Create a context from a container (ModelContext equivalent)
+    /// - Parameter container: The container to use for this context
+    public init(_ container: GraphContainer) {
+        self.container = container
+        self.configuration = container.configuration
         self.encoder = KuzuEncoder(configuration: configuration.encodingConfiguration)
         self.decoder = KuzuDecoder(configuration: configuration.decodingConfiguration)
     }
@@ -556,90 +558,110 @@ public final class GraphContext: Sendable {
     public func createSchemasIfNotExist(for types: [any _KuzuGraphModel.Type]) async throws {
         guard !types.isEmpty else { return }
 
-        // Get all existing tables in a single query
-        var existingTables: Set<String> = []
-        do {
-            let result = try await raw("SHOW TABLES")
-            while result.hasNext() {
-                guard let row = try result.getNext() else { continue }
-                if let name = try row.getValue(0) as? String {
-                    existingTables.insert(name)
-                }
-            }
-        } catch {
-            // If SHOW TABLES fails, proceed with creating all tables
-            existingTables = []
-        }
+        try await container.withConnection { connection in
+            // Fetch existing tables and indexes once
+            let existingTables = try Self.fetchExistingTables(connection)
+            let existingIndexes = try Self.fetchExistingIndexes(connection)
 
-        // Create only non-existing tables
-        for type in types {
-            let tableName = String(describing: type)
-
-            // Skip if table already exists
-            if existingTables.contains(tableName) {
-                continue
-            }
-
-            // Try to create the table
-            do {
-                _ = try await raw(type._kuzuDDL)
-            } catch {
-                // Check if it's an "already exists" error
-                let errorMessage = String(describing: error).lowercased()
-                if errorMessage.contains("already exists") ||
-                   errorMessage.contains("catalog") ||
-                   errorMessage.contains("binder exception") {
-                    // Table exists - ignore the error
-                    continue
-                }
-                throw error
-            }
-        }
-
-        // Create vector indexes for models with @Vector properties
-        for type in types {
-            // Check if the type has vector properties
-            if let vectorType = type as? any HasVectorProperties.Type {
-                // Use type erasure to call the static method
-                try await createVectorIndexesForType(vectorType, context: self)
+            // Create schema and indexes for each model
+            for model in types {
+                try Self.createSchemaForModel(
+                    model,
+                    existingTables: existingTables,
+                    existingIndexes: existingIndexes,
+                    connection: connection
+                )
             }
         }
     }
 
-    /// Helper function to create vector indexes with type erasure
-    private func createVectorIndexesForType(
-        _ type: any HasVectorProperties.Type,
-        context: GraphContext
-    ) async throws {
-        // We need to cast to a specific type that conforms to both protocols
-        // This is safe because the macro ensures both conformances
-        guard let graphModelType = type as? any _KuzuGraphModel.Type else {
+    /// Fetch existing table names from the database
+    private static func fetchExistingTables(_ connection: Connection) throws -> Set<String> {
+        var tables = Set<String>()
+
+        do {
+            let result = try connection.query("SHOW TABLES")
+            while result.hasNext() {
+                if let row = try result.getNext(),
+                   let name = try row.getValue(0) as? String {
+                    tables.insert(name)
+                }
+            }
+        } catch {
+            // If SHOW TABLES fails, return empty set
+            return []
+        }
+
+        return tables
+    }
+
+    /// Fetch existing vector indexes from the database
+    private static func fetchExistingIndexes(_ connection: Connection) throws -> Set<String> {
+        var indexes = Set<String>()
+
+        do {
+            let result = try connection.query("CALL SHOW_INDEXES() RETURN *")
+            while result.hasNext() {
+                if let row = try result.getNext(),
+                   let tableName = try row.getValue(0) as? String,
+                   let indexName = try row.getValue(1) as? String {
+                    // Format: "TableName.indexName" for unique identification
+                    indexes.insert("\(tableName).\(indexName)")
+                }
+            }
+        } catch {
+            // If SHOW_INDEXES fails, return empty set
+            return []
+        }
+
+        return indexes
+    }
+
+    /// Create schema and indexes for a single model
+    private static func createSchemaForModel(
+        _ type: any _KuzuGraphModel.Type,
+        existingTables: Set<String>,
+        existingIndexes: Set<String>,
+        connection: Connection
+    ) throws {
+        let tableName = String(describing: type)
+
+        // Step 1: Create table (if it doesn't exist)
+        if !existingTables.contains(tableName) {
+            do {
+                _ = try connection.query(type._kuzuDDL)
+            } catch {
+                // Ignore "already exists" error (race condition handling)
+                let errorMessage = String(describing: error).lowercased()
+                if !errorMessage.contains("already exists") &&
+                   !errorMessage.contains("catalog") &&
+                   !errorMessage.contains("binder exception") {
+                    throw error
+                }
+            }
+        }
+
+        // Step 2: Create vector indexes (if they don't exist)
+        guard let vectorType = type as? any HasVectorProperties.Type else {
             return
         }
 
-        // Extract table name
-        let tableName = String(describing: graphModelType)
-
-        // Use VectorIndexManager to create indexes
-        for property in type._vectorProperties {
+        for property in vectorType._vectorProperties {
             let indexName = property.indexName(for: tableName)
+            let indexKey = "\(tableName).\(indexName)"
 
-            // Check if index exists
-            if try await VectorIndexManager.hasVectorIndex(
-                table: tableName,
-                indexName: indexName,
-                context: context
-            ) {
+            // Skip if index already exists
+            if existingIndexes.contains(indexKey) {
                 continue
             }
 
             // Create the index
-            try await VectorIndexManager.createVectorIndex(
+            try VectorIndexManager.createVectorIndex(
                 table: tableName,
                 column: property.propertyName,
                 indexName: indexName,
                 metric: property.metric,
-                context: context
+                connection: connection
             )
         }
     }

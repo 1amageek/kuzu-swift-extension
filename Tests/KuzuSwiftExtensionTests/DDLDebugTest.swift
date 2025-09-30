@@ -64,7 +64,8 @@ struct DDLDebugTest {
         
         // Try to create a context and schema
         let config = GraphConfiguration(databasePath: ":memory:")
-        let context = try await GraphContext(configuration: config)
+        let container = try await GraphContainer(configuration: config)
+        let context = GraphContext(container)
         
         // Schema creation should not throw
         try await context.createSchema(for: [

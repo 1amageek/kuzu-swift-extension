@@ -43,7 +43,8 @@ struct MigrationEdgeFixTests {
         }
         
         // Create context and migration manager
-        let context = try await GraphContext(configuration: configuration)
+        let container = try await GraphContainer(configuration: configuration)
+        let context = GraphContext(container)
         let migrationManager = MigrationManager(context: context, policy: .safe)
         
         // This should now succeed with our fix
@@ -124,7 +125,8 @@ struct MigrationEdgeFixTests {
         }
         
         // Create context and migration manager
-        let context = try await GraphContext(configuration: configuration)
+        let container = try await GraphContainer(configuration: configuration)
+        let context = GraphContext(container)
         let migrationManager = MigrationManager(context: context, policy: .safe)
         
         // This should succeed as before
@@ -154,7 +156,8 @@ struct MigrationEdgeFixTests {
         }
         
         // Create context and migration manager
-        let context = try await GraphContext(configuration: configuration)
+        let container = try await GraphContainer(configuration: configuration)
+        let context = GraphContext(container)
         let migrationManager = MigrationManager(context: context, policy: .safe)
         
         // First migrate nodes

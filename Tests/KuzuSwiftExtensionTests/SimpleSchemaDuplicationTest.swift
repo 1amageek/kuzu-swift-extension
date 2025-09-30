@@ -20,7 +20,8 @@ struct SimpleSchemaDuplicationTest {
             databasePath: ":memory:",
             migrationMode: .automatic
         )
-        let context = try await GraphContext(configuration: config)
+        let container = try await GraphContainer(configuration: config)
+        let context = GraphContext(container)
         
         // First creation - should succeed
         try await context.createSchemaIfNotExists(for: TestItem.self)
@@ -43,7 +44,8 @@ struct SimpleSchemaDuplicationTest {
             databasePath: ":memory:",
             migrationMode: .none  // Manual control
         )
-        let context = try await GraphContext(configuration: config)
+        let container = try await GraphContainer(configuration: config)
+        let context = GraphContext(container)
         
         // Create schema manually first
         let ddl = TestItem._kuzuDDL
@@ -63,14 +65,17 @@ struct SimpleSchemaDuplicationTest {
         await context.close()
     }
     
-    @Test("Automatic migration mode in GraphDatabase")  
+    @Test("Automatic migration mode with GraphContainer")
     func testAutomaticMigrationMode() async throws {
         // Use the new container API with automatic migration
-        let context = try await GraphDatabase.container(
-            for: [TestItem.self],
-            inMemory: true,
-            migrationMode: .automatic
+        let container = try await GraphContainer(
+            for: TestItem.self,
+            configuration: GraphConfiguration(
+                databasePath: ":memory:",
+                migrationMode: .automatic
+            )
         )
+        let context = GraphContext(container)
         
         // Try to create schema again - should not error
         try await context.createSchemasIfNotExist(for: [TestItem.self])

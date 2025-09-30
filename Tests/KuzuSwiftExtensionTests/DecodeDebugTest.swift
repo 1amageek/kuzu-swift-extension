@@ -21,7 +21,8 @@ struct DecodeDebugTest {
     @Test("Debug decode issue")
     func debugDecode() async throws {
         let config = GraphConfiguration(databasePath: ":memory:")
-        let context = try await GraphContext(configuration: config)
+        let container = try await GraphContainer(configuration: config)
+        let context = GraphContext(container)
         
         // Create schema
         try await context.createSchema(for: [DecodeTestUser.self])

@@ -25,7 +25,8 @@ struct QueryTestWrote: Codable {
 struct NewQueryDSLTests {
     
     func setupGraph() async throws -> GraphContext {
-        let graph = try await GraphContext(configuration: GraphConfiguration(databasePath: ":memory:"))
+        let container = try await GraphContainer(configuration: GraphConfiguration(databasePath: ":memory:"))
+        let graph = GraphContext(container)
         
         // Create schema
         try await graph.raw(QueryTestUser._kuzuDDL)

@@ -7,38 +7,31 @@ struct VectorIndexManager {
     /// - Parameters:
     ///   - table: The table name
     ///   - indexName: The index name
-    ///   - context: The GraphContext to use for queries
+    ///   - connection: The database connection to use
     /// - Returns: true if the index exists, false otherwise
     static func hasVectorIndex(
         table: String,
         indexName: String,
-        context: GraphContext
-    ) async throws -> Bool {
-        do {
-            // Attempt to use the index with a dummy query
-            // This will fail if the index doesn't exist
-            let query = """
-                CALL QUERY_VECTOR_INDEX('\(table)', '\(indexName)', CAST([0.0] AS FLOAT[1]), 1)
-                RETURN node
-                """
-            _ = try await context.raw(query)
-            return true
-        } catch {
-            // Check error message to determine if index doesn't exist
-            let errorMessage = String(describing: error).lowercased()
+        connection: Connection
+    ) throws -> Bool {
+        // Query the catalog for existing indexes
+        let result = try connection.query("CALL SHOW_INDEXES() RETURN *")
 
-            if errorMessage.contains("does not exist") ||
-               errorMessage.contains("not found") ||
-               errorMessage.contains("doesn't have an index") ||
-               errorMessage.contains("unknown index") {
-                return false
+        while result.hasNext() {
+            if let row = try result.getNext() {
+                // Column structure: 0=table_name, 1=index_name, 2=index_type, ...
+                if let tableName = try row.getValue(0) as? String,
+                   let idxName = try row.getValue(1) as? String,
+                   let indexType = try row.getValue(2) as? String {
+                    if tableName == table &&
+                       idxName == indexName &&
+                       indexType == "HNSW" {
+                        return true
+                    }
+                }
             }
-
-            // For other errors (dimension mismatch, etc.), the index might exist
-            // but we can't be sure. Better to return false and attempt creation
-            // (creation will fail gracefully if it already exists)
-            return false
         }
+        return false
     }
 
     /// Create a vector index for a property
@@ -47,15 +40,15 @@ struct VectorIndexManager {
     ///   - column: The column name
     ///   - indexName: The index name
     ///   - metric: The distance metric
-    ///   - context: The GraphContext to use for index creation
+    ///   - connection: The database connection to use
     /// - Throws: GraphError if index creation fails
     static func createVectorIndex(
         table: String,
         column: String,
         indexName: String,
         metric: VectorMetric,
-        context: GraphContext
-    ) async throws {
+        connection: Connection
+    ) throws {
         let query = """
             CALL CREATE_VECTOR_INDEX(
                 '\(table)',
@@ -66,7 +59,7 @@ struct VectorIndexManager {
             """
 
         do {
-            _ = try await context.raw(query)
+            _ = try connection.query(query)
         } catch {
             // Check if it's an "already exists" error - if so, ignore
             let errorMessage = String(describing: error).lowercased()
@@ -85,35 +78,6 @@ struct VectorIndexManager {
         }
     }
 
-    /// Create all vector indexes for a model type
-    /// - Parameters:
-    ///   - type: The model type conforming to HasVectorProperties
-    ///   - context: The GraphContext to use for index creation
-    /// - Throws: GraphError if index creation fails
-    static func createVectorIndexes<T: _KuzuGraphModel & HasVectorProperties>(
-        for type: T.Type,
-        context: GraphContext
-    ) async throws {
-        let tableName = String(describing: type)
-
-        for property in T._vectorProperties {
-            let indexName = property.indexName(for: tableName)
-
-            // Check if index already exists (idempotency)
-            if try await hasVectorIndex(table: tableName, indexName: indexName, context: context) {
-                continue
-            }
-
-            // Create the index
-            try await createVectorIndex(
-                table: tableName,
-                column: property.propertyName,
-                indexName: indexName,
-                metric: property.metric,
-                context: context
-            )
-        }
-    }
 }
 
 // MARK: - GraphError Extensions

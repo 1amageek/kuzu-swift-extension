@@ -20,7 +20,8 @@ struct MinimalSchemaDuplicationTest {
             databasePath: ":memory:",
             migrationMode: .automatic
         )
-        let context = try await GraphContext(configuration: config)
+        let container = try await GraphContainer(configuration: config)
+        let context = GraphContext(container)
         
         // First call - creates the table
         try await context.createSchemaIfNotExists(for: DuplicationTestNode.self)
@@ -37,14 +38,17 @@ struct MinimalSchemaDuplicationTest {
         await context.close()
     }
     
-    @Test("GraphDatabase.container with automatic migration")
+    @Test("GraphContainer with automatic migration")
     func testAutomaticMigration() async throws {
         // Use SwiftData-style container API
-        let context = try await GraphDatabase.container(
-            for: [DuplicationTestNode.self],
-            inMemory: true,
-            migrationMode: .automatic
+        let container = try await GraphContainer(
+            for: DuplicationTestNode.self,
+            configuration: GraphConfiguration(
+                databasePath: ":memory:",
+                migrationMode: .automatic
+            )
         )
+        let context = GraphContext(container)
         
         // Try creating schema again - should not error
         try await context.createSchemaIfNotExists(for: DuplicationTestNode.self)
@@ -63,7 +67,8 @@ struct MinimalSchemaDuplicationTest {
             databasePath: ":memory:",
             migrationMode: .none
         )
-        let context = try await GraphContext(configuration: config)
+        let container = try await GraphContainer(configuration: config)
+        let context = GraphContext(container)
         
         // Manually create the table first
         let ddl = DuplicationTestNode._kuzuDDL

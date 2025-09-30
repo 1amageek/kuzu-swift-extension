@@ -59,24 +59,32 @@ struct VectorIndexTests {
 
     @Test("Automatic index creation on registration")
     func testAutomaticIndexCreation() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [PhotoAsset.self])
+        let container = try await GraphContainer(
+            for: PhotoAsset.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Check if index exists - first try to query it
-        let hasIndex = try await VectorIndexManager.hasVectorIndex(
-            table: "PhotoAsset",
-            indexName: "photoasset_labcolor_idx",
-            context: context
-        )
+        let hasIndex = try await context.container.withConnection { connection in
+            try VectorIndexManager.hasVectorIndex(
+                table: "PhotoAsset",
+                indexName: "photoasset_labcolor_idx",
+                connection: connection
+            )
+        }
 
         if !hasIndex {
             print("⚠️  Index not created automatically, creating manually...")
-            try await VectorIndexManager.createVectorIndex(
-                table: "PhotoAsset",
-                column: "labColor",
-                indexName: "photoasset_labcolor_idx",
-                metric: .l2,
-                context: context
-            )
+            try await context.container.withConnection { connection in
+                try VectorIndexManager.createVectorIndex(
+                    table: "PhotoAsset",
+                    column: "labColor",
+                    indexName: "photoasset_labcolor_idx",
+                    metric: .l2,
+                    connection: connection
+                )
+            }
         }
 
         // Insert test data
@@ -107,7 +115,11 @@ struct VectorIndexTests {
 
     @Test("Idempotent index creation")
     func testIdempotentIndexCreation() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [PhotoAsset.self])
+        let container = try await GraphContainer(
+            for: PhotoAsset.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Register again - should not fail
         try await context.createSchemasIfNotExist(for: [PhotoAsset.self])
@@ -132,7 +144,11 @@ struct VectorIndexTests {
 
     @Test("Multiple vector indexes creation")
     func testMultipleVectorIndexes() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [MultiVectorModel.self])
+        let container = try await GraphContainer(
+            for: MultiVectorModel.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Insert test data
         let item = MultiVectorModel(
@@ -163,7 +179,11 @@ struct VectorIndexTests {
 
     @Test("Vector search with filtering")
     func testVectorSearchWithFiltering() async throws {
-        let context = try await GraphDatabase.createTestContext(models: [PhotoAsset.self])
+        let container = try await GraphContainer(
+            for: PhotoAsset.self,
+            configuration: GraphConfiguration(databasePath: ":memory:")
+        )
+        let context = GraphContext(container)
 
         // Insert multiple photos
         let photos = [

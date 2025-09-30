@@ -15,7 +15,8 @@ struct VectorExtensionTests {
                 extensions: [.vector] // Request vector extension explicitly
             )
         )
-        return try await GraphContext(configuration: config)
+        let container = try await GraphContainer(configuration: config)
+        return GraphContext(container)
     }
 
     // MARK: - Tests
