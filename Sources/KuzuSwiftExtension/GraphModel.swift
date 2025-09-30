@@ -54,24 +54,15 @@ public extension GraphContext {
                 """
         }
 
-        #if DEBUG
-        print("[DEBUG] save() query:\n\(mergeQuery)")
-        print("[DEBUG] bindings: \(properties)")
-        #endif
-
         let result = try await raw(mergeQuery, bindings: properties)
         return try result.decode(T.self)
     }
     
-    /// Save multiple model instances (sequential - use saveAll for better performance)
+    /// Save multiple model instances using batch operation
+    /// This method automatically uses saveAll() for optimal performance
     @discardableResult
     func save<T: GraphNodeModel>(_ models: [T]) async throws -> [T] {
-        var results: [T] = []
-        for model in models {
-            let saved = try await save(model)
-            results.append(saved)
-        }
-        return results
+        return try await saveAll(models)
     }
 
     /// Save multiple model instances in a single batch operation using UNWIND + MERGE.
@@ -199,11 +190,32 @@ public extension GraphContext {
         _ = try await raw(deleteQuery, bindings: ["id": id ?? NSNull()])
     }
     
-    /// Delete multiple model instances
+    /// Delete multiple model instances in a single batch operation using UNWIND
     func delete<T: GraphNodeModel>(_ models: [T]) async throws {
-        for model in models {
-            try await delete(model)
+        guard !models.isEmpty else { return }
+
+        guard let idColumn = T._kuzuColumns.first else {
+            throw GraphError.invalidConfiguration(message: "Model must have at least one column")
         }
+
+        // Extract IDs from all models
+        let encoder = KuzuEncoder()
+        let ids: [any Sendable] = try models.map { model in
+            let properties = try encoder.encode(model)
+            guard let id = properties[idColumn.name] else {
+                throw GraphError.invalidOperation(message: "Model missing ID property")
+            }
+            return id
+        }
+
+        // Use UNWIND for batch delete
+        let deleteQuery = """
+            UNWIND $ids AS id
+            MATCH (n:\(T.modelName) {\(idColumn.name): id})
+            DELETE n
+            """
+
+        _ = try await raw(deleteQuery, bindings: ["ids": ids])
     }
     
     /// Delete all instances of a model type
@@ -320,6 +332,65 @@ public extension GraphContext {
         bindings["toId"] = toId
         
         _ = try await raw(query, bindings: bindings)
+    }
+
+    /// Create multiple relationships in a single batch operation using UNWIND
+    func createRelationships<From: GraphNodeModel & Encodable, To: GraphNodeModel & Encodable, Edge: _KuzuGraphModel & Encodable>(
+        relationships: [(from: From, to: To, edge: Edge)]
+    ) async throws {
+        guard !relationships.isEmpty else { return }
+
+        guard let fromIdColumn = From._kuzuColumns.first,
+              let toIdColumn = To._kuzuColumns.first else {
+            throw GraphError.invalidConfiguration(message: "Models must have at least one column")
+        }
+
+        let edgeColumns = Edge._kuzuColumns
+        let encoder = KuzuEncoder()
+
+        // Build relationship data
+        let items: [[String: any Sendable]] = try relationships.map { rel in
+            let sourceProperties = try encoder.encode(rel.from)
+            let targetProperties = try encoder.encode(rel.to)
+            let edgeProperties = try encoder.encode(rel.edge)
+
+            guard let fromId = sourceProperties[fromIdColumn.name],
+                  let toId = targetProperties[toIdColumn.name] else {
+                throw GraphError.invalidOperation(message: "Nodes must have ID properties")
+            }
+
+            var item: [String: any Sendable] = [
+                "fromId": fromId,
+                "toId": toId
+            ]
+
+            // Add edge properties with prefix
+            for (key, value) in edgeProperties {
+                item["edge_\(key)"] = value
+            }
+
+            return item
+        }
+
+        // Build edge property list
+        let edgePropertyList = edgeColumns.map { column -> String in
+            let value = column.type == "TIMESTAMP"
+                ? "timestamp(item.edge_\(column.name))"
+                : "item.edge_\(column.name)"
+            return "\(column.name): \(value)"
+        }.joined(separator: ", ")
+
+        let edgePropsClause = edgePropertyList.isEmpty ? "" : " {\(edgePropertyList)}"
+
+        // UNWIND + CREATE for batch relationship creation
+        let query = """
+            UNWIND $items AS item
+            MATCH (from:\(From.modelName) {\(fromIdColumn.name): item.fromId})
+            MATCH (to:\(To.modelName) {\(toIdColumn.name): item.toId})
+            CREATE (from)-[:\(String(describing: Edge.self))\(edgePropsClause)]->(to)
+            """
+
+        _ = try await raw(query, bindings: ["items": items])
     }
 }
 

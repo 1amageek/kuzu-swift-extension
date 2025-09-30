@@ -74,69 +74,54 @@ public struct TransactionalGraphContext: Sendable {
     
     // MARK: - Model Operations
     
-    /// Save a model instance within the transaction
+    /// Save a model instance within the transaction using MERGE for optimal performance
     public func save<T: GraphNodeModel>(_ model: T) throws -> T {
         let columns = T._kuzuColumns
-        
+
         // Extract properties using KuzuEncoder
         let encoder = KuzuEncoder()
         let properties = try encoder.encode(model)
-        
+
         // Check if exists (assuming first column is ID)
         guard let idColumn = columns.first else {
             throw GraphError.invalidConfiguration(message: "Model must have at least one column")
         }
-        
-        let idValue = properties[idColumn.name]
-        
-        let existsQuery = """
-            MATCH (n:\(T.modelName) {\(idColumn.name): $id})
-            RETURN count(n) > 0 as result
-            """
-        
-        let existsResult = try raw(existsQuery, bindings: ["id": idValue ?? NSNull()])
-        
-        // Get the first row to check existence
-        guard existsResult.hasNext(),
-              let tuple = try existsResult.getNext(),
-              let exists = try tuple.getValue(0) as? Bool else {
-            throw GraphError.invalidOperation(message: "Failed to check existence")
-        }
-        
-        if exists {
-            // Update existing
-            let setClause = QueryHelpers.buildPropertyAssignments(
-                columns: Array(columns.dropFirst()),
+
+        // Build property assignments for CREATE and MATCH
+        // ON CREATE SET cannot include primary key - it's already set in MERGE pattern
+        let nonIdColumns = Array(columns.dropFirst())
+
+        let mergeQuery: String
+        if nonIdColumns.isEmpty {
+            // If only ID column exists, no properties to update
+            mergeQuery = """
+                MERGE (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
+                RETURN n
+                """
+        } else {
+            let createProps = QueryHelpers.buildPropertyAssignments(
+                columns: nonIdColumns,
                 isAssignment: true
             )
             .map { "n.\($0)" }
             .joined(separator: ", ")
-            
-            if !setClause.isEmpty {
-                let updateQuery = """
-                    MATCH (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
-                    SET \(setClause)
-                    RETURN n
-                    """
-                
-                _ = try raw(updateQuery, bindings: properties)
-            }
-        } else {
-            // Insert new
-            let propertyList = QueryHelpers.buildPropertyAssignments(
-                columns: columns,
-                isAssignment: false
+
+            let updateProps = QueryHelpers.buildPropertyAssignments(
+                columns: nonIdColumns,
+                isAssignment: true
             )
+            .map { "n.\($0)" }
             .joined(separator: ", ")
-            
-            let createQuery = """
-                CREATE (n:\(T.modelName) {\(propertyList)})
+
+            mergeQuery = """
+                MERGE (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
+                ON CREATE SET \(createProps)
+                ON MATCH SET \(updateProps)
                 RETURN n
                 """
-            
-            _ = try raw(createQuery, bindings: properties)
         }
-        
+
+        _ = try raw(mergeQuery, bindings: properties)
         return model
     }
     

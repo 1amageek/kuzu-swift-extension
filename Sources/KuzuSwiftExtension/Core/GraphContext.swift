@@ -216,8 +216,46 @@ public struct GraphContext: Sendable {
     
     // Create schemas for multiple types, skipping existing ones
     public func createSchemasIfNotExist(for types: [any _KuzuGraphModel.Type]) async throws {
+        guard !types.isEmpty else { return }
+
+        // Get all existing tables in a single query
+        var existingTables: Set<String> = []
+        do {
+            let result = try await raw("SHOW TABLES")
+            while result.hasNext() {
+                guard let row = try result.getNext() else { continue }
+                if let name = try row.getValue(0) as? String {
+                    existingTables.insert(name)
+                }
+            }
+        } catch {
+            // If SHOW TABLES fails, proceed with creating all tables
+            existingTables = []
+        }
+
+        // Create only non-existing tables
         for type in types {
-            try await createSchemaIfNotExists(for: type)
+            let tableName = String(describing: type)
+
+            // Skip if table already exists
+            if existingTables.contains(tableName) {
+                continue
+            }
+
+            // Try to create the table
+            do {
+                _ = try await raw(type._kuzuDDL)
+            } catch {
+                // Check if it's an "already exists" error
+                let errorMessage = String(describing: error).lowercased()
+                if errorMessage.contains("already exists") ||
+                   errorMessage.contains("catalog") ||
+                   errorMessage.contains("binder exception") {
+                    // Table exists - ignore the error
+                    continue
+                }
+                throw error
+            }
         }
     }
     
