@@ -10,10 +10,7 @@ struct VectorExtensionTests {
 
     private func createTestGraph() async throws -> GraphContext {
         let config = GraphConfiguration(
-            databasePath: ":memory:",
-            options: GraphConfiguration.Options(
-                extensions: [.vector] // Request vector extension explicitly
-            )
+            databasePath: ":memory:"
         )
         let container = try await GraphContainer(configuration: config)
         return GraphContext(container)

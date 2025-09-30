@@ -9,7 +9,6 @@ public enum KuzuError: LocalizedError {
     case connectionPoolExhausted
     case connectionTimeout(duration: TimeInterval)
     case transactionFailed(reason: String)
-    case extensionLoadFailed(extension: String, reason: String)
     case migrationFailed(reason: String)
     case resourceCleanupFailed(reason: String)
     case contextNotAvailable(reason: String)
@@ -60,8 +59,6 @@ public enum KuzuError: LocalizedError {
             return "Connection request timed out after \(duration) seconds"
         case .transactionFailed(let reason):
             return "Transaction failed: \(reason)"
-        case .extensionLoadFailed(let ext, let reason):
-            return "Failed to load extension '\(ext)': \(reason)"
         case .migrationFailed(let reason):
             return "Migration failed: \(reason)"
         case .resourceCleanupFailed(let reason):
@@ -143,8 +140,6 @@ public enum KuzuError: LocalizedError {
             return "Increase connectionTimeout in configuration or reduce concurrent operations"
         case .transactionFailed:
             return "Check for concurrent modifications or constraint violations"
-        case .extensionLoadFailed:
-            return "Ensure the extension is properly installed and compatible"
         case .migrationFailed:
             return "Review migration policy and schema compatibility"
         case .resourceCleanupFailed:
