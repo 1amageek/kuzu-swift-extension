@@ -464,19 +464,27 @@ let related = try await graph.query {
 ## Configuration
 
 ```swift
-// Default configuration - works out of the box
-let graph = try await GraphDatabase.shared.context()
+// SwiftData-style: Create container with models
+let container = try await GraphContainer(for: User.self, Post.self)
+
+// Use mainContext (recommended for UI code, @MainActor bound)
+let context = container.mainContext
+
+// Or create context manually (for background tasks)
+let context = GraphContext(container)
 
 // Custom configuration
 let config = GraphConfiguration(
     databasePath: "/custom/path/graph.db",
     options: GraphConfiguration.Options(
         maxConnections: 10,
-        connectionTimeout: 30.0,
-        extensions: [.fts, .vector]
+        connectionTimeout: 30.0
     )
 )
-let context = try await GraphContext(configuration: config)
+let container = try await GraphContainer(
+    for: User.self, Post.self,
+    configuration: config
+)
 ```
 
 ## Testing

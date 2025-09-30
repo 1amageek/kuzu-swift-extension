@@ -164,6 +164,11 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 ```swift
 // Create container with models
 let container = try await GraphContainer(for: User.self, Post.self)
+
+// Use mainContext (recommended for UI code, @MainActor bound)
+let context = container.mainContext
+
+// Or create context manually (for background tasks)
 let context = GraphContext(container)
 
 // Insert and save

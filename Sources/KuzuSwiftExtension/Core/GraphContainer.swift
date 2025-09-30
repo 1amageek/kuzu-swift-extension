@@ -131,7 +131,22 @@ public struct GraphContainer: Sendable {
 
         self.isInitialized = true
     }
-    
+
+    /// Main context bound to the main actor (SwiftData ModelContainer.mainContext equivalent)
+    ///
+    /// This property provides a convenient way to access a GraphContext that's automatically
+    /// bound to the main actor, making it safe for use in SwiftUI views and other UI code.
+    ///
+    /// Usage:
+    /// ```swift
+    /// let container = try await GraphContainer(for: User.self)
+    /// let context = container.mainContext  // @MainActor bound
+    /// ```
+    @MainActor
+    public var mainContext: GraphContext {
+        GraphContext(self)
+    }
+
     public func withConnection<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
         let connection = try await connectionPool.checkout()
         
