@@ -17,8 +17,11 @@ extension QueryResult {
             var row: [String: Any] = [:]
             
             for (index, columnName) in columnNames.enumerated() {
-                let value = try tuple.getValue(UInt64(index))
-                
+                guard let value = try tuple.getValue(UInt64(index)) else {
+                    row[columnName] = NSNull()
+                    continue
+                }
+
                 // KuzuNode handling: when a node is returned, use its properties
                 if let node = value as? KuzuNode {
                     row[columnName] = node.properties
@@ -95,8 +98,11 @@ extension QueryResult {
             // Standard processing: build dictionary from row
             var row: [String: Any] = [:]
             for (index, columnName) in columnNames.enumerated() {
-                let value = try tuple.getValue(UInt64(index))
-                
+                guard let value = try tuple.getValue(UInt64(index)) else {
+                    row[columnName] = NSNull()
+                    continue
+                }
+
                 // KuzuNode handling: when a node is returned, use its properties
                 if let node = value as? KuzuNode {
                     row[columnName] = node.properties

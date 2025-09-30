@@ -23,7 +23,7 @@ public struct CypherFragment: Sendable {
         }
         
         // If both have structures, use QueryCombiner to merge properly
-        if let thisStructure = structure, let otherStructure = other.structure {
+        if structure != nil, other.structure != nil {
             let combiner = QueryCombiner()
             do {
                 try combiner.add(self)

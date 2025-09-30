@@ -2,7 +2,7 @@ import Foundation
 
 /// Generates unique aliases for query components
 public final class AliasGenerator: @unchecked Sendable {
-    nonisolated(unsafe) private static let shared = AliasGenerator()
+    private static let shared = AliasGenerator()
     private var counters: [String: Int] = [:]
     private let lock = NSLock()
     

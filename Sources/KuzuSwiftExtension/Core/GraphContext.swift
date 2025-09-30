@@ -1,22 +1,27 @@
 import Foundation
 import Kuzu
 
-public actor GraphContext {
+/// GraphContext provides a thread-safe interface to the graph database.
+///
+/// Thread Safety: This struct conforms to Sendable because:
+/// - All properties are immutable (let)
+/// - Kuzu's Connection and Database are internally thread-safe
+/// - ConnectionPool is an actor providing synchronized access to connections
+/// - Multiple concurrent operations can safely use different connections from the pool
+///
+/// Performance: Using a struct with no actor isolation allows true concurrent access to the
+/// connection pool, enabling multiple tasks to execute queries in parallel across different connections.
+public struct GraphContext: Sendable {
     let container: GraphContainer  // Made internal for TransactionalGraphContext
     let configuration: GraphConfiguration  // Made internal for TransactionalGraphContext
     private let encoder: KuzuEncoder
     private let decoder: KuzuDecoder
-    private let statementCache: PreparedStatementCache
-    
+
     public init(configuration: GraphConfiguration = GraphConfiguration()) async throws {
         self.configuration = configuration
         self.container = try await GraphContainer(configuration: configuration)
         self.encoder = KuzuEncoder(configuration: configuration.encodingConfiguration)
         self.decoder = KuzuDecoder(configuration: configuration.decodingConfiguration)
-        self.statementCache = PreparedStatementCache(
-            maxSize: configuration.statementCacheSize,
-            ttl: configuration.statementCacheTTL
-        )
     }
     
     // MARK: - Raw Query Execution
@@ -141,178 +146,8 @@ public actor GraphContext {
     }
     
     // MARK: - Helper Methods
-    
-    private func mapResult<T>(_ result: QueryResult, to type: T.Type) throws -> T {
-        // This is a simplified implementation
-        // Real implementation would need proper type mapping based on T
-        
-        if type == Void.self {
-            return () as! T
-        }
-        
-        if type == Int64.self {
-            guard result.hasNext() else {
-                return 0 as! T
-            }
-            guard let row = try result.getNext() else {
-                return 0 as! T
-            }
-            let value = try row.getValue(0)
-            return (value as? Int64 ?? 0) as! T
-        }
-        
-        // Check if this is a tuple type by trying to get the first row and counting columns
-        guard result.hasNext() else {
-            // For collection types, return empty array
-            if String(describing: type).contains("Array") {
-                return [] as! T
-            }
-            throw GraphError.invalidOperation(message: "No results to map")
-        }
-        
-        guard let firstRow = try result.getNext() else {
-            throw GraphError.noResults
-        }
-        
-        // Try to detect number of columns by attempting to get values
-        var columnCount = 1
-        for i in 1..<10 {
-            do {
-                _ = try firstRow.getValue(UInt64(i))
-                columnCount = i + 1
-            } catch {
-                break
-            }
-        }
-        
-        // Handle based on column count
-        if columnCount == 1 {
-            // Single column result
-            let value = try firstRow.getValue(0)
-            
-            // Check if we need to collect all rows for array types
-            if String(describing: type).contains("Array") {
-                var items: [Any] = []
-                
-                // Add first row
-                if let kuzuNode = value as? KuzuNode {
-                    // For now, just append the node - proper type inference would be needed
-                    items.append(kuzuNode)
-                } else {
-                    items.append(value)
-                }
-                
-                // Collect remaining rows
-                while result.hasNext() {
-                    guard let row = try result.getNext() else { continue }
-                    let val = try row.getValue(0)
-                    if let kuzuNode = val as? KuzuNode {
-                        items.append(kuzuNode)
-                    } else {
-                        items.append(val)
-                    }
-                }
-                return items as! T
-            }
-            
-            // Single value result
-            if let decodableType = type as? any Decodable.Type {
-                if let kuzuNode = value as? KuzuNode {
-                    return try decoder.decode(decodableType, from: kuzuNode.properties) as! T
-                } else if let properties = value as? [String: Any] {
-                    return try decoder.decode(decodableType, from: properties) as! T
-                }
-            }
-            
-            return value as! T
-            
-        } else if columnCount == 2 {
-            // Two column result - handle as tuple
-            let value0 = try firstRow.getValue(0)
-            let value1 = try firstRow.getValue(1)
-            
-            // If values are already arrays (from COLLECT), use them directly
-            if let array0 = value0 as? [Any], let array1 = value1 as? [Any] {
-                // Decode KuzuNodes if present
-                let decoded0 = array0.map { item -> Any in
-                    if let node = item as? KuzuNode {
-                        // Try to decode - for now just return the node
-                        return node
-                    }
-                    return item
-                }
-                
-                let decoded1 = array1.map { item -> Any in
-                    if let node = item as? KuzuNode {
-                        // Try to decode - for now just return the node
-                        return node
-                    }
-                    return item
-                }
-                
-                return (decoded0, decoded1) as! T
-            }
-            
-            // Otherwise collect all rows for each column
-            var col0Items: [Any] = []
-            var col1Items: [Any] = []
-            
-            // Process first row
-            col0Items.append(value0 as Any)
-            col1Items.append(value1 as Any)
-            
-            // Process remaining rows
-            while result.hasNext() {
-                guard let row = try result.getNext() else { continue }
-                
-                let val0 = try row.getValue(0)
-                let val1 = try row.getValue(1)
-                
-                col0Items.append(val0 as Any)
-                col1Items.append(val1 as Any)
-            }
-            
-            return (col0Items, col1Items) as! T
-            
-        } else {
-            // Multiple columns - handle as larger tuples
-            var columns: [[Any]] = Array(repeating: [], count: columnCount)
-            
-            // Process first row
-            for i in 0..<columnCount {
-                let value = try firstRow.getValue(UInt64(i))
-                if let node = value as? KuzuNode {
-                    // Would need proper type inference here
-                    columns[i].append(node)
-                } else {
-                    columns[i].append(value as Any)
-                }
-            }
-            
-            // Process remaining rows
-            while result.hasNext() {
-                guard let row = try result.getNext() else { continue }
-                for i in 0..<columnCount {
-                    let value = try row.getValue(UInt64(i))
-                    if let node = value as? KuzuNode {
-                        columns[i].append(node)
-                    } else {
-                        columns[i].append(value as Any)
-                    }
-                }
-            }
-            
-            // Convert to appropriate tuple type
-            switch columnCount {
-            case 3:
-                return (columns[0], columns[1], columns[2]) as! T
-            case 4:
-                return (columns[0], columns[1], columns[2], columns[3]) as! T
-            default:
-                return columns as! T
-            }
-        }
-    }
+    // Note: mapResult was removed as it was unused and overly complex.
+    // Result mapping is now handled by QueryComponent.mapResult() and ResultMapper.
     
     // MARK: - Schema Operations
     

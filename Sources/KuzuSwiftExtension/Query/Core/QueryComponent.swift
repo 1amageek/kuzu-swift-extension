@@ -107,7 +107,11 @@ public struct AnyQueryComponent: QueryComponent {
         guard let row = try result.getNext() else {
             throw KuzuError.noResults
         }
-        
-        return try row.getValue(0)
+
+        guard let value = try row.getValue(0) else {
+            throw KuzuError.invalidOperation(message: "Result value is null")
+        }
+
+        return value
     }
 }

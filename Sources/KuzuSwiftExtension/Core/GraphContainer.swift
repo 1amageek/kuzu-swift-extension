@@ -1,22 +1,31 @@
 import Foundation
 import Kuzu
 
-public actor GraphContainer {
+/// GraphContainer manages the database and connection pool.
+///
+/// Thread Safety: This struct conforms to Sendable because:
+/// - All properties are immutable (let)
+/// - Database and Connection are internally thread-safe (verified via Kuzu documentation)
+/// - ConnectionPool is an actor providing synchronized access to connections
+///
+/// The underlying Kuzu C++ library guarantees thread-safe access to Database instances,
+/// and each Connection is independent and can be safely used from different threads.
+public struct GraphContainer: Sendable {
     private let configuration: GraphConfiguration
     private let database: Database
     private let connectionPool: ConnectionPool
-    private var isInitialized = false
+    private let isInitialized: Bool
     
     public init(configuration: GraphConfiguration) async throws {
         self.configuration = configuration
-        
+
         self.database = try Database(configuration.databasePath)
-        
+
         let connectionConfig = ConnectionConfiguration(
             maxNumThreadsPerQuery: configuration.options.maxNumThreadsPerQuery,
             queryTimeout: configuration.options.queryTimeout
         )
-        
+
         self.connectionPool = try await ConnectionPool(
             database: database,
             maxConnections: configuration.options.maxConnections,
@@ -24,19 +33,15 @@ public actor GraphContainer {
             timeout: configuration.options.connectionTimeout,
             connectionConfig: connectionConfig
         )
-        
-        try await initialize()
+
+        // Mark as initialized before calling methods that use self
+        self.isInitialized = true
+
+        // Load extensions after all properties are initialized
+        try await Self.loadExtensions(configuration: configuration, connectionPool: connectionPool)
     }
     
-    private func initialize() async throws {
-        guard !isInitialized else { return }
-        
-        try await loadExtensions()
-        
-        isInitialized = true
-    }
-    
-    private func loadExtensions() async throws {
+    private static func loadExtensions(configuration: GraphConfiguration, connectionPool: ConnectionPool) async throws {
         guard !configuration.options.extensions.isEmpty else { return }
 
         let connection = try await connectionPool.checkout()
@@ -194,10 +199,5 @@ public actor GraphContainer {
     
     public func close() async {
         await connectionPool.drain()
-    }
-    
-    deinit {
-        // Note: Cannot await in deinit
-        // Caller should explicitly call close() before releasing the container
     }
 }

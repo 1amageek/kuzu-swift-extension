@@ -186,14 +186,14 @@ public struct TransactionalGraphContext: Sendable {
     // MARK: - Helper Methods
     
     private func mapResult<T>(_ result: QueryResult, to type: T.Type) throws -> T {
-        // This is a simplified implementation
-        // Real implementation would need proper type mapping based on T
         let decoder = KuzuDecoder()
-        
+
+        // Handle Void type
         if type == Void.self {
             return () as! T
         }
-        
+
+        // Handle Int64 type
         if type == Int64.self {
             guard result.hasNext() else {
                 return 0 as! T
@@ -201,33 +201,42 @@ public struct TransactionalGraphContext: Sendable {
             guard let row = try result.getNext() else {
                 return 0 as! T
             }
-            let value = try row.getValue(0)
-            return (value as? Int64 ?? 0) as! T
+            if let value = try row.getValue(0), let int64Value = value as? Int64 {
+                return int64Value as! T
+            }
+            return 0 as! T
         }
-        
-        // For array types
-        if let arrayType = type as? any Collection.Type {
+
+        // For array types - collect all rows
+        if type is any Collection.Type {
             var items: [Any] = []
             while result.hasNext() {
                 guard let row = try result.getNext() else {
                     continue
                 }
-                let value = try row.getValue(0)
-                items.append(value)
+                // Explicitly unwrap Any? to Any
+                if let value = try row.getValue(0) {
+                    items.append(value)
+                }
             }
             return items as! T
         }
-        
+
         // Default: try to decode first row
         guard result.hasNext() else {
             throw GraphError.invalidOperation(message: "No results to map")
         }
-        
+
         guard let row = try result.getNext() else {
             throw GraphError.noResults
         }
-        let value = try row.getValue(0)
-        
+
+        // Explicitly unwrap the optional value
+        guard let value = try row.getValue(0) else {
+            throw GraphError.invalidOperation(message: "Result value is null")
+        }
+
+        // Try to decode as Decodable type
         if let decodableType = type as? any Decodable.Type {
             if let kuzuNode = value as? KuzuNode {
                 return try decoder.decode(decodableType, from: kuzuNode.properties) as! T
@@ -235,7 +244,7 @@ public struct TransactionalGraphContext: Sendable {
                 return try decoder.decode(decodableType, from: properties) as! T
             }
         }
-        
+
         return value as! T
     }
 }

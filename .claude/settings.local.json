@@ -41,7 +41,8 @@
       "Bash(true)",
       "Read(//Users/1amageek/Desktop/kuzu-swift/**)",
       "mcp__deepwiki__read_wiki_contents",
-      "mcp__deepwiki__read_wiki_structure"
+      "mcp__deepwiki__read_wiki_structure",
+      "WebSearch"
     ],
     "deny": []
   }

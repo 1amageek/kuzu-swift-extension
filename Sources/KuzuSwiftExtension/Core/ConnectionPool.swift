@@ -18,19 +18,6 @@ import Kuzu
 // References:
 // - Kuzu Documentation: https://docs.kuzudb.com/
 // - Issue tracking: https://github.com/kuzudb/kuzu/issues
-extension Connection: @unchecked Sendable {
-    #if DEBUG
-    // In debug builds, we could add runtime checks if needed
-    // Example: Track thread IDs to detect cross-thread usage
-    #endif
-}
-
-extension Database: @unchecked Sendable {
-    #if DEBUG
-    // In debug builds, we could add runtime checks if needed
-    // Example: Assert that database operations happen on expected threads
-    #endif
-}
 
 actor ConnectionPool {
     private let database: Database

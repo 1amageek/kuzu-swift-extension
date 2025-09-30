@@ -5,70 +5,55 @@ import Kuzu
 // MARK: - Simple CRUD Operations
 public extension GraphContext {
     
-    /// Save a model instance (insert or update)
+    /// Save a model instance (insert or update) using MERGE for optimal performance
     @discardableResult
     func save<T: GraphNodeModel>(_ model: T) async throws -> T {
         let columns = T._kuzuColumns
-        
+
         // Extract properties using KuzuEncoder
         let encoder = KuzuEncoder()
         let properties = try encoder.encode(model)
-        
+
         // Check if exists (assuming first column is ID)
         guard let idColumn = columns.first else {
             throw GraphError.invalidConfiguration(message: "Model must have at least one column")
         }
-        
-        let idValue = properties[idColumn.name]
-        
-        // Check if node exists
-        let existsQuery = """
-            MATCH (n:\(T.modelName))
-            WHERE n.\(idColumn.name) = $id
-            RETURN n
-            """
-        
-        let existsResult = try await raw(existsQuery, bindings: ["id": idValue ?? NSNull()])
-        
-        if existsResult.hasNext() {
-            // Update existing node (skip ID column as it's primary key)
-            let setClause = QueryHelpers.buildPropertyAssignments(
-                columns: Array(columns.dropFirst()),
-                isAssignment: true
-            )
-            .map { "n.\($0)" }
-            .joined(separator: ", ")
-            
-            let updateQuery = """
-                MATCH (n:\(T.modelName))
-                WHERE n.\(idColumn.name) = $\(idColumn.name)
-                SET \(setClause)
+
+        // Build property assignments for CREATE and MATCH
+        let allProps = QueryHelpers.buildPropertyAssignments(
+            columns: columns,
+            isAssignment: false
+        ).joined(separator: ", ")
+
+        let updateProps = QueryHelpers.buildPropertyAssignments(
+            columns: Array(columns.dropFirst()),
+            isAssignment: true
+        )
+        .map { "n.\($0)" }
+        .joined(separator: ", ")
+
+        // Use MERGE for UPSERT in a single query
+        let mergeQuery: String
+        if updateProps.isEmpty {
+            // If only ID column exists, no properties to update
+            mergeQuery = """
+                MERGE (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
                 RETURN n
                 """
-            
-            
-            let result = try await raw(updateQuery, bindings: properties)
-            return try result.decode(T.self)
         } else {
-            // Create new node
-            let propertyList = QueryHelpers.buildPropertyAssignments(
-                columns: columns,
-                isAssignment: false
-            )
-            .joined(separator: ", ")
-            
-            let createQuery = """
-                CREATE (n:\(T.modelName) {\(propertyList)})
+            mergeQuery = """
+                MERGE (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
+                ON CREATE SET \(allProps)
+                ON MATCH SET \(updateProps)
                 RETURN n
                 """
-            
-            let result = try await raw(createQuery, bindings: properties)
-            
-            return try result.decode(T.self)
         }
+
+        let result = try await raw(mergeQuery, bindings: properties)
+        return try result.decode(T.self)
     }
     
-    /// Save multiple model instances
+    /// Save multiple model instances (sequential - use saveAll for better performance)
     @discardableResult
     func save<T: GraphNodeModel>(_ models: [T]) async throws -> [T] {
         var results: [T] = []
@@ -77,6 +62,54 @@ public extension GraphContext {
             results.append(saved)
         }
         return results
+    }
+
+    /// Save multiple model instances in a single batch operation using UNWIND + MERGE.
+    /// This is significantly faster than calling save() repeatedly.
+    ///
+    /// - Parameter models: Array of models to save (insert or update)
+    /// - Returns: Array of saved models
+    /// - Note: This performs an UPSERT operation - creates new nodes or updates existing ones
+    @discardableResult
+    func saveAll<T: GraphNodeModel>(_ models: [T]) async throws -> [T] {
+        guard !models.isEmpty else { return [] }
+
+        let columns = T._kuzuColumns
+        guard let idColumn = columns.first else {
+            throw GraphError.invalidConfiguration(message: "Model must have at least one column")
+        }
+
+        // Encode all models to property dictionaries
+        let encoder = KuzuEncoder()
+        let items: [[String: any Sendable]] = try models.map { model in
+            try encoder.encode(model)
+        }
+
+        // Build property assignments for CREATE and MATCH
+        let allProps = columns.map { "\($0.name): item.\($0.name)" }.joined(separator: ", ")
+        let updateProps = columns.dropFirst().map { "n.\($0.name) = item.\($0.name)" }.joined(separator: ", ")
+
+        // UNWIND + MERGE query for batch UPSERT
+        let query: String
+        if updateProps.isEmpty {
+            // If only ID column exists, no properties to update
+            query = """
+                UNWIND $items AS item
+                MERGE (n:\(T.modelName) {\(idColumn.name): item.\(idColumn.name)})
+                RETURN n
+                """
+        } else {
+            query = """
+                UNWIND $items AS item
+                MERGE (n:\(T.modelName) {\(idColumn.name): item.\(idColumn.name)})
+                ON CREATE SET \(allProps)
+                ON MATCH SET \(updateProps)
+                RETURN n
+                """
+        }
+
+        let result = try await raw(query, bindings: ["items": items])
+        return try result.decodeArray(T.self)
     }
     
     /// Fetch all instances of a model type
@@ -128,9 +161,9 @@ public extension GraphContext {
         guard let idColumn = T._kuzuColumns.first else {
             throw GraphError.invalidConfiguration(message: "Model must have at least one column")
         }
-        
+
         // Extract ID from model
-        let properties = extractProperties(from: model, columns: T._kuzuColumns)
+        let properties = try extractProperties(from: model, columns: T._kuzuColumns)
         let id = properties[idColumn.name]
         
         let deleteQuery = """
@@ -179,42 +212,34 @@ public extension GraphContext {
 
 // MARK: - Batch Operations
 public extension GraphContext {
-    
-    /// Batch insert with better performance
+
+    /// Batch insert multiple nodes in a single query using UNWIND.
+    /// This is significantly faster than inserting nodes one by one.
+    ///
+    /// - Parameter models: Array of models to insert
+    /// - Note: This performs INSERT only. For UPSERT behavior, use saveAll() instead.
     func batchInsert<T: GraphNodeModel>(_ models: [T]) async throws {
         guard !models.isEmpty else { return }
-        
+
         let columns = T._kuzuColumns
         let modelName = T.modelName
-        
-        // Create parameter lists
-        var allBindings: [[String: any Sendable]] = []
-        
-        for model in models {
-            let properties = extractProperties(from: model, columns: columns)
-            allBindings.append(properties)
+
+        // Encode all models to property dictionaries
+        let encoder = KuzuEncoder()
+        let items: [[String: any Sendable]] = try models.map { model in
+            try encoder.encode(model)
         }
-        
-        // Execute batch insert
-        for (index, bindings) in allBindings.enumerated() {
-            let propertyList = QueryHelpers.buildPropertyAssignments(
-                columns: columns,
-                parameterPrefix: "item\(index)",
-                isAssignment: false
-            )
-            .joined(separator: ", ")
-            
-            var renamedBindings: [String: any Sendable] = [:]
-            for (key, value) in bindings {
-                renamedBindings["item\(index)_\(key)"] = value
-            }
-            
-            let createQuery = """
-                CREATE (:\(modelName) {\(propertyList)})
-                """
-            
-            _ = try await raw(createQuery, bindings: renamedBindings)
-        }
+
+        // Build property assignments for CREATE
+        let propsList = columns.map { "\($0.name): item.\($0.name)" }.joined(separator: ", ")
+
+        // UNWIND + CREATE for batch insert
+        let query = """
+            UNWIND $items AS item
+            CREATE (:\(modelName) {\(propsList)})
+            """
+
+        _ = try await raw(query, bindings: ["items": items])
     }
 }
 
@@ -233,14 +258,14 @@ public extension GraphContext {
         }
         
         // Extract IDs from models
-        let sourceProperties = extractProperties(from: source, columns: From._kuzuColumns)
-        let targetProperties = extractProperties(from: target, columns: To._kuzuColumns)
-        
+        let sourceProperties = try extractProperties(from: source, columns: From._kuzuColumns)
+        let targetProperties = try extractProperties(from: target, columns: To._kuzuColumns)
+
         let fromId = sourceProperties[fromIdColumn.name]
         let toId = targetProperties[toIdColumn.name]
-        
+
         let edgeColumns = Edge._kuzuColumns
-        let edgeProperties = extractProperties(from: edge, columns: edgeColumns)
+        let edgeProperties = try extractProperties(from: edge, columns: edgeColumns)
         
         var edgeBindings: [String: any Sendable] = [:]
         for (key, value) in edgeProperties {
@@ -270,89 +295,22 @@ public extension GraphContext {
 
 // MARK: - Private Helpers
 
-private func extractProperties(from instance: Any, columns: [(name: String, type: String, constraints: [String])]) -> [String: any Sendable] {
-    // If the instance is Encodable, use KuzuEncoder
-    if let encodable = instance as? any Encodable {
-        do {
-            let encoder = KuzuEncoder()
-            let allProperties = try encoder.encode(encodable)
-            
-            // Filter to only include properties defined in columns
-            var filteredProperties: [String: any Sendable] = [:]
-            for (key, value) in allProperties {
-                if columns.contains(where: { $0.name == key }) {
-                    filteredProperties[key] = value
-                }
-            }
-            return filteredProperties
-        } catch {
-            // Fall through to Mirror-based extraction if encoding fails
+private func extractProperties(from instance: Any, columns: [(name: String, type: String, constraints: [String])]) throws -> [String: any Sendable] {
+    guard let encodable = instance as? any Encodable else {
+        throw GraphError.invalidConfiguration(
+            message: "Model must conform to Encodable. Type: \(type(of: instance))"
+        )
+    }
+
+    let encoder = KuzuEncoder()
+    let allProperties = try encoder.encode(encodable)
+
+    // Filter to only include properties defined in columns
+    var filteredProperties: [String: any Sendable] = [:]
+    for (key, value) in allProperties {
+        if columns.contains(where: { $0.name == key }) {
+            filteredProperties[key] = value
         }
     }
-    
-    // Fallback to Mirror-based extraction
-    let mirror = Mirror(reflecting: instance)
-    var properties: [String: any Sendable] = [:]
-    
-    // Extract properties using Mirror
-    for child in mirror.children {
-        guard let propertyName = child.label else { continue }
-        
-        // Remove underscore prefix if present (for property wrappers)
-        let cleanName = propertyName.hasPrefix("_") ? String(propertyName.dropFirst()) : propertyName
-        
-        // Check if this property is in the model's column definition
-        if columns.contains(where: { $0.name == cleanName }) {
-            // Extract basic Sendable values directly
-            switch child.value {
-            case let string as String:
-                properties[cleanName] = string
-            case let int as Int:
-                properties[cleanName] = int
-            case let int8 as Int8:
-                properties[cleanName] = int8
-            case let int16 as Int16:
-                properties[cleanName] = int16
-            case let int32 as Int32:
-                properties[cleanName] = int32
-            case let int64 as Int64:
-                properties[cleanName] = int64
-            case let uint as UInt:
-                properties[cleanName] = uint
-            case let uint8 as UInt8:
-                properties[cleanName] = uint8
-            case let uint16 as UInt16:
-                properties[cleanName] = uint16
-            case let uint32 as UInt32:
-                properties[cleanName] = uint32
-            case let uint64 as UInt64:
-                properties[cleanName] = uint64
-            case let float as Float:
-                properties[cleanName] = float
-            case let double as Double:
-                properties[cleanName] = double
-            case let bool as Bool:
-                properties[cleanName] = bool
-            case let date as Date:
-                properties[cleanName] = date
-            case let data as Data:
-                properties[cleanName] = data
-            case let uuid as UUID:
-                properties[cleanName] = uuid
-            case let url as URL:
-                properties[cleanName] = url
-            case is NSNull:
-                properties[cleanName] = NSNull()
-            case let array as [any Sendable]:
-                properties[cleanName] = array
-            case let dict as [String: any Sendable]:
-                properties[cleanName] = dict
-            default:
-                // Skip non-Sendable values
-                break
-            }
-        }
-    }
-    
-    return properties
+    return filteredProperties
 }
