@@ -20,34 +20,44 @@ public extension GraphContext {
         }
 
         // Build property assignments for CREATE and MATCH
-        let allProps = QueryHelpers.buildPropertyAssignments(
-            columns: columns,
-            isAssignment: false
-        ).joined(separator: ", ")
+        // ON CREATE SET cannot include primary key - it's already set in MERGE pattern
+        // ON CREATE SET needs assignment form: n.prop = $param
+        let nonIdColumns = Array(columns.dropFirst())
 
-        let updateProps = QueryHelpers.buildPropertyAssignments(
-            columns: Array(columns.dropFirst()),
-            isAssignment: true
-        )
-        .map { "n.\($0)" }
-        .joined(separator: ", ")
-
-        // Use MERGE for UPSERT in a single query
         let mergeQuery: String
-        if updateProps.isEmpty {
+        if nonIdColumns.isEmpty {
             // If only ID column exists, no properties to update
             mergeQuery = """
                 MERGE (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
                 RETURN n
                 """
         } else {
+            let createProps = QueryHelpers.buildPropertyAssignments(
+                columns: nonIdColumns,
+                isAssignment: true
+            )
+            .map { "n.\($0)" }
+            .joined(separator: ", ")
+
+            let updateProps = QueryHelpers.buildPropertyAssignments(
+                columns: nonIdColumns,
+                isAssignment: true
+            )
+            .map { "n.\($0)" }
+            .joined(separator: ", ")
+
             mergeQuery = """
                 MERGE (n:\(T.modelName) {\(idColumn.name): $\(idColumn.name)})
-                ON CREATE SET \(allProps)
+                ON CREATE SET \(createProps)
                 ON MATCH SET \(updateProps)
                 RETURN n
                 """
         }
+
+        #if DEBUG
+        print("[DEBUG] save() query:\n\(mergeQuery)")
+        print("[DEBUG] bindings: \(properties)")
+        #endif
 
         let result = try await raw(mergeQuery, bindings: properties)
         return try result.decode(T.self)
@@ -86,12 +96,12 @@ public extension GraphContext {
         }
 
         // Build property assignments for CREATE and MATCH
-        let allProps = columns.map { "\($0.name): item.\($0.name)" }.joined(separator: ", ")
-        let updateProps = columns.dropFirst().map { "n.\($0.name) = item.\($0.name)" }.joined(separator: ", ")
+        // ON CREATE SET cannot include primary key - it's already set in MERGE pattern
+        let nonIdColumns = Array(columns.dropFirst())
 
         // UNWIND + MERGE query for batch UPSERT
         let query: String
-        if updateProps.isEmpty {
+        if nonIdColumns.isEmpty {
             // If only ID column exists, no properties to update
             query = """
                 UNWIND $items AS item
@@ -99,11 +109,26 @@ public extension GraphContext {
                 RETURN n
                 """
         } else {
+            // Build property assignments with proper TIMESTAMP handling
+            let createAssignments = nonIdColumns.map { column -> String in
+                let value = column.type == "TIMESTAMP"
+                    ? "timestamp(item.\(column.name))"
+                    : "item.\(column.name)"
+                return "n.\(column.name) = \(value)"
+            }.joined(separator: ", ")
+
+            let updateAssignments = nonIdColumns.map { column -> String in
+                let value = column.type == "TIMESTAMP"
+                    ? "timestamp(item.\(column.name))"
+                    : "item.\(column.name)"
+                return "n.\(column.name) = \(value)"
+            }.joined(separator: ", ")
+
             query = """
                 UNWIND $items AS item
                 MERGE (n:\(T.modelName) {\(idColumn.name): item.\(idColumn.name)})
-                ON CREATE SET \(allProps)
-                ON MATCH SET \(updateProps)
+                ON CREATE SET \(createAssignments)
+                ON MATCH SET \(updateAssignments)
                 RETURN n
                 """
         }
@@ -230,8 +255,13 @@ public extension GraphContext {
             try encoder.encode(model)
         }
 
-        // Build property assignments for CREATE
-        let propsList = columns.map { "\($0.name): item.\($0.name)" }.joined(separator: ", ")
+        // Build property assignments for CREATE with proper TIMESTAMP handling
+        let propsList = columns.map { column -> String in
+            let value = column.type == "TIMESTAMP"
+                ? "timestamp(item.\(column.name))"
+                : "item.\(column.name)"
+            return "\(column.name): \(value)"
+        }.joined(separator: ", ")
 
         // UNWIND + CREATE for batch insert
         let query = """

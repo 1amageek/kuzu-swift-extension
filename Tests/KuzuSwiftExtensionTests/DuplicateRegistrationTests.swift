@@ -43,8 +43,7 @@ struct DuplicateRegistrationTests {
         
         // This should not crash with "Dictionary literal contains duplicate keys"
         let context = try await GraphDatabase.createTestContext(
-            name: "duplicate-test",
-            models: [TestUser.self, TestPost.self, TestAuthor.self, 
+            models: [TestUser.self, TestPost.self, TestAuthor.self,
                     TestUser.self, TestPost.self]  // Intentional duplicates
         )
         

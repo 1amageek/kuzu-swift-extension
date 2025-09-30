@@ -29,16 +29,14 @@ struct GraphDatabaseTests {
     func testContextIsolation() async throws {
         // Create two independent test contexts
         let context1 = try await GraphDatabase.createTestContext(
-            name: "test1",
             models: [TestTodo.self]
         )
         let context2 = try await GraphDatabase.createTestContext(
-            name: "test2",
             models: [TestTodo.self]
         )
         
-        // Verify they are different instances
-        #expect(context1 !== context2)
+        // Verify they are isolated (both use in-memory DB, so we test data isolation instead)
+        // This will be verified by ensuring data saved to one doesn't appear in the other
         
         // Save data to first context using raw queries
         let todo1 = TestTodo(title: "Todo in context 1")
@@ -78,7 +76,6 @@ struct GraphDatabaseTests {
     func modelRegistrationTest() async throws {
         // Create test context with models
         let context = try await GraphDatabase.createTestContext(
-            name: "model-test",
             models: [TestTodo.self]
         )
         
@@ -110,7 +107,6 @@ struct GraphDatabaseTests {
     func testInMemoryContext() async throws {
         // Create in-memory test context
         let context = try await GraphDatabase.createTestContext(
-            name: "memory-test",
             models: [TestTodo.self]
         )
         

@@ -61,7 +61,7 @@ public struct GraphContainer: Sendable {
                     // Check if vector functions are available
                     do {
                         // Check loaded extensions
-                        let extensionCheck = try connection.query("CALL SHOW_LOADED_EXTENSIONS()")
+                        _ = try connection.query("CALL SHOW_LOADED_EXTENSIONS()")
 
                         // Vector extension is built into kuzu-swift via static linking
                         // We can also verify with array functions

@@ -25,7 +25,7 @@ public struct GraphContext: Sendable {
     }
     
     // MARK: - Raw Query Execution
-    
+    @discardableResult
     public func raw(_ query: String, bindings: [String: any Sendable] = [:]) async throws -> QueryResult {
         return try await container.withConnection { connection in
             if bindings.isEmpty {

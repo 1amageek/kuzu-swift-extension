@@ -101,21 +101,22 @@ public final class GraphDatabase {
     }
     
     // MARK: - Test Support
-    
+
+    #if DEBUG
     /// Create an isolated database context for testing.
-    /// Each call creates a new, independent database instance.
+    /// Each call creates a new, independent in-memory database instance.
+    /// - Parameter models: Models to register with the context
+    /// - Returns: A new GraphContext with automatic schema migration
     public static func createTestContext(
-        name: String = UUID().uuidString,
-        models: [any _KuzuGraphModel.Type] = [],
-        migrationPolicy: MigrationPolicy = .safe
+        models: [any _KuzuGraphModel.Type] = []
     ) async throws -> GraphContext {
-        // Always use automatic migration for tests
         return try await container(
             for: models,
             inMemory: true,
             migrationMode: .automatic
         )
     }
+    #endif
     
     /// SwiftData-style container creation
     /// Creates a new GraphContext with the specified models and configuration
