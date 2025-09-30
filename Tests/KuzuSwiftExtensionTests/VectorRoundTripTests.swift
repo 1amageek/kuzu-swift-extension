@@ -28,9 +28,9 @@ struct RoundTripImage: Codable {
 struct VectorRoundTripTests {
 
     @Test("Complete round trip: create, save, and retrieve with vector search")
-    func testCompleteRoundTrip() async throws {
+    func testCompleteRoundTrip() throws {
         // 1. Create context with model registration
-        let container = try await GraphContainer(
+        let container = try GraphContainer(
             for: RoundTripPhoto.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -48,10 +48,10 @@ struct VectorRoundTripTests {
         for photo in photos {
             context.insert(photo)
         }
-        try await context.save()
+        try context.save()
 
         // 4. Retrieve with vector search (find photos similar to [50.0, 10.0, 20.0])
-        let result = try await context.raw("""
+        let result = try context.raw("""
             CALL QUERY_VECTOR_INDEX('RoundTripPhoto', 'roundtripphoto_labcolor_idx',
                 CAST([50.0, 10.0, 20.0] AS FLOAT[3]), 10)
             WITH node AS p, distance
@@ -89,8 +89,8 @@ struct VectorRoundTripTests {
     }
 
     @Test("Vector search returns correct data types")
-    func testVectorSearchDataTypes() async throws {
-        let container = try await GraphContainer(
+    func testVectorSearchDataTypes() throws {
+        let container = try GraphContainer(
             for: RoundTripPhoto.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -104,10 +104,10 @@ struct VectorRoundTripTests {
             enabled: true
         )
         context.insert(photo)
-        try await context.save()
+        try context.save()
 
         // Retrieve with vector search
-        let result = try await context.raw("""
+        let result = try context.raw("""
             CALL QUERY_VECTOR_INDEX('RoundTripPhoto', 'roundtripphoto_labcolor_idx',
                 CAST([100.0, 50.0, 25.0] AS FLOAT[3]), 1)
             WITH node AS p, distance
@@ -134,8 +134,8 @@ struct VectorRoundTripTests {
 
     @Test("Update existing photo with vector property",
           .disabled("KuzuDB vector index may not update immediately after DELETE+CREATE"))
-    func testUpdateWithVectorProperty() async throws {
-        let container = try await GraphContainer(
+    func testUpdateWithVectorProperty() throws {
+        let container = try GraphContainer(
             for: RoundTripPhoto.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -149,7 +149,7 @@ struct VectorRoundTripTests {
             enabled: true
         )
         context.insert(photo1)
-        try await context.save()
+        try context.save()
 
         // Update the same photo (should use DELETE + CREATE)
         let photo2 = RoundTripPhoto(
@@ -159,10 +159,10 @@ struct VectorRoundTripTests {
             enabled: false
         )
         context.insert(photo2)
-        try await context.save()
+        try context.save()
 
         // First verify with normal query that update worked
-        let checkResult = try await context.raw("""
+        let checkResult = try context.raw("""
             MATCH (p:RoundTripPhoto {id: 'photo1'})
             RETURN p.id AS id, p.name AS name, p.labColor AS labColor, p.enabled AS enabled
         """)
@@ -182,7 +182,7 @@ struct VectorRoundTripTests {
         }
 
         // Now verify with vector search
-        let vectorResult = try await context.raw("""
+        let vectorResult = try context.raw("""
             CALL QUERY_VECTOR_INDEX('RoundTripPhoto', 'roundtripphoto_labcolor_idx',
                 CAST([60.0, 20.0, 30.0] AS FLOAT[3]), 1)
             WITH node AS p, distance
@@ -199,8 +199,8 @@ struct VectorRoundTripTests {
     }
 
     @Test("Multiple models with vectors can coexist")
-    func testMultipleModelsWithVectors() async throws {
-        let container = try await GraphContainer(
+    func testMultipleModelsWithVectors() throws {
+        let container = try GraphContainer(
             for: RoundTripDocument.self, RoundTripImage.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -222,10 +222,10 @@ struct VectorRoundTripTests {
         )
         context.insert(img)
 
-        try await context.save()
+        try context.save()
 
         // Search documents
-        let docResult = try await context.raw("""
+        let docResult = try context.raw("""
             CALL QUERY_VECTOR_INDEX('RoundTripDocument', 'roundtripdocument_embedding_idx',
                 CAST(\(Array(repeating: 0.1, count: 128)) AS FLOAT[128]), 1)
             WITH node AS d, distance
@@ -239,7 +239,7 @@ struct VectorRoundTripTests {
         }
 
         // Search images
-        let imgResult = try await context.raw("""
+        let imgResult = try context.raw("""
             CALL QUERY_VECTOR_INDEX('RoundTripImage', 'roundtripimage_features_idx',
                 CAST(\(Array(repeating: 0.2, count: 512)) AS FLOAT[512]), 1)
             WITH node AS i, distance
@@ -256,8 +256,8 @@ struct VectorRoundTripTests {
     }
 
     @Test("Vector search with K-nearest neighbors")
-    func testKNearestNeighbors() async throws {
-        let container = try await GraphContainer(
+    func testKNearestNeighbors() throws {
+        let container = try GraphContainer(
             for: RoundTripPhoto.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -275,10 +275,10 @@ struct VectorRoundTripTests {
         for photo in photos {
             context.insert(photo)
         }
-        try await context.save()
+        try context.save()
 
         // Search for 3 nearest neighbors to [50.0, 10.0, 20.0]
-        let result = try await context.raw("""
+        let result = try context.raw("""
             CALL QUERY_VECTOR_INDEX('RoundTripPhoto', 'roundtripphoto_labcolor_idx',
                 CAST([50.0, 10.0, 20.0] AS FLOAT[3]), 3)
             WITH node AS p, distance

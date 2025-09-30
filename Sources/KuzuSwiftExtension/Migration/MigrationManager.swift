@@ -10,21 +10,21 @@ public struct MigrationManager {
         self.policy = policy
     }
     
-    public func migrate(to schema: GraphSchema) async throws {
-        let currentSchema = try await getCurrentSchema()
+    public func migrate(to schema: GraphSchema) throws {
+        let currentSchema = try getCurrentSchema()
         let diff = SchemaDiff.compare(current: currentSchema, target: schema)
         
         try validateMigration(diff: diff)
         
-        try await applyMigration(diff: diff)
+        try applyMigration(diff: diff)
     }
     
-    public func migrate(types: [any _KuzuGraphModel.Type]) async throws {
+    public func migrate(types: [any _KuzuGraphModel.Type]) throws {
         let schema = GraphSchema.discover(from: types)
-        try await migrate(to: schema)
+        try migrate(to: schema)
     }
     
-    private func getCurrentSchema() async throws -> GraphSchema {
+    private func getCurrentSchema() throws -> GraphSchema {
         var nodes: [NodeSchema] = []
         var edges: [EdgeSchema] = []
         
@@ -33,7 +33,7 @@ public struct MigrationManager {
         let showTablesQuery = "SHOW TABLES"
         
         do {
-            let tablesResult = try await context.raw(showTablesQuery, bindings: [:])
+            let tablesResult = try context.raw(showTablesQuery, bindings: [:])
             let tables = try tablesResult.mapRows()
             
             for tableRow in tables {
@@ -41,7 +41,7 @@ public struct MigrationManager {
                 
                 // Get detailed schema for each table using DESCRIBE
                 let describeQuery = "DESCRIBE \(tableName)"
-                let schemaResult = try await context.raw(describeQuery, bindings: [:])
+                let schemaResult = try context.raw(describeQuery, bindings: [:])
                 let schemaRows = try schemaResult.mapRows()
                 
                 // Parse the schema information
@@ -243,9 +243,9 @@ public struct MigrationManager {
     }
     
     // Check if a table exists in the database
-    private func tableExists(_ tableName: String) async throws -> Bool {
+    private func tableExists(_ tableName: String) throws -> Bool {
         do {
-            let result = try await context.raw("SHOW TABLES")
+            let result = try context.raw("SHOW TABLES")
             let tables = try result.mapRows()
             return tables.contains { row in
                 if let name = row["name"] as? String {
@@ -260,16 +260,16 @@ public struct MigrationManager {
     }
     
     // Safely create a table, skipping if it already exists
-    private func createTableSafely(_ ddl: String, tableName: String) async throws {
+    private func createTableSafely(_ ddl: String, tableName: String) throws {
         // Check if table already exists
-        if try await tableExists(tableName) {
+        if try tableExists(tableName) {
             // SwiftData-style: skip existing tables silently
             return
         }
         
         // Try to create the table
         do {
-            _ = try await context.raw(ddl)
+            _ = try context.raw(ddl)
         } catch {
             // Parse error message to detect "already exists" errors
             let errorMessage = String(describing: error).lowercased()
@@ -283,7 +283,7 @@ public struct MigrationManager {
         }
     }
     
-    private func applyMigration(diff: SchemaDiff) async throws {
+    private func applyMigration(diff: SchemaDiff) throws {
         var nodeStatements: [(ddl: String, name: String)] = []
         var edgeStatements: [(ddl: String, name: String)] = []
         var dropStatements: [String] = []
@@ -314,27 +314,27 @@ public struct MigrationManager {
         
         // Execute drop statements first (if any)
         for statement in dropStatements {
-            _ = try await context.raw(statement)
+            _ = try context.raw(statement)
         }
         
         // Create node tables safely
         for (ddl, name) in nodeStatements {
-            try await createTableSafely(ddl, tableName: name)
+            try createTableSafely(ddl, tableName: name)
         }
         
         // Create edge tables safely
         for (ddl, name) in edgeStatements {
-            try await createTableSafely(ddl, tableName: name)
+            try createTableSafely(ddl, tableName: name)
         }
     }
     
     // Simple migration that only creates missing tables
-    public func migrateIfNeeded(types: [any _KuzuGraphModel.Type]) async throws {
+    public func migrateIfNeeded(types: [any _KuzuGraphModel.Type]) throws {
         for type in types {
             let tableName = String(describing: type)
-            if !(try await tableExists(tableName)) {
+            if !(try tableExists(tableName)) {
                 // Use createTableSafely instead of createSchema
-                try await createTableSafely(type._kuzuDDL, tableName: tableName)
+                try createTableSafely(type._kuzuDDL, tableName: tableName)
             }
         }
     }

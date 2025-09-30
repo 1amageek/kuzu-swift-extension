@@ -1,23 +1,21 @@
 import Foundation
 import Kuzu
 
-/// GraphContainer manages the database and connection pool.
+/// GraphContainer manages the database and schema.
 ///
 /// SwiftData ModelContainer equivalent for Kuzu graph database.
 /// Automatically creates schemas and indexes for registered models on initialization.
 ///
 /// Thread Safety: This struct conforms to Sendable because:
 /// - All properties are immutable (let)
-/// - Database and Connection are internally thread-safe (verified via Kuzu documentation)
-/// - ConnectionPool is an actor providing synchronized access to connections
+/// - Database is internally thread-safe (verified via Kuzu documentation)
 ///
-/// The underlying Kuzu C++ library guarantees thread-safe access to Database instances,
-/// and each Connection is independent and can be safely used from different threads.
+/// The underlying Kuzu C++ library guarantees thread-safe access to Database instances.
 ///
 /// Usage (SwiftData-style):
 /// ```swift
-/// let container = try await GraphContainer(
-///     for: [User.self, Post.self],
+/// let container = try GraphContainer(
+///     for: User.self, Post.self,
 ///     configuration: GraphConfiguration(databasePath: ":memory:")
 /// )
 /// ```
@@ -28,9 +26,7 @@ public struct GraphContainer: Sendable {
     /// The configuration for this container
     public let configuration: GraphConfiguration
 
-    private let database: Database
-    private let connectionPool: ConnectionPool
-    private let isInitialized: Bool
+    internal let database: Database
 
     /// Create a container for specified model types (variadic parameters)
     /// Equivalent to: ModelContainer(for: User.self, Post.self)
@@ -40,33 +36,14 @@ public struct GraphContainer: Sendable {
     public init(
         for forTypes: (any _KuzuGraphModel.Type)...,
         configuration: GraphConfiguration = GraphConfiguration()
-    ) async throws {
+    ) throws {
         self.models = forTypes
         self.configuration = configuration
-
         self.database = try Database(configuration.databasePath)
-
-        let connectionConfig = ConnectionConfiguration(
-            maxNumThreadsPerQuery: configuration.options.maxNumThreadsPerQuery,
-            queryTimeout: configuration.options.queryTimeout
-        )
-
-        self.connectionPool = try await ConnectionPool(
-            database: database,
-            maxConnections: configuration.options.maxConnections,
-            minConnections: configuration.options.minConnections,
-            timeout: configuration.options.connectionTimeout,
-            connectionConfig: connectionConfig
-        )
-
-        self.isInitialized = true
 
         // SwiftData pattern: Automatically create schemas for registered models
         if !forTypes.isEmpty {
-            try await Self.ensureSchemas(
-                models: Array(forTypes),
-                connectionPool: connectionPool
-            )
+            try Self.createSchemas(database: database, models: forTypes)
         }
     }
 
@@ -78,58 +55,23 @@ public struct GraphContainer: Sendable {
     public init(
         for models: [any _KuzuGraphModel.Type],
         configuration: GraphConfiguration = GraphConfiguration()
-    ) async throws {
+    ) throws {
         self.models = models
         self.configuration = configuration
-
         self.database = try Database(configuration.databasePath)
-
-        let connectionConfig = ConnectionConfiguration(
-            maxNumThreadsPerQuery: configuration.options.maxNumThreadsPerQuery,
-            queryTimeout: configuration.options.queryTimeout
-        )
-
-        self.connectionPool = try await ConnectionPool(
-            database: database,
-            maxConnections: configuration.options.maxConnections,
-            minConnections: configuration.options.minConnections,
-            timeout: configuration.options.connectionTimeout,
-            connectionConfig: connectionConfig
-        )
-
-        self.isInitialized = true
 
         // SwiftData pattern: Automatically create schemas for registered models
         if !models.isEmpty {
-            try await Self.ensureSchemas(
-                models: models,
-                connectionPool: connectionPool
-            )
+            try Self.createSchemas(database: database, models: models)
         }
     }
 
     /// Create a container without models (for manual schema management)
     /// - Parameter configuration: Database configuration
-    internal init(configuration: GraphConfiguration) async throws {
+    internal init(configuration: GraphConfiguration) throws {
         self.models = []
         self.configuration = configuration
-
         self.database = try Database(configuration.databasePath)
-
-        let connectionConfig = ConnectionConfiguration(
-            maxNumThreadsPerQuery: configuration.options.maxNumThreadsPerQuery,
-            queryTimeout: configuration.options.queryTimeout
-        )
-
-        self.connectionPool = try await ConnectionPool(
-            database: database,
-            maxConnections: configuration.options.maxConnections,
-            minConnections: configuration.options.minConnections,
-            timeout: configuration.options.connectionTimeout,
-            connectionConfig: connectionConfig
-        )
-
-        self.isInitialized = true
     }
 
     /// Main context bound to the main actor (SwiftData ModelContainer.mainContext equivalent)
@@ -139,7 +81,7 @@ public struct GraphContainer: Sendable {
     ///
     /// Usage:
     /// ```swift
-    /// let container = try await GraphContainer(for: User.self)
+    /// let container = try GraphContainer(for: User.self)
     /// let context = container.mainContext  // @MainActor bound
     /// ```
     @MainActor
@@ -147,76 +89,17 @@ public struct GraphContainer: Sendable {
         GraphContext(self)
     }
 
-    public func withConnection<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
-        let connection = try await connectionPool.checkout()
-        
-        return try await withTaskCancellationHandler {
-            do {
-                let result = try block(connection)
-                await connectionPool.checkin(connection)
-                return result
-            } catch {
-                await connectionPool.checkin(connection)
-                throw error
-            }
-        } onCancel: {
-            Task {
-                await connectionPool.checkin(connection)
-            }
-        }
-    }
-    
-    // Internal transaction support - use GraphContext.withTransaction for public API
-    internal func withTransaction<T>(_ block: @Sendable (Connection) throws -> T) async throws -> T {
-        let connection = try await connectionPool.checkout()
-        
-        do {
-            _ = try connection.query("BEGIN TRANSACTION")
-            
-            do {
-                let result = try block(connection)
-                _ = try connection.query("COMMIT")
-                await connectionPool.checkin(connection)
-                return result
-            } catch {
-                do {
-                    _ = try connection.query("ROLLBACK")
-                } catch let rollbackError {
-                    // Log rollback error but throw original error
-                    print("Warning: Failed to rollback transaction: \(rollbackError)")
-                }
-                await connectionPool.checkin(connection)
-
-                // Provide detailed error information for debugging
-                let errorDescription = "\(error)"
-                throw GraphError.transactionFailed(reason: errorDescription)
-            }
-        } catch {
-            await connectionPool.checkin(connection)
-            throw error
-        }
-    }
-    
-    public func close() async {
-        await connectionPool.drain()
-    }
-
     // MARK: - Schema Management (SwiftData Pattern)
 
     /// Automatically create schemas for registered models
     /// - Parameters:
+    ///   - database: Database instance
     ///   - models: Models to create schemas for
-    ///   - connectionPool: Connection pool to use
-    private static func ensureSchemas(
-        models: [any _KuzuGraphModel.Type],
-        connectionPool: ConnectionPool
-    ) async throws {
-        let connection = try await connectionPool.checkout()
-        defer {
-            Task {
-                await connectionPool.checkin(connection)
-            }
-        }
+    private static func createSchemas(
+        database: Database,
+        models: [any _KuzuGraphModel.Type]
+    ) throws {
+        let connection = try Connection(database)
 
         // Fetch existing tables and indexes once
         let existingTables = try fetchExistingTables(connection)

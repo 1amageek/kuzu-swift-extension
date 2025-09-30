@@ -24,9 +24,9 @@ struct TodoTask {
 struct SchemaDuplicationFixTests {
     
     @Test("No duplicate table error when creating schema multiple times")
-    func testNoDuplicateTableError() async throws {
+    func testNoDuplicateTableError() throws {
         // Create test context with automatic migration
-        let container = try await GraphContainer(
+        let container = try GraphContainer(
             for: Session.self, TodoTask.self,
             configuration: GraphConfiguration(
                 databasePath: ":memory:",
@@ -36,8 +36,8 @@ struct SchemaDuplicationFixTests {
         let context = GraphContext(container)
         
         // Try to create schemas again - should not error
-        try await context.createSchemaIfNotExists(for: Session.self)
-        try await context.createSchemaIfNotExists(for: TodoTask.self)
+        try context.createSchemaIfNotExists(for: Session.self)
+        try context.createSchemaIfNotExists(for: TodoTask.self)
         
         // Verify we can save data
         let session = Session(title: "Test Session")
@@ -46,32 +46,31 @@ struct SchemaDuplicationFixTests {
         let task = TodoTask(sessionId: session.id, description: "Test TodoTask")
         context.insert(task)
 
-        try await context.save()
+        try context.save()
         
         // Verify data was saved
-        let sessions = try await context.fetch(Session.self)
+        let sessions = try context.fetch(Session.self)
         #expect(sessions.count == 1)
-        
-        let tasks = try await context.fetch(TodoTask.self)
+
+        let tasks = try context.fetch(TodoTask.self)
         #expect(tasks.count == 1)
         
-        await context.close()
     }
     
     @Test("Multiple test contexts are isolated")
-    func testMultipleContextsIsolation() async throws {
+    func testMultipleContextsIsolation() throws {
         // Simulate the user's scenario with SessionManager and TodoTaskManager
         // Each using their own context but same models
         
         // First context (SessionManager.shared)
-        let sessionContainer = try await GraphContainer(
+        let sessionContainer = try GraphContainer(
             for: Session.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let sessionContext = GraphContext(sessionContainer)
 
         // Second context (TodoTaskManager.shared)
-        let taskContainer = try await GraphContainer(
+        let taskContainer = try GraphContainer(
             for: TodoTask.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -80,27 +79,24 @@ struct SchemaDuplicationFixTests {
         // Both should work without conflicts
         let session = Session(title: "Session in first context")
         sessionContext.insert(session)
-        try await sessionContext.save()
+        try sessionContext.save()
 
         let task = TodoTask(sessionId: session.id, description: "TodoTask in second context")
         taskContext.insert(task)
-        try await taskContext.save()
-        
+        try taskContext.save()
+
         // Verify isolation
-        let sessionsInFirst = try await sessionContext.fetch(Session.self)
+        let sessionsInFirst = try sessionContext.fetch(Session.self)
         #expect(sessionsInFirst.count == 1)
-        
-        let tasksInSecond = try await taskContext.fetch(TodoTask.self)
+
+        let tasksInSecond = try taskContext.fetch(TodoTask.self)
         #expect(tasksInSecond.count == 1)
-        
-        await sessionContext.close()
-        await taskContext.close()
     }
     
     @Test("SwiftData-style API works correctly")
-    func testSwiftDataStyleAPI() async throws {
+    func testSwiftDataStyleAPI() throws {
         // Use the new SwiftData-style container API
-        let container = try await GraphContainer(
+        let container = try GraphContainer(
             for: Session.self, TodoTask.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -109,19 +105,18 @@ struct SchemaDuplicationFixTests {
         // Schema should be automatically created
         let session = Session(title: "SwiftData Style")
         context.insert(session)
-        try await context.save()
+        try context.save()
         
         // Fetch should work
-        let sessions = try await context.fetch(Session.self)
+        let sessions = try context.fetch(Session.self)
         #expect(sessions.count == 1)
         #expect(sessions.first?.title == "SwiftData Style")
         
-        await context.close()
     }
     
     @Test("Automatic migration mode skips existing tables")
-    func testAutomaticMigrationSkipsExisting() async throws {
-        let container = try await GraphContainer(
+    func testAutomaticMigrationSkipsExisting() throws {
+        let container = try GraphContainer(
             for: Session.self,
             configuration: GraphConfiguration(
                 databasePath: ":memory:",
@@ -133,29 +128,28 @@ struct SchemaDuplicationFixTests {
         // Save initial data
         let session1 = Session(title: "First")
         context.insert(session1)
-        try await context.save()
+        try context.save()
         
         // Try to create schema again with automatic mode
-        try await context.createSchemasIfNotExist(for: [Session.self])
+        try context.createSchemasIfNotExist(for: [Session.self])
         
         // Original data should still exist
-        let sessions = try await context.fetch(Session.self)
+        let sessions = try context.fetch(Session.self)
         #expect(sessions.count == 1)
-        
+
         // Can still add more data
         let session2 = Session(title: "Second")
         context.insert(session2)
-        try await context.save()
-        
-        let allSessions = try await context.fetch(Session.self)
+        try context.save()
+
+        let allSessions = try context.fetch(Session.self)
         #expect(allSessions.count == 2)
         
-        await context.close()
     }
     
     @Test("MigrationManager safely handles existing tables")
-    func testMigrationManagerSafeTableCreation() async throws {
-        let container = try await GraphContainer(
+    func testMigrationManagerSafeTableCreation() throws {
+        let container = try GraphContainer(
             configuration: GraphConfiguration(
                 databasePath: ":memory:",
                 migrationMode: .none  // Manual control
@@ -164,7 +158,7 @@ struct SchemaDuplicationFixTests {
         let context = GraphContext(container)
         
         // Create schema manually
-        try await context.createSchema(for: Session.self)
+        try context.createSchema(for: Session.self)
         
         // Use MigrationManager to migrate - should handle existing table
         let migrationManager = MigrationManager(
@@ -173,31 +167,30 @@ struct SchemaDuplicationFixTests {
         )
         
         // This should not error even though Session already exists
-        try await migrationManager.migrateIfNeeded(types: [Session.self, TodoTask.self])
+        try migrationManager.migrateIfNeeded(types: [Session.self, TodoTask.self])
         
         // Verify both tables work
         let session = Session(title: "Test")
         context.insert(session)
-        try await context.save()
+        try context.save()
 
         let task = TodoTask(sessionId: session.id, description: "Test TodoTask")
         context.insert(task)
-        try await context.save()
+        try context.save()
         
-        await context.close()
     }
     
     @Test("Test context always uses automatic migration")
-    func testTestContextAutomaticMigration() async throws {
+    func testTestContextAutomaticMigration() throws {
         // In-memory containers should always use automatic migration
-        let container1 = try await GraphContainer(
+        let container1 = try GraphContainer(
             for: Session.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context1 = GraphContext(container1)
 
         // Create same models in another test context - should not conflict
-        let container2 = try await GraphContainer(
+        let container2 = try GraphContainer(
             for: Session.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -206,23 +199,20 @@ struct SchemaDuplicationFixTests {
         // Both contexts should work independently
         let session1 = Session(title: "Context 1")
         context1.insert(session1)
-        try await context1.save()
+        try context1.save()
 
         let session2 = Session(title: "Context 2")
         context2.insert(session2)
-        try await context2.save()
-        
+        try context2.save()
+
         // Verify isolation
-        let sessions1 = try await context1.fetch(Session.self)
-        let sessions2 = try await context2.fetch(Session.self)
-        
+        let sessions1 = try context1.fetch(Session.self)
+        let sessions2 = try context2.fetch(Session.self)
+
         #expect(sessions1.count == 1)
         #expect(sessions2.count == 1)
         #expect(sessions1.first?.title == "Context 1")
         #expect(sessions2.first?.title == "Context 2")
-        
-        await context1.close()
-        await context2.close()
     }
 }
 

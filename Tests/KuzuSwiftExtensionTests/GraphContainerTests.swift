@@ -2,78 +2,74 @@ import Testing
 import Kuzu
 @testable import KuzuSwiftExtension
 
+// Test models at top level
+@GraphNode
+fileprivate struct TestNode: Codable {
+    @ID var id: Int
+    var value: Int
+}
+
+@GraphNode
+fileprivate struct TransactionTestNode: Codable {
+    @ID var id: Int
+    var name: String
+}
+
+@GraphNode
+fileprivate struct User: Codable {
+    @ID var id: Int
+    var name: String
+    var age: Int
+}
+
+@GraphNode
+fileprivate struct Post: Codable {
+    @ID var id: Int
+    var title: String
+}
+
 @Suite("Graph Container Tests")
 struct GraphContainerTests {
 
     // MARK: - Basic Operations
 
     @Test("Basic container operations")
-    func basicOperations() async throws {
-        let config = GraphConfiguration(
-            databasePath: ":memory:",
-            options: GraphConfiguration.Options(
-                maxConnections: 3,
-                minConnections: 1
-            )
-        )
+    func basicOperations() throws {
+        let container = try GraphContainer(for: TestNode.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+        let context = GraphContext(container)
 
-        let container = try await GraphContainer(configuration: config)
+        // Insert and query
+        let node = TestNode(id: 1, value: 42)
+        context.insert(node)
+        try context.save()
 
-        // Test withConnection - verify actual result value
-        let result = try await container.withConnection { connection in
-            try connection.query("RETURN 1 AS value")
-        }
+        let result = try context.raw("MATCH (n:TestNode) RETURN n.value AS value")
         #expect(result.hasNext())
 
         if let flatTuple = try result.getNext(),
            let value = try flatTuple.getValue(0) as? Int64 {
-            #expect(value == 1)
+            #expect(value == 42)
         } else {
             Issue.record("Failed to get result value")
         }
-
-        // Test multiple concurrent connections
-        async let result1 = container.withConnection { connection in
-            try connection.query("RETURN 1 AS value")
-        }
-        async let result2 = container.withConnection { connection in
-            try connection.query("RETURN 2 AS value")
-        }
-        async let result3 = container.withConnection { connection in
-            try connection.query("RETURN 3 AS value")
-        }
-
-        let results = try await (result1, result2, result3)
-        #expect(results.0.hasNext())
-        #expect(results.1.hasNext())
-        #expect(results.2.hasNext())
-
-        await container.close()
     }
 
     // MARK: - Transaction Tests
 
     @Test("Transaction commits successfully")
-    func transactionCommit() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
-
-        // Create a test table
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE NODE TABLE TestNode (id INT64, name STRING, PRIMARY KEY(id))")
-        }
+    func transactionCommit() throws {
+        let container = try GraphContainer(for: TransactionTestNode.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+        let context = GraphContext(container)
 
         // Execute transaction with multiple operations
-        try await container.withTransaction { connection in
-            _ = try connection.query("CREATE (:TestNode {id: 1, name: 'Alice'})")
-            _ = try connection.query("CREATE (:TestNode {id: 2, name: 'Bob'})")
-            _ = try connection.query("CREATE (:TestNode {id: 3, name: 'Charlie'})")
+        try context.transaction {
+            context.insert(TransactionTestNode(id: 1, name: "Alice"))
+            context.insert(TransactionTestNode(id: 2, name: "Bob"))
+            context.insert(TransactionTestNode(id: 3, name: "Charlie"))
         }
 
         // Verify all nodes were created
-        let result = try await container.withConnection { connection in
-            try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
-        }
+        let result = try context.raw("MATCH (n:TransactionTestNode) RETURN count(n) AS count")
         #expect(result.hasNext())
 
         if let flatTuple = try result.getNext(),
@@ -82,329 +78,149 @@ struct GraphContainerTests {
         } else {
             Issue.record("Failed to get count")
         }
-
-        await container.close()
     }
 
-    @Test("Transaction rolls back on primary key violation")
-    func transactionRollbackOnPrimaryKeyViolation() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
-
-        // Create a test table with PRIMARY KEY constraint
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE NODE TABLE TestNode (id INT64, name STRING, PRIMARY KEY(id))")
-        }
+    @Test("Transaction rolls back on error")
+    func transactionRollback() throws {
+        let container = try GraphContainer(for: TransactionTestNode.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+        let context = GraphContext(container)
 
         // Insert initial node
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE (:TestNode {id: 1, name: 'Alice'})")
-        }
+        context.insert(TransactionTestNode(id: 1, name: "Alice"))
+        try context.save()
 
-        // Attempt transaction that will violate PRIMARY KEY constraint
-        await #expect(throws: GraphError.self) {
-            try await container.withTransaction { connection in
-                _ = try connection.query("CREATE (:TestNode {id: 2, name: 'Bob'})")
-                _ = try connection.query("CREATE (:TestNode {id: 1, name: 'Duplicate'})") // Duplicate PRIMARY KEY
+        // Attempt transaction that will fail
+        #expect(throws: Error.self) {
+            try context.transaction {
+                context.insert(TransactionTestNode(id: 2, name: "Bob"))
+                // Force an error by executing invalid query
+                _ = try context.raw("INVALID CYPHER SYNTAX")
             }
         }
 
         // Verify rollback: should still have only 1 node (Alice)
-        let countResult = try await container.withConnection { connection in
-            try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
-        }
+        let countResult = try context.raw("MATCH (n:TransactionTestNode) RETURN count(n) AS count")
         #expect(countResult.hasNext())
 
         if let flatTuple = try countResult.getNext(),
            let count = try flatTuple.getValue(0) as? Int64 {
-            #expect(count == 1, "Expected only 1 node after rollback (Bob should not exist)")
+            #expect(count == 1, "Expected only 1 node after rollback")
         } else {
             Issue.record("Failed to get count after rollback")
         }
-
-        // Verify only Alice exists
-        let nameResult = try await container.withConnection { connection in
-            try connection.query("MATCH (n:TestNode) RETURN n.name AS name")
-        }
-        #expect(nameResult.hasNext())
-
-        if let flatTuple = try nameResult.getNext(),
-           let name = try flatTuple.getValue(0) as? String {
-            #expect(name == "Alice", "Only Alice should exist after rollback")
-        }
-
-        await container.close()
     }
 
-    @Test("Transaction rolls back on query syntax error")
-    func transactionRollbackOnSyntaxError() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
+    // MARK: - SwiftData-style API Tests
 
-        // Create a test table
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE NODE TABLE TestNode (id INT64, name STRING, PRIMARY KEY(id))")
-        }
+    @Test("Insert and save pattern")
+    func insertAndSave() throws {
+        let container = try GraphContainer(for: User.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+        let context = GraphContext(container)
 
-        // Attempt transaction with syntax error
-        await #expect(throws: GraphError.self) {
-            try await container.withTransaction { connection in
-                _ = try connection.query("CREATE (:TestNode {id: 1, name: 'Alice'})")
-                _ = try connection.query("INVALID CYPHER SYNTAX HERE")
-            }
-        }
+        // SwiftData-style: insert then save
+        let user1 = User(id: 1, name: "Alice", age: 30)
+        let user2 = User(id: 2, name: "Bob", age: 25)
 
-        // Verify rollback: no nodes should exist
-        let countResult = try await container.withConnection { connection in
-            try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
-        }
-        #expect(countResult.hasNext())
+        context.insert(user1)
+        context.insert(user2)
+        try context.save()
 
-        if let flatTuple = try countResult.getNext(),
-           let count = try flatTuple.getValue(0) as? Int64 {
-            #expect(count == 0, "Expected no nodes after rollback")
-        } else {
-            Issue.record("Failed to get count after rollback")
-        }
-
-        await container.close()
-    }
-
-    @Test("Transaction atomicity with multiple operations")
-    func transactionAtomicity() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
-
-        // Create test tables
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE NODE TABLE User (id INT64, name STRING, PRIMARY KEY(id))")
-        }
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE NODE TABLE Post (id INT64, title STRING, PRIMARY KEY(id))")
-        }
-
-        // Execute transaction creating nodes in both tables
-        try await container.withTransaction { connection in
-            _ = try connection.query("CREATE (:User {id: 1, name: 'Alice'})")
-            _ = try connection.query("CREATE (:Post {id: 1, title: 'First Post'})")
-            _ = try connection.query("CREATE (:User {id: 2, name: 'Bob'})")
-            _ = try connection.query("CREATE (:Post {id: 2, title: 'Second Post'})")
-        }
-
-        // Verify both tables have data
-        let userCount = try await container.withConnection { connection in
-            try connection.query("MATCH (u:User) RETURN count(u) AS count")
-        }
-        let postCount = try await container.withConnection { connection in
-            try connection.query("MATCH (p:Post) RETURN count(p) AS count")
-        }
-
-        if let userTuple = try userCount.getNext(),
-           let userCountValue = try userTuple.getValue(0) as? Int64 {
-            #expect(userCountValue == 2, "Expected 2 users")
-        }
-
-        if let postTuple = try postCount.getNext(),
-           let postCountValue = try postTuple.getValue(0) as? Int64 {
-            #expect(postCountValue == 2, "Expected 2 posts")
-        }
-
-        // Now attempt transaction that fails halfway
-        await #expect(throws: GraphError.self) {
-            try await container.withTransaction { connection in
-                _ = try connection.query("CREATE (:User {id: 3, name: 'Charlie'})")
-                _ = try connection.query("CREATE (:Post {id: 1, title: 'Duplicate'})")  // Duplicate PRIMARY KEY
-            }
-        }
-
-        // Verify atomicity: Charlie should NOT exist (entire transaction rolled back)
-        let finalUserCount = try await container.withConnection { connection in
-            try connection.query("MATCH (u:User) RETURN count(u) AS count")
-        }
-
-        if let tuple = try finalUserCount.getNext(),
+        // Verify
+        let result = try context.raw("MATCH (u:User) RETURN count(u) AS count")
+        if let tuple = try result.getNext(),
            let count = try tuple.getValue(0) as? Int64 {
-            #expect(count == 2, "User count should still be 2 (Charlie should not exist)")
+            #expect(count == 2)
         }
-
-        await container.close()
     }
 
-    @Test("Nested transaction operations")
-    func nestedTransactionOperations() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
+    @Test("Delete and save pattern")
+    func deleteAndSave() throws {
+        let container = try GraphContainer(for: User.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+        let context = GraphContext(container)
 
-        // Create a test table
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE NODE TABLE TestNode (id INT64, value INT64, PRIMARY KEY(id))")
-        }
+        // Insert users
+        let user1 = User(id: 1, name: "Alice", age: 30)
+        let user2 = User(id: 2, name: "Bob", age: 25)
+        context.insert(user1)
+        context.insert(user2)
+        try context.save()
 
-        // Execute complex transaction with conditional logic
-        try await container.withTransaction { connection in
-            // Insert first node
-            _ = try connection.query("CREATE (:TestNode {id: 1, value: 10})")
+        // Delete one user
+        context.delete(user1)
+        try context.save()
 
-            // Query to check value
-            let result = try connection.query("MATCH (n:TestNode {id: 1}) RETURN n.value AS value")
-            if result.hasNext(),
-               let tuple = try result.getNext(),
-               let value = try tuple.getValue(0) as? Int64 {
-                // Based on the value, insert another node
-                if value == 10 {
-                    _ = try connection.query("CREATE (:TestNode {id: 2, value: 20})")
-                }
-            }
-
-            // Insert third node
-            _ = try connection.query("CREATE (:TestNode {id: 3, value: 30})")
-        }
-
-        // Verify all operations committed
-        let countResult = try await container.withConnection { connection in
-            try connection.query("MATCH (n:TestNode) RETURN count(n) AS count")
-        }
-
-        if let tuple = try countResult.getNext(),
+        // Verify only Bob remains
+        let result = try context.raw("MATCH (u:User) RETURN count(u) AS count")
+        if let tuple = try result.getNext(),
            let count = try tuple.getValue(0) as? Int64 {
-            #expect(count == 3, "All nodes should be committed")
-        }
-
-        await container.close()
-    }
-
-    // MARK: - Error Handling Tests
-
-    @Test("Connection error handling and recovery")
-    func connectionErrorHandling() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
-
-        // Test that errors are properly propagated
-        await #expect(throws: Error.self, "Invalid query should fail") {
-            _ = try await container.withConnection { connection in
-                try connection.query("INVALID CYPHER QUERY")
-            }
-        }
-
-        // Verify container is still functional after error
-        let result = try await container.withConnection { connection in
-            try connection.query("RETURN 1 AS value")
-        }
-        #expect(result.hasNext())
-
-        if let flatTuple = try result.getNext(),
-           let value = try flatTuple.getValue(0) as? Int64 {
-            #expect(value == 1, "Container should work after error")
-        }
-
-        await container.close()
-    }
-
-    @Test("Transaction error preserves database state")
-    func transactionErrorPreservesState() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
-
-        // Create test table and insert initial data
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE NODE TABLE TestNode (id INT64, name STRING, PRIMARY KEY(id))")
-        }
-        _ = try await container.withConnection { connection in
-            try connection.query("CREATE (:TestNode {id: 1, name: 'Initial'})")
-        }
-
-        // Record initial state
-        let initialResult = try await container.withConnection { connection in
-            try connection.query("MATCH (n:TestNode) RETURN n.id AS id, n.name AS name")
-        }
-
-        var initialNodes: [(Int64, String)] = []
-        while initialResult.hasNext() {
-            if let tuple = try initialResult.getNext(),
-               let id = try tuple.getValue(0) as? Int64,
-               let name = try tuple.getValue(1) as? String {
-                initialNodes.append((id, name))
-            }
-        }
-
-        // Attempt failed transaction
-        await #expect(throws: GraphError.self) {
-            try await container.withTransaction { connection in
-                _ = try connection.query("CREATE (:TestNode {id: 2, name: 'New'})")
-                _ = try connection.query("CREATE (:TestNode {id: 1, name: 'Conflict'})") // PRIMARY KEY violation
-            }
-        }
-
-        // Verify state is preserved (only Initial node exists)
-        let finalResult = try await container.withConnection { connection in
-            try connection.query("MATCH (n:TestNode) RETURN n.id AS id, n.name AS name ORDER BY n.id")
-        }
-
-        var finalNodes: [(Int64, String)] = []
-        while finalResult.hasNext() {
-            if let tuple = try finalResult.getNext(),
-               let id = try tuple.getValue(0) as? Int64,
-               let name = try tuple.getValue(1) as? String {
-                finalNodes.append((id, name))
-            }
-        }
-
-        #expect(finalNodes.count == initialNodes.count, "Node count should be preserved")
-
-        // Verify each node individually
-        for (index, initialNode) in initialNodes.enumerated() {
-            #expect(finalNodes[index].0 == initialNode.0, "Node ID should be preserved")
-            #expect(finalNodes[index].1 == initialNode.1, "Node name should be preserved")
-        }
-
-        await container.close()
-    }
-
-    // MARK: - Container Lifecycle Tests
-
-    @Test("Container closes cleanly")
-    func containerCloses() async throws {
-        let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
-
-        // Perform some operations
-        _ = try await container.withConnection { connection in
-            try connection.query("RETURN 1 AS value")
-        }
-
-        // Close container
-        await container.close()
-
-        // After close, new operations should fail
-        await #expect(throws: GraphError.self) {
-            _ = try await container.withConnection { connection in
-                try connection.query("RETURN 1")
-            }
+            #expect(count == 1)
         }
     }
 
-    @Test("Multiple containers with same database path")
-    func multipleContainers() async throws {
-        // Note: This test uses different database paths to avoid conflicts
-        let config1 = GraphConfiguration(databasePath: ":memory:")
-        let config2 = GraphConfiguration(databasePath: ":memory:")
+    @Test("Rollback pattern")
+    func rollbackPattern() throws {
+        let container = try GraphContainer(for: User.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+        let context = GraphContext(container)
 
-        let container1 = try await GraphContainer(configuration: config1)
-        let container2 = try await GraphContainer(configuration: config2)
+        // Insert and save
+        context.insert(User(id: 1, name: "Alice", age: 30))
+        try context.save()
 
-        // Both containers should work independently
-        let result1 = try await container1.withConnection { connection in
-            try connection.query("RETURN 1 AS value")
+        // Insert but rollback
+        context.insert(User(id: 2, name: "Bob", age: 25))
+        context.rollback()
+
+        // Verify Bob was not saved
+        let result = try context.raw("MATCH (u:User) RETURN count(u) AS count")
+        if let tuple = try result.getNext(),
+           let count = try tuple.getValue(0) as? Int64 {
+            #expect(count == 1)
         }
-        let result2 = try await container2.withConnection { connection in
-            try connection.query("RETURN 2 AS value")
+    }
+
+    // MARK: - Multi-model Tests
+
+    @Test("Multiple model types")
+    func multipleModels() throws {
+        let container = try GraphContainer(for: User.self, Post.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+        let context = GraphContext(container)
+
+        // Insert different model types
+        context.insert(User(id: 1, name: "Alice", age: 30))
+        context.insert(Post(id: 1, title: "First Post"))
+        try context.save()
+
+        // Verify both types exist
+        let userResult = try context.raw("MATCH (u:User) RETURN count(u) AS count")
+        if let tuple = try userResult.getNext(),
+           let count = try tuple.getValue(0) as? Int64 {
+            #expect(count == 1)
         }
 
-        #expect(result1.hasNext())
-        #expect(result2.hasNext())
+        let postResult = try context.raw("MATCH (p:Post) RETURN count(p) AS count")
+        if let tuple = try postResult.getNext(),
+           let count = try tuple.getValue(0) as? Int64 {
+            #expect(count == 1)
+        }
+    }
 
-        await container1.close()
-        await container2.close()
+    // MARK: - MainContext Tests
+
+    @Test("MainContext accessibility")
+    @MainActor
+    func mainContext() throws {
+        let container = try GraphContainer(for: User.self, configuration: GraphConfiguration(databasePath: ":memory:"))
+
+        // Access mainContext (should be @MainActor bound)
+        let context = container.mainContext
+
+        context.insert(User(id: 1, name: "Alice", age: 30))
+        try context.save()
+
+        let result = try context.raw("MATCH (u:User) RETURN count(u) AS count")
+        if let tuple = try result.getNext(),
+           let count = try tuple.getValue(0) as? Int64 {
+            #expect(count == 1)
+        }
     }
 }

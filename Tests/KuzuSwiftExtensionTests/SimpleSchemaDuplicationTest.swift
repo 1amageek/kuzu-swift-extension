@@ -20,22 +20,21 @@ struct SimpleSchemaDuplicationTest {
             databasePath: ":memory:",
             migrationMode: .automatic
         )
-        let container = try await GraphContainer(configuration: config)
+        let container = try GraphContainer(configuration: config)
         let context = GraphContext(container)
         
         // First creation - should succeed
-        try await context.createSchemaIfNotExists(for: TestItem.self)
+        try context.createSchemaIfNotExists(for: TestItem.self)
         
         // Second creation - should not error (skip existing)
-        try await context.createSchemaIfNotExists(for: TestItem.self)
+        try context.createSchemaIfNotExists(for: TestItem.self)
         
         // Third creation - verify still works
-        try await context.createSchemaIfNotExists(for: TestItem.self)
+        try context.createSchemaIfNotExists(for: TestItem.self)
         
         // If we reach here, the test passed
         #expect(true, "No duplicate table error occurred")
         
-        await context.close()
     }
     
     @Test("MigrationManager migrateIfNeeded handles existing tables")
@@ -44,12 +43,12 @@ struct SimpleSchemaDuplicationTest {
             databasePath: ":memory:",
             migrationMode: .none  // Manual control
         )
-        let container = try await GraphContainer(configuration: config)
+        let container = try GraphContainer(configuration: config)
         let context = GraphContext(container)
         
         // Create schema manually first
         let ddl = TestItem._kuzuDDL
-        _ = try await context.raw(ddl)
+        _ = try context.raw(ddl)
         
         // Now use MigrationManager - should not error
         let migrationManager = MigrationManager(
@@ -58,17 +57,16 @@ struct SimpleSchemaDuplicationTest {
         )
         
         // This should handle the existing table gracefully
-        try await migrationManager.migrateIfNeeded(types: [TestItem.self])
+        try migrationManager.migrateIfNeeded(types: [TestItem.self])
         
         #expect(true, "MigrationManager handled existing table")
         
-        await context.close()
     }
     
     @Test("Automatic migration mode with GraphContainer")
     func testAutomaticMigrationMode() async throws {
         // Use the new container API with automatic migration
-        let container = try await GraphContainer(
+        let container = try GraphContainer(
             for: TestItem.self,
             configuration: GraphConfiguration(
                 databasePath: ":memory:",
@@ -78,10 +76,9 @@ struct SimpleSchemaDuplicationTest {
         let context = GraphContext(container)
         
         // Try to create schema again - should not error
-        try await context.createSchemasIfNotExist(for: [TestItem.self])
+        try context.createSchemasIfNotExist(for: [TestItem.self])
         
         #expect(true, "Automatic migration handled duplicates")
         
-        await context.close()
     }
 }

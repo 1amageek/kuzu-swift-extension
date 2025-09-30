@@ -21,11 +21,11 @@ struct DecodeDebugTest {
     @Test("Debug decode issue")
     func debugDecode() async throws {
         let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
+        let container = try GraphContainer(configuration: config)
         let context = GraphContext(container)
         
         // Create schema
-        try await context.createSchema(for: [DecodeTestUser.self])
+        try context.createSchema(for: [DecodeTestUser.self])
         
         // Insert users
         let users = [
@@ -37,11 +37,11 @@ struct DecodeDebugTest {
         for user in users {
             context.insert(user)
         }
-        try await context.save()
+        try context.save()
         
         // Query and decode
         print("Querying users...")
-        let result = try await context.raw("MATCH (u:DecodeTestUser) WHERE u.age > 25 RETURN u ORDER BY u.name")
+        let result = try context.raw("MATCH (u:DecodeTestUser) WHERE u.age > 25 RETURN u ORDER BY u.name")
         
         print("Column names: \(result.getColumnNames())")
         
@@ -68,13 +68,12 @@ struct DecodeDebugTest {
         print("Total rows: \(count)")
         
         // Now try decode
-        let result2 = try await context.raw("MATCH (u:DecodeTestUser) WHERE u.age > 25 RETURN u ORDER BY u.name")
+        let result2 = try context.raw("MATCH (u:DecodeTestUser) WHERE u.age > 25 RETURN u ORDER BY u.name")
         let decoded = try result2.decodeArray(DecodeTestUser.self)
         print("Decoded count: \(decoded.count)")
         for user in decoded {
             print("  User: \(user.name), age: \(user.age)")
         }
         
-        await context.close()
     }
 }

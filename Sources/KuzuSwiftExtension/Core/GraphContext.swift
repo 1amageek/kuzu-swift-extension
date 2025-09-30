@@ -6,12 +6,12 @@ import Synchronization
 ///
 /// Thread Safety: This class conforms to Sendable using Mutex for state protection:
 /// - Pending operations are protected by Mutex<PendingOperations>
+/// - Each context has its own dedicated Connection
 /// - Kuzu's Connection and Database are internally thread-safe
-/// - ConnectionPool is an actor providing synchronized access to connections
 ///
 /// Usage Pattern (SwiftData-compatible):
 /// ```swift
-/// let context = try await GraphContext(configuration: config)
+/// let context = GraphContext(container)
 ///
 /// // Accumulate changes
 /// context.insert(user1)
@@ -26,6 +26,7 @@ public final class GraphContext: Sendable {
     let configuration: GraphConfiguration
     private let encoder: KuzuEncoder
     private let decoder: KuzuDecoder
+    private let connection: Connection
 
     // Pending operations protected by Mutex
     private let pendingOperations = Mutex<PendingOperations>(
@@ -46,6 +47,13 @@ public final class GraphContext: Sendable {
         self.configuration = container.configuration
         self.encoder = KuzuEncoder(configuration: configuration.encodingConfiguration)
         self.decoder = KuzuDecoder(configuration: configuration.decodingConfiguration)
+
+        // Each context gets its own connection
+        do {
+            self.connection = try Connection(container.database)
+        } catch {
+            fatalError("Failed to create connection: \(error)")
+        }
     }
 
     // MARK: - SwiftData-Compatible API
@@ -83,7 +91,7 @@ public final class GraphContext: Sendable {
     /// All operations are executed within a single transaction, providing ACID guarantees.
     ///
     /// - Throws: GraphError if the transaction fails
-    public func save() async throws {
+    public func save() throws {
         let operations = pendingOperations.withLock { ops in
             let result = (
                 inserts: ops.insertsByType,
@@ -98,7 +106,7 @@ public final class GraphContext: Sendable {
             return  // Nothing to save
         }
 
-        try await executeBatchOperations(operations)
+        try executeBatchOperations(operations)
     }
 
     /// Discards all pending inserts and deletes without saving them
@@ -118,11 +126,11 @@ public final class GraphContext: Sendable {
     /// accumulated changes when the block completes successfully. If an error
     /// is thrown, changes are rolled back.
     ///
-    /// SwiftData-compatible API (async version due to actor isolation requirements).
+    /// SwiftData-compatible API.
     ///
     /// Example:
     /// ```swift
-    /// try await context.transaction {
+    /// try context.transaction {
     ///     context.insert(user1)
     ///     context.insert(user2)
     ///     context.delete(oldUser)
@@ -132,37 +140,10 @@ public final class GraphContext: Sendable {
     ///
     /// - Parameter block: A closure containing the operations to perform
     /// - Throws: Any error thrown by the block or save operation
-    public func transaction(_ block: () throws -> Void) async throws {
+    public func transaction(_ block: () throws -> Void) throws {
         do {
             try block()
-            try await save()
-        } catch {
-            rollback()
-            throw error
-        }
-    }
-
-    /// Execute async operations within an implicit transaction
-    ///
-    /// Async version of transaction that supports async/await operations
-    /// within the transaction block.
-    ///
-    /// Example:
-    /// ```swift
-    /// try await context.transaction {
-    ///     context.insert(user1)
-    ///     let count = try await context.count(User.self)
-    ///     context.insert(user2)
-    ///     // Automatically saved when block completes
-    /// }
-    /// ```
-    ///
-    /// - Parameter block: An async closure containing the operations to perform
-    /// - Throws: Any error thrown by the block or save operation
-    public func transaction(_ block: () async throws -> Void) async throws {
-        do {
-            try await block()
-            try await save()
+            try save()
         } catch {
             rollback()
             throw error
@@ -176,27 +157,33 @@ public final class GraphContext: Sendable {
             inserts: [String: [any GraphNodeModel]],
             deletes: [String: [any GraphNodeModel]]
         )
-    ) async throws {
-        // withTransaction already handles BEGIN/COMMIT/ROLLBACK
-        try await container.withTransaction { connection in
+    ) throws {
+        // Execute in a transaction
+        _ = try connection.query("BEGIN TRANSACTION")
+
+        do {
             // Execute batch inserts (UNWIND + MERGE)
             for (_, models) in operations.inserts {
                 guard let firstModel = models.first else { continue }
-                try executeBatchInsert(models, firstModel: firstModel, connection: connection)
+                try executeBatchInsert(models, firstModel: firstModel)
             }
 
             // Execute batch deletes (UNWIND + MATCH/DELETE)
             for (_, models) in operations.deletes {
                 guard let firstModel = models.first else { continue }
-                try executeBatchDelete(models, firstModel: firstModel, connection: connection)
+                try executeBatchDelete(models, firstModel: firstModel)
             }
+
+            _ = try connection.query("COMMIT")
+        } catch {
+            _ = try? connection.query("ROLLBACK")
+            throw GraphError.transactionFailed(reason: "\(error)")
         }
     }
 
     private func executeBatchInsert(
         _ models: [any GraphNodeModel],
-        firstModel: any GraphNodeModel,
-        connection: Connection
+        firstModel: any GraphNodeModel
     ) throws {
         guard !models.isEmpty else { return }
 
@@ -289,8 +276,7 @@ public final class GraphContext: Sendable {
 
     private func executeBatchDelete(
         _ models: [any GraphNodeModel],
-        firstModel: any GraphNodeModel,
-        connection: Connection
+        firstModel: any GraphNodeModel
     ) throws {
         guard !models.isEmpty else { return }
 
@@ -327,20 +313,18 @@ public final class GraphContext: Sendable {
         let kuzuParams = try encoder.encodeParameters(["ids": ids])
         _ = try connection.execute(statement, kuzuParams)
     }
-    
+
     // MARK: - Raw Query Execution
 
     @discardableResult
-    public func raw(_ query: String, bindings: [String: any Sendable] = [:]) async throws -> QueryResult {
-        return try await container.withConnection { connection in
-            if bindings.isEmpty {
-                return try connection.query(query)
-            } else {
-                let statement = try connection.prepare(query)
-                // Convert values to Kuzu-compatible types using KuzuEncoder
-                let kuzuParams = try encoder.encodeParameters(bindings)
-                return try connection.execute(statement, kuzuParams)
-            }
+    public func raw(_ query: String, bindings: [String: any Sendable] = [:]) throws -> QueryResult {
+        if bindings.isEmpty {
+            return try connection.query(query)
+        } else {
+            let statement = try connection.prepare(query)
+            // Convert values to Kuzu-compatible types using KuzuEncoder
+            let kuzuParams = try encoder.encodeParameters(bindings)
+            return try connection.execute(statement, kuzuParams)
         }
     }
 
@@ -352,7 +336,7 @@ public final class GraphContext: Sendable {
     ///
     /// Example:
     /// ```swift
-    /// try await graph.withRawTransaction { connection in
+    /// try graph.withRawTransaction { connection in
     ///     _ = try connection.query("CREATE (n:User {id: 1, name: 'Alice'})")
     ///     _ = try connection.query("CREATE (p:Post {id: 1, title: 'Hello'})")
     ///     return "Success"
@@ -363,57 +347,55 @@ public final class GraphContext: Sendable {
     /// - Returns: The result of the block
     /// - Throws: GraphError if the transaction fails
     public func withRawTransaction<T>(
-        _ block: @escaping @Sendable (Connection) throws -> T
-    ) async throws -> T {
-        return try await container.withTransaction { connection in
-            _ = try connection.query("BEGIN TRANSACTION")
+        _ block: (Connection) throws -> T
+    ) throws -> T {
+        _ = try connection.query("BEGIN TRANSACTION")
 
-            do {
-                let result = try block(connection)
-                _ = try connection.query("COMMIT")
-                return result
-            } catch {
-                _ = try? connection.query("ROLLBACK")
-                throw error
-            }
+        do {
+            let result = try block(connection)
+            _ = try connection.query("COMMIT")
+            return result
+        } catch {
+            _ = try? connection.query("ROLLBACK")
+            throw error
         }
     }
-    
+
     // MARK: - New Query DSL
-    
+
     /// Execute a query using the new type-safe DSL
-    public func query<T: QueryComponent>(@QueryBuilder _ builder: () -> T) async throws -> T.Result {
+    public func query<T: QueryComponent>(@QueryBuilder _ builder: () -> T) throws -> T.Result {
         let queryComponent = builder()
         let cypher = try queryComponent.toCypher()
-        
+
         // Check if we need to add RETURN clause
         let needsReturn = queryComponent.isReturnable && !cypher.query.contains("RETURN")
         var finalQuery = cypher.query
-        
+
         if needsReturn {
             // Auto-generate RETURN clause for returnable components
             if let aliased = queryComponent as? any AliasedComponent {
                 finalQuery += " RETURN \(aliased.alias)"
             }
         }
-        
-        let result = try await raw(finalQuery, bindings: cypher.parameters)
-        
+
+        let result = try raw(finalQuery, bindings: cypher.parameters)
+
         // Use the component's own mapResult method
         return try queryComponent.mapResult(result, decoder: decoder)
     }
-    
+
     // MARK: - Transaction Management
     // Transaction support is available through the withTransaction extension method
-    
+
     // MARK: - Node Operations
-    
+
     public func find<T: GraphNodeModel & Decodable>(
         _ type: T.Type,
         where conditions: [String: any Sendable] = [:]
-    ) async throws -> [T] {
+    ) throws -> [T] {
         let modelName = T.modelName
-        
+
         var query = "MATCH (n:\(modelName)"
         if !conditions.isEmpty {
             let conditionStrings = conditions.keys.map { "n.\($0) = $\($0)" }
@@ -422,96 +404,96 @@ public final class GraphContext: Sendable {
             query += ")"
         }
         query += " RETURN n"
-        
-        let result = try await raw(query, bindings: conditions)
+
+        let result = try raw(query, bindings: conditions)
         var nodes: [T] = []
-        
+
         while result.hasNext() {
             guard let row = try result.getNext() else {
                 continue
             }
             let nodeData = try row.getValue(0)
-            
+
             if let kuzuNode = nodeData as? KuzuNode {
                 let node = try decoder.decode(T.self, from: kuzuNode.properties)
                 nodes.append(node)
             }
         }
-        
+
         return nodes
     }
-    
+
     // MARK: - Edge Operations
-    
+
     public func connect<E: GraphEdgeModel & Encodable, From: GraphNodeModel, To: GraphNodeModel>(
         from source: From,
         to target: To,
         edge: E
-    ) async throws where From: Encodable, To: Encodable {
+    ) throws where From: Encodable, To: Encodable {
         let sourceProps = try encoder.encode(source)
         let targetProps = try encoder.encode(target)
         let edgeProps = try encoder.encode(edge)
-        
+
         let edgeName = E.edgeName
         let fromModel = From.modelName
         let toModel = To.modelName
-        
+
         // Assume both nodes have id property
         guard let sourceId = sourceProps["id"],
               let targetId = targetProps["id"] else {
             throw GraphError.invalidOperation(message: "Both nodes must have id properties")
         }
-        
+
         var query = """
             MATCH (from:\(fromModel) {id: $fromId}), (to:\(toModel) {id: $toId})
             CREATE (from)-[e:\(edgeName)
             """
-        
+
         if !edgeProps.isEmpty {
             let propStrings = edgeProps.map { key, _ in "\(key): $edge_\(key)" }
             query += " {\(propStrings.joined(separator: ", "))}"
         }
         query += "]->(to)"
-        
+
         var bindings: [String: any Sendable] = [
             "fromId": sourceId,
             "toId": targetId
         ]
-        
+
         for (key, value) in edgeProps {
             bindings["edge_\(key)"] = value
         }
-        
-        _ = try await raw(query, bindings: bindings)
+
+        _ = try raw(query, bindings: bindings)
     }
-    
+
     // MARK: - Helper Methods
     // Note: mapResult was removed as it was unused and overly complex.
     // Result mapping is now handled by QueryComponent.mapResult() and ResultMapper.
-    
+
     // MARK: - Schema Operations
-    
-    public func createSchema<T: _KuzuGraphModel>(for type: T.Type) async throws {
+
+    public func createSchema<T: _KuzuGraphModel>(for type: T.Type) throws {
         let ddl = type._kuzuDDL
-        _ = try await raw(ddl)
+        _ = try raw(ddl)
     }
-    
-    public func createSchema(for types: [any _KuzuGraphModel.Type]) async throws {
+
+    public func createSchema(for types: [any _KuzuGraphModel.Type]) throws {
         // DDL commands cannot be executed within transactions in Kuzu
         // Execute each DDL statement separately
         for type in types {
-            _ = try await raw(type._kuzuDDL)
+            _ = try raw(type._kuzuDDL)
         }
     }
-    
+
     // Create schema only if table doesn't exist
-    public func createSchemaIfNotExists<T: _KuzuGraphModel>(for type: T.Type) async throws {
+    public func createSchemaIfNotExists<T: _KuzuGraphModel>(for type: T.Type) throws {
         let tableName = String(describing: type)
-        
+
         // Check if table exists
         let checkQuery = "SHOW TABLES"
         do {
-            let result = try await raw(checkQuery)
+            let result = try raw(checkQuery)
             var tables: [String] = []
             while result.hasNext() {
                 guard let row = try result.getNext() else { continue }
@@ -519,15 +501,15 @@ public final class GraphContext: Sendable {
                     tables.append(name)
                 }
             }
-            
+
             if !tables.contains(tableName) {
                 // Try to create the table
                 do {
-                    _ = try await raw(type._kuzuDDL)
+                    _ = try raw(type._kuzuDDL)
                 } catch {
                     // Check if it's an "already exists" error
                     let errorMessage = String(describing: error).lowercased()
-                    if errorMessage.contains("already exists") || 
+                    if errorMessage.contains("already exists") ||
                        errorMessage.contains("catalog") ||
                        errorMessage.contains("binder exception") {
                         // Table exists - ignore the error
@@ -539,11 +521,11 @@ public final class GraphContext: Sendable {
         } catch {
             // If SHOW TABLES fails, try to create the table anyway
             do {
-                _ = try await raw(type._kuzuDDL)
+                _ = try raw(type._kuzuDDL)
             } catch {
                 // Check if it's an "already exists" error
                 let errorMessage = String(describing: error).lowercased()
-                if errorMessage.contains("already exists") || 
+                if errorMessage.contains("already exists") ||
                    errorMessage.contains("catalog") ||
                    errorMessage.contains("binder exception") {
                     // Table exists - ignore the error
@@ -553,25 +535,23 @@ public final class GraphContext: Sendable {
             }
         }
     }
-    
+
     // Create schemas for multiple types, skipping existing ones
-    public func createSchemasIfNotExist(for types: [any _KuzuGraphModel.Type]) async throws {
+    public func createSchemasIfNotExist(for types: [any _KuzuGraphModel.Type]) throws {
         guard !types.isEmpty else { return }
 
-        try await container.withConnection { connection in
-            // Fetch existing tables and indexes once
-            let existingTables = try Self.fetchExistingTables(connection)
-            let existingIndexes = try Self.fetchExistingIndexes(connection)
+        // Fetch existing tables and indexes once
+        let existingTables = try Self.fetchExistingTables(connection)
+        let existingIndexes = try Self.fetchExistingIndexes(connection)
 
-            // Create schema and indexes for each model
-            for model in types {
-                try Self.createSchemaForModel(
-                    model,
-                    existingTables: existingTables,
-                    existingIndexes: existingIndexes,
-                    connection: connection
-                )
-            }
+        // Create schema and indexes for each model
+        for model in types {
+            try Self.createSchemaForModel(
+                model,
+                existingTables: existingTables,
+                existingIndexes: existingIndexes,
+                connection: connection
+            )
         }
     }
 
@@ -664,11 +644,5 @@ public final class GraphContext: Sendable {
                 connection: connection
             )
         }
-    }
-    
-    // MARK: - Utility
-    
-    public func close() async {
-        await container.close()
     }
 }

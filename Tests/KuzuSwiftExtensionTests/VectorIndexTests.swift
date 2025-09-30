@@ -78,14 +78,14 @@ struct VectorIndexTests {
     // MARK: - Manual Index Creation Tests
 
     @Test("Manual vector index creation")
-    func testManualVectorIndexCreation() async throws {
-        let container = try await GraphContainer(
+    func testManualVectorIndexCreation() throws {
+        let container = try GraphContainer(
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
         // Create table schema manually (without automatic index creation)
-        try await context.raw("""
+        try context.raw("""
             CREATE NODE TABLE ManualTest (
                 id STRING PRIMARY KEY,
                 embedding FLOAT[3]
@@ -93,7 +93,7 @@ struct VectorIndexTests {
         """)
 
         // Manually create vector index
-        try await context.container.withConnection { connection in
+        try context.withRawTransaction { connection in
             try VectorIndexManager.createVectorIndex(
                 table: "ManualTest",
                 column: "embedding",
@@ -104,7 +104,7 @@ struct VectorIndexTests {
         }
 
         // Verify index was created by checking if it exists
-        let hasIndex = try await context.container.withConnection { connection in
+        let hasIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "ManualTest",
                 indexName: "manual_embedding_idx",
@@ -114,18 +114,17 @@ struct VectorIndexTests {
 
         #expect(hasIndex, "Manually created index should exist")
 
-        await context.close()
     }
 
     @Test("Manual index creation is idempotent")
-    func testIdempotentManualIndexCreation() async throws {
-        let container = try await GraphContainer(
+    func testIdempotentManualIndexCreation() throws {
+        let container = try GraphContainer(
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
         // Create table
-        try await context.raw("""
+        try context.raw("""
             CREATE NODE TABLE IdempotentTest (
                 id STRING PRIMARY KEY,
                 vec FLOAT[3]
@@ -133,7 +132,7 @@ struct VectorIndexTests {
         """)
 
         // Create index first time
-        try await context.container.withConnection { connection in
+        try context.withRawTransaction { connection in
             try VectorIndexManager.createVectorIndex(
                 table: "IdempotentTest",
                 column: "vec",
@@ -144,7 +143,7 @@ struct VectorIndexTests {
         }
 
         // Create same index second time - should not fail
-        try await context.container.withConnection { connection in
+        try context.withRawTransaction { connection in
             try VectorIndexManager.createVectorIndex(
                 table: "IdempotentTest",
                 column: "vec",
@@ -155,7 +154,7 @@ struct VectorIndexTests {
         }
 
         // Verify index still exists
-        let hasIndex = try await context.container.withConnection { connection in
+        let hasIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "IdempotentTest",
                 indexName: "idempotent_vec_idx",
@@ -165,22 +164,21 @@ struct VectorIndexTests {
 
         #expect(hasIndex)
 
-        await context.close()
     }
 
     // MARK: - Automatic Index Creation Tests
 
     @Test("Automatic index creation on GraphContainer initialization")
-    func testAutomaticIndexCreation() async throws {
+    func testAutomaticIndexCreation() throws {
         // Create container with GraphNode model that has @Vector
-        let container = try await GraphContainer(
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
         // Check if index was automatically created
-        let hasIndex = try await context.container.withConnection { connection in
+        let hasIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -190,19 +188,18 @@ struct VectorIndexTests {
 
         #expect(hasIndex, "Index should be automatically created during container initialization")
 
-        await context.close()
     }
 
     @Test("Automatic index creation for multiple vector properties")
-    func testMultipleAutomaticIndexCreation() async throws {
-        let container = try await GraphContainer(
+    func testMultipleAutomaticIndexCreation() throws {
+        let container = try GraphContainer(
             for: MultiVectorModel.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
         // Check if both indexes were created
-        let hasEmbeddingIndex = try await context.container.withConnection { connection in
+        let hasEmbeddingIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "MultiVectorModel",
                 indexName: "multivectormodel_embedding_idx",
@@ -210,7 +207,7 @@ struct VectorIndexTests {
             )
         }
 
-        let hasColorIndex = try await context.container.withConnection { connection in
+        let hasColorIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "MultiVectorModel",
                 indexName: "multivectormodel_color_idx",
@@ -221,22 +218,21 @@ struct VectorIndexTests {
         #expect(hasEmbeddingIndex, "Embedding index should be automatically created")
         #expect(hasColorIndex, "Color index should be automatically created")
 
-        await context.close()
     }
 
     @Test("Automatic index creation is idempotent on re-registration")
-    func testIdempotentAutomaticIndexCreation() async throws {
-        let container = try await GraphContainer(
+    func testIdempotentAutomaticIndexCreation() throws {
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
         // Re-register schema - should not fail
-        try await context.createSchemasIfNotExist(for: [PhotoAsset.self])
+        try context.createSchemasIfNotExist(for: [PhotoAsset.self])
 
         // Index should still exist
-        let hasIndex = try await context.container.withConnection { connection in
+        let hasIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -246,14 +242,13 @@ struct VectorIndexTests {
 
         #expect(hasIndex)
 
-        await context.close()
     }
 
     // MARK: - Index Usage Tests
 
     @Test("Query vector index with QUERY_VECTOR_INDEX")
-    func testVectorIndexQuery() async throws {
-        let container = try await GraphContainer(
+    func testVectorIndexQuery() throws {
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -267,10 +262,10 @@ struct VectorIndexTests {
         context.insert(photo1)
         context.insert(photo2)
         context.insert(photo3)
-        try await context.save()
+        try context.save()
 
         // Query using vector index
-        let result = try await context.raw("""
+        let result = try context.raw("""
             CALL QUERY_VECTOR_INDEX('PhotoAsset', 'photoasset_labcolor_idx',
                 CAST([50.0, 10.0, 20.0] AS FLOAT[3]), 5)
             WITH node AS p, distance
@@ -293,12 +288,11 @@ struct VectorIndexTests {
         #expect(results[0].1 < results[1].1, "Results should be ordered by distance")
         #expect(results[1].1 < results[2].1, "Results should be ordered by distance")
 
-        await context.close()
     }
 
     @Test("Vector search with filtering on non-vector properties")
-    func testVectorSearchWithFiltering() async throws {
-        let container = try await GraphContainer(
+    func testVectorSearchWithFiltering() throws {
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -315,10 +309,10 @@ struct VectorIndexTests {
         for photo in photos {
             context.insert(photo)
         }
-        try await context.save()
+        try context.save()
 
         // Search with filtering on enabled property
-        let result = try await context.raw("""
+        let result = try context.raw("""
             CALL QUERY_VECTOR_INDEX('PhotoAsset', 'photoasset_labcolor_idx',
                 CAST([50.0, 10.0, 20.0] AS FLOAT[3]), 10)
             WITH node AS p, distance
@@ -342,12 +336,11 @@ struct VectorIndexTests {
         #expect(!foundIds.contains("photo2"), "Should not return disabled photo2")
         #expect(!foundIds.contains("photo4"), "Should not return disabled photo4")
 
-        await context.close()
     }
 
     @Test("Multiple vector indexes are independently queryable")
-    func testMultipleVectorIndexesIndependentQuery() async throws {
-        let container = try await GraphContainer(
+    func testMultipleVectorIndexesIndependentQuery() throws {
+        let container = try GraphContainer(
             for: MultiVectorModel.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -361,10 +354,10 @@ struct VectorIndexTests {
             name: "Test Item"
         )
         context.insert(item)
-        try await context.save()
+        try context.save()
 
         // Query embedding index
-        let embeddingResult = try await context.raw("""
+        let embeddingResult = try context.raw("""
             CALL QUERY_VECTOR_INDEX('MultiVectorModel', 'multivectormodel_embedding_idx',
                 CAST(\(Array(repeating: 0.1, count: 128)) AS FLOAT[128]), 1)
             RETURN node.id AS id
@@ -377,7 +370,7 @@ struct VectorIndexTests {
         }
 
         // Query color index independently
-        let colorResult = try await context.raw("""
+        let colorResult = try context.raw("""
             CALL QUERY_VECTOR_INDEX('MultiVectorModel', 'multivectormodel_color_idx',
                 CAST([0.5, 0.3, 0.7] AS FLOAT[3]), 1)
             RETURN node.id AS id
@@ -389,20 +382,19 @@ struct VectorIndexTests {
             #expect(id == "item1")
         }
 
-        await context.close()
     }
 
     // MARK: - Index Verification Tests
 
     @Test("hasVectorIndex correctly identifies existing indexes")
-    func testHasVectorIndexExisting() async throws {
-        let container = try await GraphContainer(
+    func testHasVectorIndexExisting() throws {
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
-        let hasIndex = try await context.container.withConnection { connection in
+        let hasIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -412,18 +404,17 @@ struct VectorIndexTests {
 
         #expect(hasIndex)
 
-        await context.close()
     }
 
     @Test("hasVectorIndex returns false for non-existing indexes")
-    func testHasVectorIndexNonExisting() async throws {
-        let container = try await GraphContainer(
+    func testHasVectorIndexNonExisting() throws {
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
-        let hasIndex = try await context.container.withConnection { connection in
+        let hasIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "nonexistent_index",
@@ -433,19 +424,18 @@ struct VectorIndexTests {
 
         #expect(!hasIndex, "Should return false for non-existing index")
 
-        await context.close()
     }
 
     @Test("hasVectorIndex distinguishes between different tables")
-    func testHasVectorIndexDifferentTables() async throws {
-        let container = try await GraphContainer(
+    func testHasVectorIndexDifferentTables() throws {
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
         // Check index exists for PhotoAsset
-        let hasPhotoIndex = try await context.container.withConnection { connection in
+        let hasPhotoIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -455,7 +445,7 @@ struct VectorIndexTests {
         #expect(hasPhotoIndex)
 
         // Check same index name doesn't exist for different table
-        let hasOtherTableIndex = try await context.container.withConnection { connection in
+        let hasOtherTableIndex = try context.withRawTransaction { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "OtherTable",
                 indexName: "photoasset_labcolor_idx",
@@ -464,46 +454,43 @@ struct VectorIndexTests {
         }
         #expect(!hasOtherTableIndex, "Index should be table-specific")
 
-        await context.close()
     }
 
     // MARK: - Error Handling Tests
 
     @Test("Vector index query on non-existing table fails appropriately")
-    func testVectorIndexQueryOnNonExistingTable() async throws {
-        let container = try await GraphContainer(
+    func testVectorIndexQueryOnNonExistingTable() throws {
+        let container = try GraphContainer(
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
-        await #expect(throws: Error.self) {
-            _ = try await context.raw("""
+        #expect(throws: Error.self) {
+            _ = try context.raw("""
                 CALL QUERY_VECTOR_INDEX('NonExistentTable', 'some_idx',
                     CAST([1.0, 2.0, 3.0] AS FLOAT[3]), 5)
                 RETURN node
             """)
         }
 
-        await context.close()
     }
 
     @Test("Vector index query with wrong dimensions fails")
-    func testVectorIndexQueryWrongDimensions() async throws {
-        let container = try await GraphContainer(
+    func testVectorIndexQueryWrongDimensions() throws {
+        let container = try GraphContainer(
             for: PhotoAsset.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
         let context = GraphContext(container)
 
         // PhotoAsset.labColor is FLOAT[3], try to query with FLOAT[5]
-        await #expect(throws: Error.self) {
-            _ = try await context.raw("""
+        #expect(throws: Error.self) {
+            _ = try context.raw("""
                 CALL QUERY_VECTOR_INDEX('PhotoAsset', 'photoasset_labcolor_idx',
                     CAST([1.0, 2.0, 3.0, 4.0, 5.0] AS FLOAT[5]), 5)
                 RETURN node
             """)
         }
 
-        await context.close()
     }
 }

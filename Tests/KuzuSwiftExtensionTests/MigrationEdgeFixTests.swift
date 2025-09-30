@@ -43,12 +43,12 @@ struct MigrationEdgeFixTests {
         }
         
         // Create context and migration manager
-        let container = try await GraphContainer(configuration: configuration)
+        let container = try GraphContainer(configuration: configuration)
         let context = GraphContext(container)
         let migrationManager = MigrationManager(context: context, policy: .safe)
         
         // This should now succeed with our fix
-        try await migrationManager.migrate(types: [
+        try migrationManager.migrate(types: [
             Session.self,
             Task.self,
             HasTask.self,
@@ -58,11 +58,11 @@ struct MigrationEdgeFixTests {
         
         // Verify the tables were created by trying to query them
         // Check Session table exists
-        let sessionCount = try await context.raw("MATCH (s:Session) RETURN count(s) as cnt", bindings: [:])
+        let sessionCount = try context.raw("MATCH (s:Session) RETURN count(s) as cnt", bindings: [:])
         #expect(try sessionCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
         
         // Check Task table exists
-        let taskCount = try await context.raw("MATCH (t:Task) RETURN count(t) as cnt", bindings: [:])
+        let taskCount = try context.raw("MATCH (t:Task) RETURN count(t) as cnt", bindings: [:])
         #expect(try taskCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
         
         // We'll verify edge tables work by creating relationships below
@@ -72,19 +72,19 @@ struct MigrationEdgeFixTests {
         let taskId = UUID()
         
         // Insert a session
-        _ = try await context.raw(
+        _ = try context.raw(
             "CREATE (s:Session {id: $id, title: $title})",
             bindings: ["id": sessionId.uuidString, "title": "Test Session"]
         )
         
         // Insert a task
-        _ = try await context.raw(
+        _ = try context.raw(
             "CREATE (t:Task {id: $id, title: $title})",
             bindings: ["id": taskId.uuidString, "title": "Test Task"]
         )
         
         // Create relationship
-        _ = try await context.raw(
+        _ = try context.raw(
             """
             MATCH (s:Session {id: $sessionId}), (t:Task {id: $taskId})
             CREATE (s)-[:HasTask {position: $position}]->(t)
@@ -97,7 +97,7 @@ struct MigrationEdgeFixTests {
         )
         
         // Verify the relationship was created
-        let result = try await context.raw(
+        let result = try context.raw(
             """
             MATCH (s:Session)-[r:HasTask]->(t:Task)
             RETURN s.title as sessionTitle, t.title as taskTitle, r.position as position
@@ -125,21 +125,21 @@ struct MigrationEdgeFixTests {
         }
         
         // Create context and migration manager
-        let container = try await GraphContainer(configuration: configuration)
+        let container = try GraphContainer(configuration: configuration)
         let context = GraphContext(container)
         let migrationManager = MigrationManager(context: context, policy: .safe)
         
         // This should succeed as before
-        try await migrationManager.migrate(types: [
+        try migrationManager.migrate(types: [
             Session.self,
             Task.self
         ])
         
         // Verify the tables were created
-        let sessionCount = try await context.raw("MATCH (s:Session) RETURN count(s) as cnt", bindings: [:])
+        let sessionCount = try context.raw("MATCH (s:Session) RETURN count(s) as cnt", bindings: [:])
         #expect(try sessionCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
         
-        let taskCount = try await context.raw("MATCH (t:Task) RETURN count(t) as cnt", bindings: [:])
+        let taskCount = try context.raw("MATCH (t:Task) RETURN count(t) as cnt", bindings: [:])
         #expect(try taskCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
     }
     
@@ -156,12 +156,12 @@ struct MigrationEdgeFixTests {
         }
         
         // Create context and migration manager
-        let container = try await GraphContainer(configuration: configuration)
+        let container = try GraphContainer(configuration: configuration)
         let context = GraphContext(container)
         let migrationManager = MigrationManager(context: context, policy: .safe)
         
         // First migrate nodes
-        try await migrationManager.migrate(types: [
+        try migrationManager.migrate(types: [
             Session.self,
             Task.self
         ])
@@ -169,7 +169,7 @@ struct MigrationEdgeFixTests {
         // Then migrate with edges - this should detect existing nodes and only add edges
         // The migration manager should handle this gracefully
         do {
-            try await migrationManager.migrate(types: [
+            try migrationManager.migrate(types: [
                 Session.self,
                 Task.self,
                 HasTask.self,
@@ -179,27 +179,27 @@ struct MigrationEdgeFixTests {
         } catch {
             // If it fails because tables already exist, that's expected
             // We just need to manually add the edge tables
-            _ = try await context.raw("CREATE REL TABLE HasTask (FROM Session TO Task, position INT64)", bindings: [:])
-            _ = try await context.raw("CREATE REL TABLE SubTaskOf (FROM Task TO Task)", bindings: [:])
-            _ = try await context.raw("CREATE REL TABLE Blocks (FROM Task TO Task)", bindings: [:])
+            _ = try context.raw("CREATE REL TABLE HasTask (FROM Session TO Task, position INT64)", bindings: [:])
+            _ = try context.raw("CREATE REL TABLE SubTaskOf (FROM Task TO Task)", bindings: [:])
+            _ = try context.raw("CREATE REL TABLE Blocks (FROM Task TO Task)", bindings: [:])
         }
         
         // Verify all tables exist by creating and querying a relationship
         let sessionId = UUID()
         let taskId = UUID()
         
-        _ = try await context.raw(
+        _ = try context.raw(
             "CREATE (s:Session {id: $id, title: $title})",
             bindings: ["id": sessionId.uuidString, "title": "Test Session"]
         )
         
-        _ = try await context.raw(
+        _ = try context.raw(
             "CREATE (t:Task {id: $id, title: $title})",
             bindings: ["id": taskId.uuidString, "title": "Test Task"]
         )
         
         // This will fail if edge tables don't exist
-        _ = try await context.raw(
+        _ = try context.raw(
             """
             MATCH (s:Session {id: $sessionId}), (t:Task {id: $taskId})
             CREATE (s)-[:HasTask {position: 1}]->(t)
@@ -208,7 +208,7 @@ struct MigrationEdgeFixTests {
         )
         
         // Verify the relationship was created
-        let result = try await context.raw(
+        let result = try context.raw(
             "MATCH (s:Session)-[:HasTask]->(t:Task) RETURN count(*) as cnt",
             bindings: [:]
         )

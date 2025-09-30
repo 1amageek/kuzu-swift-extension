@@ -64,11 +64,11 @@ struct DDLDebugTest {
         
         // Try to create a context and schema
         let config = GraphConfiguration(databasePath: ":memory:")
-        let container = try await GraphContainer(configuration: config)
+        let container = try GraphContainer(configuration: config)
         let context = GraphContext(container)
         
         // Schema creation should not throw
-        try await context.createSchema(for: [
+        try context.createSchema(for: [
             DDLTestUser.self,
             DDLTestPost.self,
             DDLTestAuthored.self
@@ -77,22 +77,21 @@ struct DDLDebugTest {
         // Try a simple insert and verify it works
         let user = DDLTestUser(email: "test@example.com", name: "Test", age: 30)
         context.insert(user)
-        try await context.save()
+        try context.save()
 
         // Fetch the saved user
-        let users = try await context.fetch(DDLTestUser.self)
+        let users = try context.fetch(DDLTestUser.self)
         #expect(users.count == 1)
         let savedUser = users.first!
         #expect(savedUser.email == "test@example.com")
         #expect(savedUser.name == "Test")
         #expect(savedUser.age == 30)
         #expect(savedUser.status == "active", "Default value should be applied")
-        
+
         // Verify the user was actually saved
-        let count = try await context.count(DDLTestUser.self)
+        let count = try context.count(DDLTestUser.self)
         #expect(count == 1, "One user should be saved")
         
         // Cleanup
-        await context.close()
     }
 }

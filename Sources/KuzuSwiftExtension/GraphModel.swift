@@ -6,12 +6,12 @@ import Kuzu
 public extension GraphContext {
     
     /// Fetch all instances of a model type
-    func fetch<T: GraphNodeModel>(_ type: T.Type) async throws -> [T] {
+    func fetch<T: GraphNodeModel>(_ type: T.Type) throws -> [T] {
         let query = """
             MATCH (n:\(type.modelName))
             RETURN n
             """
-        let result = try await raw(query)
+        let result = try raw(query)
         return try result.decodeArray(T.self)
     }
     
@@ -20,29 +20,29 @@ public extension GraphContext {
         _ type: T.Type,
         where property: String,
         equals value: any Sendable
-    ) async throws -> [T] {
+    ) throws -> [T] {
         let query = """
             MATCH (n:\(type.modelName) {\(property): $value})
             RETURN n
             """
-        
-        let result = try await raw(query, bindings: ["value": value])
+
+        let result = try raw(query, bindings: ["value": value])
         return try result.decodeArray(T.self)
     }
     
     /// Fetch a single instance by ID
-    func fetchOne<T: GraphNodeModel>(_ type: T.Type, id: any Sendable) async throws -> T? {
+    func fetchOne<T: GraphNodeModel>(_ type: T.Type, id: any Sendable) throws -> T? {
         guard let idColumn = type._kuzuColumns.first else {
             throw GraphError.invalidConfiguration(message: "Model must have at least one column")
         }
-        
+
         let query = """
             MATCH (n:\(type.modelName) {\(idColumn.name): $id})
             RETURN n
             """
-        
-        let result = try await raw(query, bindings: ["id": id])
-        
+
+        let result = try raw(query, bindings: ["id": id])
+
         if result.hasNext() {
             return try result.decode(type)
         }
@@ -50,15 +50,15 @@ public extension GraphContext {
     }
     
     /// Delete all instances of a model type
-    func deleteAll<T: GraphNodeModel>(_ type: T.Type) async throws {
+    func deleteAll<T: GraphNodeModel>(_ type: T.Type) throws {
         let deleteQuery = "MATCH (n:\(type.modelName)) DELETE n"
-        _ = try await raw(deleteQuery)
+        _ = try raw(deleteQuery)
     }
     
     /// Count instances of a model type
-    func count<T: GraphNodeModel>(_ type: T.Type) async throws -> Int {
+    func count<T: GraphNodeModel>(_ type: T.Type) throws -> Int {
         let countQuery = "MATCH (n:\(type.modelName)) RETURN count(n)"
-        let result = try await raw(countQuery)
+        let result = try raw(countQuery)
         return try result.mapFirstRequired(to: Int.self, at: 0)
     }
     
@@ -67,13 +67,13 @@ public extension GraphContext {
         _ type: T.Type,
         where property: String,
         equals value: any Sendable
-    ) async throws -> Int {
+    ) throws -> Int {
         let query = """
             MATCH (n:\(type.modelName) {\(property): $value})
             RETURN count(n)
             """
-        
-        let result = try await raw(query, bindings: ["value": value])
+
+        let result = try raw(query, bindings: ["value": value])
         return try result.mapFirstRequired(to: Int.self, at: 0)
     }
 }
@@ -86,12 +86,12 @@ public extension GraphContext {
         from source: From,
         to target: To,
         edge: Edge
-    ) async throws {
+    ) throws {
         guard let fromIdColumn = From._kuzuColumns.first,
               let toIdColumn = To._kuzuColumns.first else {
             throw GraphError.invalidConfiguration(message: "Models must have at least one column")
         }
-        
+
         // Extract IDs from models
         let sourceProperties = try extractProperties(from: source, columns: From._kuzuColumns)
         let targetProperties = try extractProperties(from: target, columns: To._kuzuColumns)
@@ -101,36 +101,36 @@ public extension GraphContext {
 
         let edgeColumns = Edge._kuzuColumns
         let edgeProperties = try extractProperties(from: edge, columns: edgeColumns)
-        
+
         var edgeBindings: [String: any Sendable] = [:]
         for (key, value) in edgeProperties {
             edgeBindings["edge_\(key)"] = value
         }
-        
+
         let edgePropertyList = QueryHelpers.buildPropertyAssignments(
             columns: edgeColumns,
             parameterPrefix: "edge",
             isAssignment: false
         )
         .joined(separator: ", ")
-        
+
         let query = """
             MATCH (from:\(From.modelName) {\(fromIdColumn.name): $fromId})
             MATCH (to:\(To.modelName) {\(toIdColumn.name): $toId})
             CREATE (from)-[:\(String(describing: Edge.self)) {\(edgePropertyList)}]->(to)
             """
-        
+
         var bindings = edgeBindings
         bindings["fromId"] = fromId
         bindings["toId"] = toId
-        
-        _ = try await raw(query, bindings: bindings)
+
+        _ = try raw(query, bindings: bindings)
     }
 
     /// Create multiple relationships in a single batch operation using UNWIND
     func createRelationships<From: GraphNodeModel & Encodable, To: GraphNodeModel & Encodable, Edge: _KuzuGraphModel & Encodable>(
         relationships: [(from: From, to: To, edge: Edge)]
-    ) async throws {
+    ) throws {
         guard !relationships.isEmpty else { return }
 
         guard let fromIdColumn = From._kuzuColumns.first,
@@ -183,7 +183,7 @@ public extension GraphContext {
             CREATE (from)-[:\(String(describing: Edge.self))\(edgePropsClause)]->(to)
             """
 
-        _ = try await raw(query, bindings: ["items": items])
+        _ = try raw(query, bindings: ["items": items])
     }
 }
 

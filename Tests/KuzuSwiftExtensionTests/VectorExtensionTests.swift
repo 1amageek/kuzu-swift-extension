@@ -8,22 +8,22 @@ struct VectorExtensionTests {
 
     // MARK: - Helper Functions
 
-    private func createTestGraph() async throws -> GraphContext {
+    private func createTestGraph() throws -> GraphContext {
         let config = GraphConfiguration(
             databasePath: ":memory:"
         )
-        let container = try await GraphContainer(configuration: config)
+        let container = try GraphContainer(configuration: config)
         return GraphContext(container)
     }
 
     // MARK: - Tests
 
     @Test("Vector extension availability")
-    func vectorExtensionAvailability() async throws {
-        let graph = try await createTestGraph()
+    func vectorExtensionAvailability() throws {
+        let graph = try createTestGraph()
 
         // Test if vector functions are available using Cypher syntax
-        let result = try await graph.raw(
+        let result = try graph.raw(
             "RETURN [1.0, 2.0, 3.0] AS test_vector"
         )
 
@@ -33,8 +33,8 @@ struct VectorExtensionTests {
     }
 
     @Test("Create table with vector column")
-    func createTableWithVectorColumn() async throws {
-        let graph = try await createTestGraph()
+    func createTableWithVectorColumn() throws {
+        let graph = try createTestGraph()
 
         // Create table with vector column using FLOAT[] type
         let createTableQuery = """
@@ -44,17 +44,17 @@ struct VectorExtensionTests {
             )
         """
 
-        _ = try await graph.raw(createTableQuery)
+        _ = try graph.raw(createTableQuery)
 
         // Verify table was created
-        let tablesResult = try await graph.raw("CALL show_tables() RETURN *")
+        let tablesResult = try graph.raw("CALL show_tables() RETURN *")
         let tables = try tablesResult.map { try $0.getAsDictionary() }
         #expect(tables.count > 0)
     }
 
     @Test("Insert and retrieve vector data")
-    func insertVectorData() async throws {
-        let graph = try await createTestGraph()
+    func insertVectorData() throws {
+        let graph = try createTestGraph()
 
         // Create table with FLOAT[] vector type
         let createTableQuery = """
@@ -63,7 +63,7 @@ struct VectorExtensionTests {
                 embedding FLOAT[3]
             )
         """
-        _ = try await graph.raw(createTableQuery)
+        _ = try graph.raw(createTableQuery)
 
         // Insert vector data
         let insertQuery = """
@@ -72,11 +72,11 @@ struct VectorExtensionTests {
                 embedding: [0.1, 0.2, 0.3]
             })
         """
-        _ = try await graph.raw(insertQuery)
+        _ = try graph.raw(insertQuery)
 
         // Query the data back
         let selectQuery = "MATCH (d:Document) RETURN d.id AS id, d.embedding AS embedding"
-        let queryResult = try await graph.raw(selectQuery)
+        let queryResult = try graph.raw(selectQuery)
         let results = try queryResult.map { try $0.getAsDictionary() }
 
         #expect(results.count == 1)
@@ -86,8 +86,8 @@ struct VectorExtensionTests {
     }
 
     @Test("Vector index creation with static extension")
-    func vectorIndexCreation() async throws {
-        let graph = try await createTestGraph()
+    func vectorIndexCreation() throws {
+        let graph = try createTestGraph()
 
         // Create table with vector column
         let createTableQuery = """
@@ -97,7 +97,7 @@ struct VectorExtensionTests {
                 embedding FLOAT[384]
             )
         """
-        _ = try await graph.raw(createTableQuery)
+        _ = try graph.raw(createTableQuery)
 
         // Use the statically linked CREATE_VECTOR_INDEX function
         do {
@@ -105,7 +105,7 @@ struct VectorExtensionTests {
             let createIndexQuery = """
                 CALL CREATE_VECTOR_INDEX('Document', 'doc_embedding_idx', 'embedding', metric := 'l2')
             """
-            _ = try await graph.raw(createIndexQuery)
+            _ = try graph.raw(createIndexQuery)
 
             // If this succeeds, static vector extension is working
             print("✅ HNSW index created successfully")
@@ -116,8 +116,8 @@ struct VectorExtensionTests {
     }
 
     @Test("Vector similarity search")
-    func vectorSimilaritySearch() async throws {
-        let graph = try await createTestGraph()
+    func vectorSimilaritySearch() throws {
+        let graph = try createTestGraph()
 
         // Create table
         let createTableQuery = """
@@ -127,7 +127,7 @@ struct VectorExtensionTests {
                 embedding FLOAT[3]
             )
         """
-        _ = try await graph.raw(createTableQuery)
+        _ = try graph.raw(createTableQuery)
 
         // Insert multiple vectors
         let vectors = [
@@ -144,13 +144,13 @@ struct VectorExtensionTests {
                     embedding: [\(embedding.map { String($0) }.joined(separator: ", "))]
                 })
             """
-            _ = try await graph.raw(insertQuery)
+            _ = try graph.raw(insertQuery)
         }
 
         // Try vector similarity search
         do {
             // Create vector index using correct syntax with parameters
-            _ = try await graph.raw("CALL CREATE_VECTOR_INDEX('Document', 'doc_embedding_idx', 'embedding', metric := 'l2')")
+            _ = try graph.raw("CALL CREATE_VECTOR_INDEX('Document', 'doc_embedding_idx', 'embedding', metric := 'l2')")
 
             // Use QUERY_VECTOR_INDEX with proper syntax
             let searchQuery = """
@@ -160,7 +160,7 @@ struct VectorExtensionTests {
                 ORDER BY distance
             """
 
-            let searchResult = try await graph.raw(searchQuery)
+            let searchResult = try graph.raw(searchQuery)
             let results = try searchResult.map { try $0.getAsDictionary() }
             #expect(results.count <= 2)
             print("✅ QUERY_VECTOR_INDEX works!")
@@ -177,7 +177,7 @@ struct VectorExtensionTests {
                     ORDER BY sim DESC
                     LIMIT 2
                 """
-                let fallbackResult = try await graph.raw(fallbackQuery)
+                let fallbackResult = try graph.raw(fallbackQuery)
                 let fallbackResults = try fallbackResult.map { try $0.getAsDictionary() }
                 #expect(fallbackResults.count == 2)
                 print("✅ array_cosine_similarity works!")
@@ -191,14 +191,14 @@ struct VectorExtensionTests {
                         ORDER BY dist
                         LIMIT 2
                     """
-                    let distResult = try await graph.raw(distanceQuery)
+                    let distResult = try graph.raw(distanceQuery)
                     let distResults = try distResult.map { try $0.getAsDictionary() }
                     #expect(distResults.count == 2)
                     print("✅ array_distance works!")
                 } catch {
                     // Verify data exists
                     let basicQuery = "MATCH (d:Document) RETURN count(d) AS count"
-                    let queryResult = try await graph.raw(basicQuery)
+                    let queryResult = try graph.raw(basicQuery)
                     let results = try queryResult.map { try $0.getAsDictionary() }
                     let firstRow = try #require(results.first)
                     #expect(firstRow["count"] as? Int64 == 3)
@@ -210,11 +210,11 @@ struct VectorExtensionTests {
 
     #if os(iOS)
     @Test("Vector extension on iOS platform")
-    func vectorExtensionOniOS() async throws {
-        let graph = try await createTestGraph()
+    func vectorExtensionOniOS() throws {
+        let graph = try createTestGraph()
 
         // Test 1: Basic vector array creation
-        let arrayTestResult = try await graph.raw(
+        let arrayTestResult = try graph.raw(
             "RETURN [1.0, 2.0, 3.0, 4.0, 5.0] AS vec"
         )
         let arrayTest = try arrayTestResult.map { try $0.getAsDictionary() }
@@ -222,7 +222,7 @@ struct VectorExtensionTests {
         // Test passed - basic vector array creation works on iOS
 
         // Test 2: Vector column in table
-        _ = try await graph.raw("""
+        _ = try graph.raw("""
             CREATE NODE TABLE iOSTest (
                 id INT64 PRIMARY KEY,
                 vector FLOAT[5]
@@ -231,14 +231,14 @@ struct VectorExtensionTests {
         // Table with vector column created on iOS
 
         // Test 3: Insert and retrieve vector
-        _ = try await graph.raw("""
+        _ = try graph.raw("""
             CREATE (t:iOSTest {
                 id: 1,
                 vector: [1.0, 2.0, 3.0, 4.0, 5.0]
             })
         """)
 
-        let retrievedResult = try await graph.raw("MATCH (t:iOSTest) RETURN t.vector AS vec")
+        let retrievedResult = try graph.raw("MATCH (t:iOSTest) RETURN t.vector AS vec")
         let retrieved = try retrievedResult.map { try $0.getAsDictionary() }
         #expect(retrieved.first?["vec"] != nil)
         // Vector insert and retrieve works on iOS
@@ -248,11 +248,11 @@ struct VectorExtensionTests {
     #endif
 
     @Test("Array vector functions")
-    func arrayVectorFunctions() async throws {
-        let graph = try await createTestGraph()
+    func arrayVectorFunctions() throws {
+        let graph = try createTestGraph()
 
         // Create simple table with vectors
-        _ = try await graph.raw("""
+        _ = try graph.raw("""
             CREATE NODE TABLE VectorTest (
                 id INT64 PRIMARY KEY,
                 name STRING,
@@ -261,13 +261,13 @@ struct VectorExtensionTests {
         """)
 
         // Insert test data
-        _ = try await graph.raw("""
+        _ = try graph.raw("""
             CREATE (:VectorTest {id: 1, name: 'A', vec: [1.0, 0.0, 0.0]})
         """)
-        _ = try await graph.raw("""
+        _ = try graph.raw("""
             CREATE (:VectorTest {id: 2, name: 'B', vec: [0.0, 1.0, 0.0]})
         """)
-        _ = try await graph.raw("""
+        _ = try graph.raw("""
             CREATE (:VectorTest {id: 3, name: 'C', vec: [0.5, 0.5, 0.0]})
         """)
 
@@ -280,7 +280,7 @@ struct VectorExtensionTests {
                        array_cosine_similarity(v.vec, query_vec) AS sim
                 ORDER BY sim DESC
             """
-            let result = try await graph.raw(query)
+            let result = try graph.raw(query)
             let results = try result.map { try $0.getAsDictionary() }
             #expect(results.count == 3)
             // First result should be 'A' with similarity 1.0
@@ -301,7 +301,7 @@ struct VectorExtensionTests {
                        array_distance(v.vec, origin) AS dist
                 ORDER BY dist
             """
-            let result = try await graph.raw(query)
+            let result = try graph.raw(query)
             let results = try result.map { try $0.getAsDictionary() }
             #expect(results.count == 3)
             print("✅ array_distance works correctly")
@@ -318,7 +318,7 @@ struct VectorExtensionTests {
                        array_inner_product(v.vec, query_vec) AS product
                 ORDER BY product DESC
             """
-            let result = try await graph.raw(query)
+            let result = try graph.raw(query)
             let results = try result.map { try $0.getAsDictionary() }
             #expect(results.count == 3)
             print("✅ array_inner_product works correctly")
@@ -328,8 +328,8 @@ struct VectorExtensionTests {
     }
 
     @Test("Multiple vector columns in table")
-    func multipleVectorColumns() async throws {
-        let graph = try await createTestGraph()
+    func multipleVectorColumns() throws {
+        let graph = try createTestGraph()
 
         // Create table with multiple vector columns
         let createTableQuery = """
@@ -340,7 +340,7 @@ struct VectorExtensionTests {
                 summary_embedding FLOAT[64]
             )
         """
-        _ = try await graph.raw(createTableQuery)
+        _ = try graph.raw(createTableQuery)
 
         // Insert data with multiple vectors
         let insertQuery = """
@@ -351,10 +351,10 @@ struct VectorExtensionTests {
                 summary_embedding: [\(Array(repeating: "0.3", count: 64).joined(separator: ", "))]
             })
         """
-        _ = try await graph.raw(insertQuery)
+        _ = try graph.raw(insertQuery)
 
         // Retrieve and verify
-        let queryResult = try await graph.raw("MATCH (m:MultiVector) RETURN m")
+        let queryResult = try graph.raw("MATCH (m:MultiVector) RETURN m")
         let result = try queryResult.map { try $0.getAsDictionary() }
         #expect(result.count == 1)
         // Multiple vector columns work correctly
