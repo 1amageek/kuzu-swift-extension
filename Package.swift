@@ -7,11 +7,11 @@ import CompilerPluginSupport
 let package = Package(
     name: "kuzu-swift-extension",
     platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
-        .tvOS(.v17),
-        .watchOS(.v10),
-        .macCatalyst(.v17)
+        .macOS(.v15),
+        .iOS(.v18),
+        .tvOS(.v18),
+        .watchOS(.v11),
+        .macCatalyst(.v18)
     ],
     products: [
         .library(
@@ -26,7 +26,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
-        .package(url: "https://github.com/kuzudb/kuzu-swift.git", from: "0.11.1"),
+        .package(url: "https://github.com/kuzudb/kuzu-swift.git", from: "0.11.2"),
         .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.2.1")
     ],
     targets: [

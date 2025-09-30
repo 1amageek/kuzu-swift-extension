@@ -1,5 +1,6 @@
 import Foundation
 import Kuzu
+import Synchronization
 #if os(iOS) || os(tvOS)
 import UIKit
 #elseif os(macOS)
@@ -7,97 +8,117 @@ import AppKit
 #endif
 
 /// SwiftData-style singleton database manager with automatic lifecycle
-@MainActor
-public final class GraphDatabase {
+/// Thread-safe: Can be accessed from any thread/actor including background tasks
+public final class GraphDatabase: Sendable {
     public static let shared = GraphDatabase()
-    
-    private var context: GraphContext?
-    private var registeredModels: [any _KuzuGraphModel.Type] = []
-    private var migrationPolicy: MigrationPolicy = .safe
-    private var isInitialized = false
-    
+
+    private let state = Mutex<State>(State())
+
+    private struct State: Sendable {
+        var context: GraphContext?
+        var isInitialized = false
+        var registeredModels: [any _KuzuGraphModel.Type] = []
+        var migrationPolicy: MigrationPolicy = .safe
+    }
+
     private init() {
         setupLifecycleHandlers()
     }
     
     /// Get the shared graph context. Always returns the same instance once initialized.
+    /// Thread-safe: Can be called from any thread or actor, including background tasks.
     public func context() async throws -> GraphContext {
-        // Return existing context if available
-        if let context = self.context {
-            return context
+        // Fast path: Return existing context if available (minimal lock time)
+        if let ctx = state.withLock({ $0.context }) {
+            return ctx
         }
-        
-        // Create new context only if not initialized
-        guard !isInitialized else {
+
+        // Check if we should initialize or throw error
+        let (shouldInitialize, models) = state.withLock { state -> (Bool, [any _KuzuGraphModel.Type]) in
+            // Already closed
+            if state.isInitialized && state.context == nil {
+                return (false, [])
+            }
+
+            // Not yet initialized - claim initialization
+            guard !state.isInitialized else {
+                return (false, [])
+            }
+
+            state.isInitialized = true
+            return (true, state.registeredModels)
+        }
+
+        guard shouldInitialize else {
             throw GraphError.contextNotAvailable(
                 reason: "Database context was closed. Application restart required."
             )
         }
-        
+
+        // Heavy operations outside of lock (allows parallel execution)
         let dbPath = Self.defaultDatabasePath()
         let configuration = GraphConfiguration(
             databasePath: dbPath,
-            migrationMode: .automatic  // Default to automatic migration
+            migrationMode: .automatic
         )
-        
-        let context = try await GraphContext(configuration: configuration)
-        
-        // Apply schema based on migration mode
-        if !registeredModels.isEmpty {
+
+        let newContext = try await GraphContext(configuration: configuration)
+
+        // Apply schema based on migration mode (outside lock)
+        if !models.isEmpty {
             switch configuration.migrationMode {
             case .automatic:
-                // SwiftData-style: automatically create schemas, skip existing
-                try await context.createSchemasIfNotExist(for: registeredModels)
-                
+                try await newContext.createSchemasIfNotExist(for: models)
+
             case .managed(let policy):
-                // Traditional: use MigrationManager with policy
                 let migrationManager = MigrationManager(
-                    context: context,
+                    context: newContext,
                     policy: policy
                 )
-                try await migrationManager.migrate(types: registeredModels)
-                
+                try await migrationManager.migrate(types: models)
+
             case .none:
-                // No automatic migration
                 break
             }
         }
-        
-        self.context = context
-        self.isInitialized = true
-        
-        return context
+
+        // Store the context (minimal lock time)
+        state.withLock { $0.context = newContext }
+
+        return newContext
     }
     
     /// Register model types for automatic schema creation.
     /// Must be called before first context() access.
+    /// Thread-safe: Can be called from any thread.
     public func register(models: [any _KuzuGraphModel.Type]) {
-        guard !isInitialized else {
+        state.withLock { state in
             // Models registered after initialization won't be migrated automatically
-            return
-        }
-        
-        // Prevent duplicate registration by checking type names
-        for model in models {
-            let modelName = String(describing: model)
-            let isAlreadyRegistered = registeredModels.contains { existingModel in
-                String(describing: existingModel) == modelName
-            }
-            
-            if !isAlreadyRegistered {
-                registeredModels.append(model)
+            guard state.context == nil else { return }
+
+            // Prevent duplicate registration by checking type names
+            for model in models {
+                let modelName = String(describing: model)
+                let isAlreadyRegistered = state.registeredModels.contains { existingModel in
+                    String(describing: existingModel) == modelName
+                }
+
+                if !isAlreadyRegistered {
+                    state.registeredModels.append(model)
+                }
             }
         }
     }
-    
+
     /// Configure migration policy.
     /// Must be called before first context() access.
+    /// Thread-safe: Can be called from any thread.
     public func configure(migrationPolicy: MigrationPolicy) {
-        guard !isInitialized else {
+        state.withLock { state in
             // Migration policy changes after initialization have no effect
-            return
+            guard state.context == nil else { return }
+            state.migrationPolicy = migrationPolicy
         }
-        self.migrationPolicy = migrationPolicy
     }
     
     // MARK: - Test Support
@@ -158,10 +179,14 @@ public final class GraphDatabase {
     
     /// Internal close method - only for app lifecycle
     private func close() async throws {
-        if let context = self.context {
-            await context.close()
-            self.context = nil
-            self.isInitialized = false
+        let contextToClose = state.withLock { state -> GraphContext? in
+            let ctx = state.context
+            state.context = nil
+            return ctx
+        }
+
+        if let ctx = contextToClose {
+            await ctx.close()
         }
     }
     
@@ -258,11 +283,12 @@ public final class GraphDatabase {
     }
     
     @objc private func applicationWillTerminate() {
-        Task { @MainActor in
-            try? await close()
+        // GraphContext's deinitializer will handle cleanup automatically
+        state.withLock { state in
+            state.context = nil
         }
     }
-    
+
     @objc private func applicationWillResignActive() {
         // Kuzu automatically handles flushing, no action needed
     }
