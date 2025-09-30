@@ -1,21 +1,43 @@
 import Foundation
 import Kuzu
+import Synchronization
 
-/// GraphContext provides a thread-safe interface to the graph database.
+/// GraphContext provides a thread-safe interface to the graph database with SwiftData-compatible API.
 ///
-/// Thread Safety: This struct conforms to Sendable because:
-/// - All properties are immutable (let)
+/// Thread Safety: This class conforms to Sendable using Mutex for state protection:
+/// - Pending operations are protected by Mutex<PendingOperations>
 /// - Kuzu's Connection and Database are internally thread-safe
 /// - ConnectionPool is an actor providing synchronized access to connections
-/// - Multiple concurrent operations can safely use different connections from the pool
 ///
-/// Performance: Using a struct with no actor isolation allows true concurrent access to the
-/// connection pool, enabling multiple tasks to execute queries in parallel across different connections.
-public struct GraphContext: Sendable {
-    let container: GraphContainer  // Made internal for TransactionalGraphContext
-    let configuration: GraphConfiguration  // Made internal for TransactionalGraphContext
+/// Usage Pattern (SwiftData-compatible):
+/// ```swift
+/// let context = try await GraphContext(configuration: config)
+///
+/// // Accumulate changes
+/// context.insert(user1)
+/// context.insert(user2)
+/// context.delete(oldUser)
+///
+/// // Commit all changes in a single transaction
+/// try await context.save()
+/// ```
+public final class GraphContext: Sendable {
+    let container: GraphContainer
+    let configuration: GraphConfiguration
     private let encoder: KuzuEncoder
     private let decoder: KuzuDecoder
+
+    // Pending operations protected by Mutex
+    private let pendingOperations = Mutex<PendingOperations>(
+        PendingOperations()
+    )
+
+    private struct PendingOperations {
+        // Type name -> Array of models to insert
+        var insertsByType: [String: [any GraphNodeModel]] = [:]
+        // Type name -> Array of models to delete
+        var deletesByType: [String: [any GraphNodeModel]] = [:]
+    }
 
     public init(configuration: GraphConfiguration = GraphConfiguration()) async throws {
         self.configuration = configuration
@@ -23,8 +45,259 @@ public struct GraphContext: Sendable {
         self.encoder = KuzuEncoder(configuration: configuration.encodingConfiguration)
         self.decoder = KuzuDecoder(configuration: configuration.decodingConfiguration)
     }
+
+    // MARK: - SwiftData-Compatible API
+
+    /// Registers a model for insertion during the next save operation
+    ///
+    /// This method accumulates the model in memory and does not immediately
+    /// execute a database operation. Call `save()` to commit all pending changes.
+    ///
+    /// - Parameter model: The model to insert
+    public func insert<T: GraphNodeModel>(_ model: T) {
+        pendingOperations.withLock { ops in
+            let typeName = T.modelName
+            ops.insertsByType[typeName, default: []].append(model)
+        }
+    }
+
+    /// Registers a model for deletion during the next save operation
+    ///
+    /// This method accumulates the model in memory and does not immediately
+    /// execute a database operation. Call `save()` to commit all pending changes.
+    ///
+    /// - Parameter model: The model to delete
+    public func delete<T: GraphNodeModel>(_ model: T) {
+        pendingOperations.withLock { ops in
+            let typeName = T.modelName
+            ops.deletesByType[typeName, default: []].append(model)
+        }
+    }
+
+    /// Commits all pending inserts and deletes to the database in a single transaction
+    ///
+    /// This method executes all accumulated insert and delete operations using
+    /// batch optimization (UNWIND + MERGE/DELETE) for maximum performance.
+    /// All operations are executed within a single transaction, providing ACID guarantees.
+    ///
+    /// - Throws: GraphError if the transaction fails
+    public func save() async throws {
+        let operations = pendingOperations.withLock { ops in
+            let result = (
+                inserts: ops.insertsByType,
+                deletes: ops.deletesByType
+            )
+            ops.insertsByType.removeAll()
+            ops.deletesByType.removeAll()
+            return result
+        }
+
+        guard !operations.inserts.isEmpty || !operations.deletes.isEmpty else {
+            return  // Nothing to save
+        }
+
+        try await executeBatchOperations(operations)
+    }
+
+    /// Discards all pending inserts and deletes without saving them
+    ///
+    /// Use this method to abandon changes that have been accumulated
+    /// but not yet committed with `save()`.
+    public func rollback() {
+        pendingOperations.withLock { ops in
+            ops.insertsByType.removeAll()
+            ops.deletesByType.removeAll()
+        }
+    }
+
+    /// Execute operations within an implicit transaction
+    ///
+    /// This method executes the provided block and automatically saves all
+    /// accumulated changes when the block completes successfully. If an error
+    /// is thrown, changes are rolled back.
+    ///
+    /// SwiftData-compatible API (async version due to actor isolation requirements).
+    ///
+    /// Example:
+    /// ```swift
+    /// try await context.transaction {
+    ///     context.insert(user1)
+    ///     context.insert(user2)
+    ///     context.delete(oldUser)
+    ///     // Automatically saved when block completes
+    /// }
+    /// ```
+    ///
+    /// - Parameter block: A closure containing the operations to perform
+    /// - Throws: Any error thrown by the block or save operation
+    public func transaction(_ block: () throws -> Void) async throws {
+        do {
+            try block()
+            try await save()
+        } catch {
+            rollback()
+            throw error
+        }
+    }
+
+    /// Execute async operations within an implicit transaction
+    ///
+    /// Async version of transaction that supports async/await operations
+    /// within the transaction block.
+    ///
+    /// Example:
+    /// ```swift
+    /// try await context.transaction {
+    ///     context.insert(user1)
+    ///     let count = try await context.count(User.self)
+    ///     context.insert(user2)
+    ///     // Automatically saved when block completes
+    /// }
+    /// ```
+    ///
+    /// - Parameter block: An async closure containing the operations to perform
+    /// - Throws: Any error thrown by the block or save operation
+    public func transaction(_ block: () async throws -> Void) async throws {
+        do {
+            try await block()
+            try await save()
+        } catch {
+            rollback()
+            throw error
+        }
+    }
+
+    // MARK: - Batch Execution
+
+    private func executeBatchOperations(
+        _ operations: (
+            inserts: [String: [any GraphNodeModel]],
+            deletes: [String: [any GraphNodeModel]]
+        )
+    ) async throws {
+        // withTransaction already handles BEGIN/COMMIT/ROLLBACK
+        try await container.withTransaction { connection in
+            // Execute batch inserts (UNWIND + MERGE)
+            for (_, models) in operations.inserts {
+                guard let firstModel = models.first else { continue }
+                try executeBatchInsert(models, firstModel: firstModel, connection: connection)
+            }
+
+            // Execute batch deletes (UNWIND + MATCH/DELETE)
+            for (_, models) in operations.deletes {
+                guard let firstModel = models.first else { continue }
+                try executeBatchDelete(models, firstModel: firstModel, connection: connection)
+            }
+        }
+    }
+
+    private func executeBatchInsert(
+        _ models: [any GraphNodeModel],
+        firstModel: any GraphNodeModel,
+        connection: Connection
+    ) throws {
+        guard !models.isEmpty else { return }
+
+        // Get type information from the first model
+        let modelType = type(of: firstModel)
+        let graphModelType = modelType as any _KuzuGraphModel.Type
+
+        let columns = graphModelType._kuzuColumns
+        let modelName = String(describing: graphModelType)
+
+        guard let idColumn = columns.first else {
+            throw GraphError.invalidConfiguration(message: "Model must have at least one column")
+        }
+
+        // Encode all models
+        let items: [[String: any Sendable]] = try models.map { model in
+            let encodable = model as any Encodable
+            return try encoder.encode(encodable)
+        }
+
+        // Build UNWIND + MERGE query
+        let nonIdColumns = Array(columns.dropFirst())
+
+        let query: String
+        if nonIdColumns.isEmpty {
+            query = """
+                UNWIND $items AS item
+                MERGE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
+                """
+        } else {
+            let createAssignments = nonIdColumns.map { column -> String in
+                let value = column.type == "TIMESTAMP"
+                    ? "timestamp(item.\(column.name))"
+                    : "item.\(column.name)"
+                return "n.\(column.name) = \(value)"
+            }.joined(separator: ", ")
+
+            let updateAssignments = nonIdColumns.map { column -> String in
+                let value = column.type == "TIMESTAMP"
+                    ? "timestamp(item.\(column.name))"
+                    : "item.\(column.name)"
+                return "n.\(column.name) = \(value)"
+            }.joined(separator: ", ")
+
+            query = """
+                UNWIND $items AS item
+                MERGE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
+                ON CREATE SET \(createAssignments)
+                ON MATCH SET \(updateAssignments)
+                """
+        }
+
+        // Execute query with parameter binding
+        if !items.isEmpty {
+            let statement = try connection.prepare(query)
+            let kuzuParams = try encoder.encodeParameters(["items": items])
+            _ = try connection.execute(statement, kuzuParams)
+        }
+    }
+
+    private func executeBatchDelete(
+        _ models: [any GraphNodeModel],
+        firstModel: any GraphNodeModel,
+        connection: Connection
+    ) throws {
+        guard !models.isEmpty else { return }
+
+        // Get type information from the first model
+        let modelType = type(of: firstModel)
+        let graphModelType = modelType as any _KuzuGraphModel.Type
+
+        let columns = graphModelType._kuzuColumns
+        let modelName = String(describing: graphModelType)
+
+        guard let idColumn = columns.first else {
+            throw GraphError.invalidConfiguration(message: "Model must have at least one column")
+        }
+
+        // Extract IDs from all models
+        let ids: [any Sendable] = try models.map { model in
+            let encodable = model as any Encodable
+            let properties = try encoder.encode(encodable)
+            guard let id = properties[idColumn.name] else {
+                throw GraphError.invalidOperation(message: "Model missing ID property")
+            }
+            return id
+        }
+
+        // Build UNWIND + MATCH/DELETE query
+        let query = """
+            UNWIND $ids AS id
+            MATCH (n:\(modelName) {\(idColumn.name): id})
+            DELETE n
+            """
+
+        // Execute query with parameter binding
+        let statement = try connection.prepare(query)
+        let kuzuParams = try encoder.encodeParameters(["ids": ids])
+        _ = try connection.execute(statement, kuzuParams)
+    }
     
     // MARK: - Raw Query Execution
+
     @discardableResult
     public func raw(_ query: String, bindings: [String: any Sendable] = [:]) async throws -> QueryResult {
         return try await container.withConnection { connection in
@@ -35,6 +308,41 @@ public struct GraphContext: Sendable {
                 // Convert values to Kuzu-compatible types using KuzuEncoder
                 let kuzuParams = try encoder.encodeParameters(bindings)
                 return try connection.execute(statement, kuzuParams)
+            }
+        }
+    }
+
+    /// Execute multiple raw Cypher queries in a single transaction
+    ///
+    /// This method is useful when you need to execute multiple raw Cypher queries
+    /// that must all succeed or all fail together. The block receives a Connection
+    /// that can be used to execute queries within the transaction.
+    ///
+    /// Example:
+    /// ```swift
+    /// try await graph.withRawTransaction { connection in
+    ///     _ = try connection.query("CREATE (n:User {id: 1, name: 'Alice'})")
+    ///     _ = try connection.query("CREATE (p:Post {id: 1, title: 'Hello'})")
+    ///     return "Success"
+    /// }
+    /// ```
+    ///
+    /// - Parameter block: A closure that receives a Connection and returns a result
+    /// - Returns: The result of the block
+    /// - Throws: GraphError if the transaction fails
+    public func withRawTransaction<T>(
+        _ block: @escaping @Sendable (Connection) throws -> T
+    ) async throws -> T {
+        return try await container.withTransaction { connection in
+            _ = try connection.query("BEGIN TRANSACTION")
+
+            do {
+                let result = try block(connection)
+                _ = try connection.query("COMMIT")
+                return result
+            } catch {
+                _ = try? connection.query("ROLLBACK")
+                throw error
             }
         }
     }

@@ -32,11 +32,10 @@ struct DecodeDebugTest {
             DecodeTestUser(name: "Adult", age: 30),
             DecodeTestUser(name: "Senior", age: 60)
         ]
-
+        
         for user in users {
-            context.insert(user)
+            _ = try await context.save(user)
         }
-        try await context.save()
         
         // Query and decode
         print("Querying users...")

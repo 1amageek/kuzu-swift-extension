@@ -189,7 +189,10 @@ public struct GraphContainer: Sendable {
                     print("Warning: Failed to rollback transaction: \(rollbackError)")
                 }
                 await connectionPool.checkin(connection)
-                throw GraphError.transactionFailed(reason: error.localizedDescription)
+
+                // Provide detailed error information for debugging
+                let errorDescription = "\(error)"
+                throw GraphError.transactionFailed(reason: errorDescription)
             }
         } catch {
             await connectionPool.checkin(connection)

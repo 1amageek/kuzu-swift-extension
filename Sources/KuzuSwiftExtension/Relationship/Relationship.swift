@@ -222,19 +222,3 @@ extension GraphContext {
         }
     }
 }
-
-// MARK: - TransactionalGraphContext Extensions
-
-extension TransactionalGraphContext {
-    
-    /// Creates a relationship within a transaction
-    public func createRelationship<From: GraphNodeModel, To: GraphNodeModel, Edge: _KuzuGraphModel>(
-        from: From,
-        to: To,
-        edge: Edge
-    ) async throws {
-        // Implementation would need to be in the transaction context file
-        // to avoid circular dependencies
-        fatalError("createRelationship should be called directly on TransactionalGraphContext")
-    }
-}

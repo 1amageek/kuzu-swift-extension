@@ -75,13 +75,8 @@ struct DDLDebugTest {
         
         // Try a simple insert and verify it works
         let user = DDLTestUser(email: "test@example.com", name: "Test", age: 30)
-        context.insert(user)
-        try await context.save()
-
-        // Fetch the saved user
-        let users = try await context.fetch(DDLTestUser.self)
-        #expect(users.count == 1)
-        let savedUser = users.first!
+        let savedUser = try await context.save(user)
+        // ID is non-optional UUID, no need to check for nil
         #expect(savedUser.email == "test@example.com")
         #expect(savedUser.name == "Test")
         #expect(savedUser.age == 30)

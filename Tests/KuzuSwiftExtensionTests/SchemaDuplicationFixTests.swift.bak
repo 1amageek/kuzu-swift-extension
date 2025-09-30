@@ -74,12 +74,10 @@ struct SchemaDuplicationFixTests {
         
         // Both should work without conflicts
         let session = Session(title: "Session in first context")
-        sessionContext.insert(session)
-        try await sessionContext.save()
-
+        _ = try await sessionContext.save(session)
+        
         let task = TodoTask(sessionId: session.id, description: "TodoTask in second context")
-        taskContext.insert(task)
-        try await taskContext.save()
+        _ = try await taskContext.save(task)
         
         // Verify isolation
         let sessionsInFirst = try await sessionContext.fetch(Session.self)
@@ -102,8 +100,7 @@ struct SchemaDuplicationFixTests {
         
         // Schema should be automatically created
         let session = Session(title: "SwiftData Style")
-        context.insert(session)
-        try await context.save()
+        _ = try await context.save(session)
         
         // Fetch should work
         let sessions = try await context.fetch(Session.self)
@@ -123,8 +120,7 @@ struct SchemaDuplicationFixTests {
         
         // Save initial data
         let session1 = Session(title: "First")
-        context.insert(session1)
-        try await context.save()
+        _ = try await context.save(session1)
         
         // Try to create schema again with automatic mode
         try await context.createSchemasIfNotExist(for: [Session.self])
@@ -135,8 +131,7 @@ struct SchemaDuplicationFixTests {
         
         // Can still add more data
         let session2 = Session(title: "Second")
-        context.insert(session2)
-        try await context.save()
+        _ = try await context.save(session2)
         
         let allSessions = try await context.fetch(Session.self)
         #expect(allSessions.count == 2)
@@ -166,12 +161,10 @@ struct SchemaDuplicationFixTests {
         
         // Verify both tables work
         let session = Session(title: "Test")
-        context.insert(session)
-        try await context.save()
-
+        _ = try await context.save(session)
+        
         let task = TodoTask(sessionId: session.id, description: "Test TodoTask")
-        context.insert(task)
-        try await context.save()
+        _ = try await context.save(task)
         
         await context.close()
     }
@@ -190,12 +183,10 @@ struct SchemaDuplicationFixTests {
         
         // Both contexts should work independently
         let session1 = Session(title: "Context 1")
-        context1.insert(session1)
-        try await context1.save()
-
+        _ = try await context1.save(session1)
+        
         let session2 = Session(title: "Context 2")
-        context2.insert(session2)
-        try await context2.save()
+        _ = try await context2.save(session2)
         
         // Verify isolation
         let sessions1 = try await context1.fetch(Session.self)
