@@ -93,7 +93,7 @@ public struct VectorMacro: BasePropertyMacro {
             ))
             return false
         }
-        
+
         // Validate dimensions parameter
         guard case .argumentList(let arguments) = node.arguments,
               let dimensionsArg = arguments.first(where: { $0.label?.text == "dimensions" }),
@@ -106,7 +106,22 @@ public struct VectorMacro: BasePropertyMacro {
             ))
             return false
         }
-        
+
+        // Validate metric parameter if present
+        if case .argumentList(let arguments) = node.arguments,
+           let metricArg = arguments.first(where: { $0.label?.text == "metric" }) {
+            // Metric is optional with default value, just check syntax if provided
+            let metricExpr = metricArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            let validMetrics = [".l2", ".cosine", ".innerProduct", "VectorMetric.l2", "VectorMetric.cosine", "VectorMetric.innerProduct"]
+            if !validMetrics.contains(where: { metricExpr.contains($0) }) {
+                context.diagnose(Diagnostic(
+                    node: metricArg.expression,
+                    message: MacroExpansionErrorMessage("Invalid metric value. Use .l2, .cosine, or .innerProduct")
+                ))
+                return false
+            }
+        }
+
         return true
     }
 }

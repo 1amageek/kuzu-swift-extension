@@ -57,6 +57,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         var columns: [(name: String, type: String, constraints: [String])] = []
         var ddlColumns: [String] = []
         var idProperties: [(name: String, location: SyntaxProtocol)] = []
+        var vectorProperties: [(name: String, dimensions: String, metric: String)] = []
 
         for member in members {
             guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
@@ -96,33 +97,52 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                     constraints.append("INDEX")
                 case "Vector":
                     if case .argumentList(let args) = attr.arguments {
+                        var dimensions: String = ""
+                        var metric: String = "l2" // default metric
+
                         for arg in args {
-                            if let expr = arg.expression.as(IntegerLiteralExprSyntax.self) {
-                                let dimensions = expr.literal.text
-                                // Detect Swift type to determine correct Kuzu vector type
-                                let vectorType: String
-                                if swiftType.contains("Float") {
-                                    vectorType = "FLOAT[\(dimensions)]"
-                                } else if swiftType.contains("Double") {
-                                    vectorType = "DOUBLE[\(dimensions)]"
-                                } else {
-                                    // Default to FLOAT for backward compatibility
-                                    vectorType = "FLOAT[\(dimensions)]"
+                            if arg.label?.text == "dimensions",
+                               let expr = arg.expression.as(IntegerLiteralExprSyntax.self) {
+                                dimensions = expr.literal.text
+                            } else if arg.label?.text == "metric" {
+                                // Extract metric value (e.g., ".l2" -> "l2")
+                                let metricExpr = arg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if metricExpr.contains(".l2") {
+                                    metric = "l2"
+                                } else if metricExpr.contains(".cosine") {
+                                    metric = "cosine"
+                                } else if metricExpr.contains(".innerProduct") {
+                                    metric = "ip"
                                 }
-                                columns.append((propertyName, vectorType, constraints))
-                                // Build DDL column with only supported inline constraints
-                                // Escape property name if it's a reserved word
-                                let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
-                                var columnDef = "\(escapedName) \(vectorType)"
-                                for constraint in constraints {
-                                    if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
-                                        columnDef += " \(constraint)"
-                                    }
-                                    // UNIQUE and FULLTEXT are ignored as Kuzu doesn't support them inline
-                                }
-                                ddlColumns.append(columnDef)
-                                continue
                             }
+                        }
+
+                        if !dimensions.isEmpty {
+                            // Store vector property metadata for index creation
+                            vectorProperties.append((name: propertyName, dimensions: dimensions, metric: metric))
+
+                            // Detect Swift type to determine correct Kuzu vector type
+                            let vectorType: String
+                            if swiftType.contains("Float") {
+                                vectorType = "FLOAT[\(dimensions)]"
+                            } else if swiftType.contains("Double") {
+                                vectorType = "DOUBLE[\(dimensions)]"
+                            } else {
+                                // Default to FLOAT for backward compatibility
+                                vectorType = "FLOAT[\(dimensions)]"
+                            }
+                            columns.append((propertyName, vectorType, constraints))
+                            // Build DDL column with only supported inline constraints
+                            // Escape property name if it's a reserved word
+                            let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
+                            var columnDef = "\(escapedName) \(vectorType)"
+                            for constraint in constraints {
+                                if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
+                                    columnDef += " \(constraint)"
+                                }
+                                // UNIQUE and FULLTEXT are ignored as Kuzu doesn't support them inline
+                            }
+                            ddlColumns.append(columnDef)
                         }
                     }
                     continue
@@ -208,8 +228,13 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             let constraintsArray = column.constraints.map { "\"\($0)\"" }.joined(separator: ", ")
             return "(name: \"\(column.name)\", type: \"\(column.type)\", constraints: [\(constraintsArray)])"
         }.joined(separator: ", ")
-        
-        return [
+
+        // Generate vector properties metadata
+        let vectorPropertiesArray = vectorProperties.map { property in
+            return "VectorPropertyMetadata(propertyName: \"\(property.name)\", dimensions: \(property.dimensions), metric: .\(property.metric))"
+        }.joined(separator: ", ")
+
+        var declarations: [DeclSyntax] = [
             """
             public static let _kuzuDDL: String = "\(raw: ddl)"
             """,
@@ -217,6 +242,17 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
             """
         ]
+
+        // Add _vectorProperties only if there are vector properties
+        if !vectorProperties.isEmpty {
+            declarations.append(
+                """
+                public static let _vectorProperties: [VectorPropertyMetadata] = [\(raw: vectorPropertiesArray)]
+                """
+            )
+        }
+
+        return declarations
     }
     
     public static func expansion(
@@ -227,12 +263,51 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
         // Check if the declaration is a struct
-        guard declaration.is(StructDeclSyntax.self) else {
+        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
             // Don't generate extension for non-struct types
             return []
         }
-        
-        let extensionDecl = ExtensionDeclSyntax(
+
+        let members = structDecl.memberBlock.members
+
+        // Collect vector properties
+        var vectorProperties: [(name: String, dimensions: String, metric: String)] = []
+
+        for member in members {
+            guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
+                  let binding = variableDecl.bindings.first,
+                  let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else {
+                continue
+            }
+
+            let propertyName = pattern.identifier.text
+
+            for attribute in variableDecl.attributes {
+                guard let attr = attribute.as(AttributeSyntax.self) else { continue }
+                let attrName = attr.attributeName.description.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                if attrName == "Vector" {
+                    if case .argumentList(let args) = attr.arguments {
+                        var dimensions: String = ""
+                        var metric: String = "l2"
+
+                        for arg in args {
+                            if arg.label?.text == "dimensions",
+                               let expr = arg.expression.as(IntegerLiteralExprSyntax.self) {
+                                dimensions = expr.literal.text
+                            }
+                        }
+
+                        if !dimensions.isEmpty {
+                            vectorProperties.append((name: propertyName, dimensions: dimensions, metric: metric))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Generate base extension with GraphNodeModel conformance
+        let baseExtension = ExtensionDeclSyntax(
             extendedType: type,
             inheritanceClause: InheritanceClauseSyntax {
                 InheritedTypeSyntax(
@@ -240,8 +315,22 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                 )
             }
         ) {}
-        
-        return [extensionDecl]
+
+        // If has vector properties, add HasVectorProperties conformance
+        if !vectorProperties.isEmpty {
+            let vectorExtension = ExtensionDeclSyntax(
+                extendedType: type,
+                inheritanceClause: InheritanceClauseSyntax {
+                    InheritedTypeSyntax(
+                        type: TypeSyntax("HasVectorProperties")
+                    )
+                }
+            ) {}
+
+            return [baseExtension, vectorExtension]
+        }
+
+        return [baseExtension]
     }
     
 }

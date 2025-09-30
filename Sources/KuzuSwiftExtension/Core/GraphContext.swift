@@ -215,11 +215,41 @@ public final class GraphContext: Sendable {
             return try encoder.encode(encodable)
         }
 
-        // Build UNWIND + MERGE query
+        // Check if model has vector properties (requires special handling)
+        let hasVectorProperties = graphModelType is any HasVectorProperties.Type
+
+        // Build query
         let nonIdColumns = Array(columns.dropFirst())
 
         let query: String
-        if nonIdColumns.isEmpty {
+        if hasVectorProperties {
+            // For models with vector indexes, use DELETE + CREATE instead of MERGE
+            // This avoids the "Cannot set property in table because it is used in indexes" error
+            if nonIdColumns.isEmpty {
+                query = """
+                    UNWIND $items AS item
+                    OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
+                    DELETE n
+                    WITH item
+                    CREATE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
+                    """
+            } else {
+                let allAssignments = ([idColumn] + nonIdColumns).map { column -> String in
+                    let value = column.type == "TIMESTAMP"
+                        ? "timestamp(item.\(column.name))"
+                        : "item.\(column.name)"
+                    return "\(column.name): \(value)"
+                }.joined(separator: ", ")
+
+                query = """
+                    UNWIND $items AS item
+                    OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
+                    DELETE n
+                    WITH item
+                    CREATE (n:\(modelName) {\(allAssignments)})
+                    """
+            }
+        } else if nonIdColumns.isEmpty {
             query = """
                 UNWIND $items AS item
                 MERGE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
@@ -564,6 +594,53 @@ public final class GraphContext: Sendable {
                 }
                 throw error
             }
+        }
+
+        // Create vector indexes for models with @Vector properties
+        for type in types {
+            // Check if the type has vector properties
+            if let vectorType = type as? any HasVectorProperties.Type {
+                // Use type erasure to call the static method
+                try await createVectorIndexesForType(vectorType, context: self)
+            }
+        }
+    }
+
+    /// Helper function to create vector indexes with type erasure
+    private func createVectorIndexesForType(
+        _ type: any HasVectorProperties.Type,
+        context: GraphContext
+    ) async throws {
+        // We need to cast to a specific type that conforms to both protocols
+        // This is safe because the macro ensures both conformances
+        guard let graphModelType = type as? any _KuzuGraphModel.Type else {
+            return
+        }
+
+        // Extract table name
+        let tableName = String(describing: graphModelType)
+
+        // Use VectorIndexManager to create indexes
+        for property in type._vectorProperties {
+            let indexName = property.indexName(for: tableName)
+
+            // Check if index exists
+            if try await VectorIndexManager.hasVectorIndex(
+                table: tableName,
+                indexName: indexName,
+                context: context
+            ) {
+                continue
+            }
+
+            // Create the index
+            try await VectorIndexManager.createVectorIndex(
+                table: tableName,
+                column: property.propertyName,
+                indexName: indexName,
+                metric: property.metric,
+                context: context
+            )
         }
     }
     
