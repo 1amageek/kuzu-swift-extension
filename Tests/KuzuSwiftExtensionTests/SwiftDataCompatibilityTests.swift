@@ -90,7 +90,7 @@ struct SwiftDataCompatibilityTests {
 
     @Test("Attribute spotlight option for full-text search")
     func attributeSpotlightOption() throws {
-        let container = try GraphContainer(
+        _ = try GraphContainer(
             for: Article.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )
@@ -106,7 +106,7 @@ struct SwiftDataCompatibilityTests {
 
     @Test("Default value macro")
     func defaultValue() throws {
-        let container = try GraphContainer(
+        _ = try GraphContainer(
             for: User.self,
             configuration: GraphConfiguration(databasePath: ":memory:")
         )

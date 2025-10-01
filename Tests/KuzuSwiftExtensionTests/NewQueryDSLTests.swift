@@ -17,10 +17,8 @@ struct QueryTestPost: Codable {
     var content: String
 }
 
-@GraphEdge
+@GraphEdge(from: QueryTestUser.self, to: QueryTestPost.self)
 struct QueryTestWrote: Codable {
-    @Since(\QueryTestUser.id) var authorID: String
-    @Target(\QueryTestPost.id) var postID: String
     var createdAt: Date
 }
 

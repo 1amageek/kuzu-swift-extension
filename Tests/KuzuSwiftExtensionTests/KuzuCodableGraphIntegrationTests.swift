@@ -2,68 +2,62 @@ import Testing
 import Foundation
 @testable import KuzuSwiftExtension
 
+// MARK: - Graph Models - defined at file level
+
+@GraphNode
+fileprivate struct User: Codable, Sendable {
+    @ID var id: UUID = UUID()
+    var username: String
+    var email: String
+    var createdAt: Date
+    var metadata: [String: String]?
+    var tags: Set<String>
+    var isActive: Bool
+    var score: Double?
+}
+
+@GraphNode
+fileprivate struct Post: Codable, Sendable {
+    @ID var id: UUID = UUID()
+    var title: String
+    var content: String
+    var publishedAt: Date
+    var viewCount: Int64
+    var tags: [String]
+    var metadata: [String: String]?
+}
+
+@GraphNode
+fileprivate struct Comment: Codable, Sendable {
+    @ID var id: UUID = UUID()
+    var text: String
+    var createdAt: Date
+    var likes: Int
+    var replies: [String]?
+}
+
+@GraphEdge(from: User.self, to: Post.self)
+fileprivate struct Author: Codable, Sendable {
+    var role: String
+    var since: Date
+    var permissions: Set<String>
+}
+
+@GraphEdge(from: User.self, to: Comment.self)
+fileprivate struct Wrote: Codable, Sendable {
+    var at: Date
+    var device: String?
+    var location: String?
+}
+
+@GraphEdge(from: Post.self, to: Comment.self)
+fileprivate struct HasComment: Codable, Sendable {
+    var order: Int
+    var isPinned: Bool
+}
+
 @Suite("KuzuCodable Graph Integration Tests")
 struct KuzuCodableGraphIntegrationTests {
-    
-    // MARK: - Graph Models
-    
-    @GraphNode
-    struct User: Codable, Sendable {
-        @ID var id: UUID = UUID()
-        var username: String
-        var email: String
-        var createdAt: Date
-        var metadata: [String: String]?
-        var tags: Set<String>
-        var isActive: Bool
-        var score: Double?
-    }
-    
-    @GraphNode
-    struct Post: Codable, Sendable {
-        @ID var id: UUID = UUID()
-        var title: String
-        var content: String
-        var publishedAt: Date
-        var viewCount: Int64
-        var tags: [String]
-        var metadata: [String: String]?
-    }
-    
-    @GraphNode
-    struct Comment: Codable, Sendable {
-        @ID var id: UUID = UUID()
-        var text: String
-        var createdAt: Date
-        var likes: Int
-        var replies: [String]?
-    }
-    
-    @GraphEdge
-    struct Author: Codable, Sendable {
-        @Since(\User.id) var userID: String
-        @Target(\Post.id) var postID: String
-        var role: String
-        var since: Date
-        var permissions: Set<String>
-    }
-
-    @GraphEdge
-    struct Wrote: Codable, Sendable {
-        @Since(\User.id) var userID: String
-        @Target(\Comment.id) var commentID: String
-        var at: Date
-        var device: String?
-        var location: String?
-    }
-
-    @GraphEdge
-    struct HasComment: Codable, Sendable {
-        @Since(\Post.id) var postID: String
-        @Target(\Comment.id) var commentID: String
-        var order: Int
-        var isPinned: Bool
-    }
     
     // MARK: - Node Encoding/Decoding Tests
     
@@ -136,23 +130,21 @@ struct KuzuCodableGraphIntegrationTests {
     func encodeDecodeGraphEdge() throws {
         let encoder = KuzuEncoder()
         let decoder = KuzuDecoder()
-        
+
         let author = Author(
-            userID: "user-123",
-            postID: "post-456",
             role: "primary",
             since: Date(),
             permissions: Set(["read", "write", "delete"])
         )
-        
+
         let encoded = try encoder.encode(author)
-        
+
         #expect(encoded["role"] as? String == "primary")
         #expect(encoded["since"] != nil)
         #expect(encoded["permissions"] != nil)
-        
+
         let decoded = try decoder.decode(Author.self, from: encoded)
-        
+
         #expect(decoded.role == author.role)
         #expect(decoded.permissions == author.permissions)
     }
@@ -161,18 +153,16 @@ struct KuzuCodableGraphIntegrationTests {
     func graphEdgeWithOptionals() throws {
         let encoder = KuzuEncoder()
         let decoder = KuzuDecoder()
-        
+
         let wrote = Wrote(
-            userID: "user-123",
-            commentID: "comment-456",
             at: Date(),
             device: "iPhone",
             location: nil
         )
-        
+
         let encoded = try encoder.encode(wrote)
         let decoded = try decoder.decode(Wrote.self, from: encoded)
-        
+
         #expect(decoded.device == "iPhone")
         #expect(decoded.location == nil)
     }

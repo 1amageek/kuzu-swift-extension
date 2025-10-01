@@ -63,17 +63,14 @@ enum GraphNodeDiagnostic: String, DiagnosticMessage {
 
 enum GraphEdgeDiagnostic: String, DiagnosticMessage {
     case mustBeAppliedToStruct = "graph-edge-must-be-struct"
-    case missingSinceProperty = "graph-edge-missing-since"
-    case missingTargetProperty = "graph-edge-missing-target"
+    case missingFromToArguments = "graph-edge-missing-from-to"
 
     var message: String {
         switch self {
         case .mustBeAppliedToStruct:
             return "@GraphEdge can only be applied to structs"
-        case .missingSinceProperty:
-            return "@GraphEdge requires at least one property marked with @Since"
-        case .missingTargetProperty:
-            return "@GraphEdge requires at least one property marked with @Target"
+        case .missingFromToArguments:
+            return "@GraphEdge requires 'from:' and 'to:' arguments. Example: @GraphEdge(from: User.self, to: Post.self)"
         }
     }
 

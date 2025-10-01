@@ -3,34 +3,42 @@ import Foundation
 @testable import KuzuSwiftExtension
 import Kuzu
 
+// Models with reserved words as property names - defined at file level
+@GraphNode
+fileprivate struct OrderModel: Codable, Sendable {
+    @ID var id: UUID = UUID()
+    var group: String       // "group" is a reserved word
+    var order: Int         // "order" is a reserved word
+    var limit: Double      // "limit" is a reserved word
+    var count: Int         // "count" is a reserved word
+}
+
+@GraphNode
+fileprivate struct SelectModel: Codable, Sendable {
+    @ID var id: UUID = UUID()
+    var select: String     // "select" is a reserved word
+    var from: String       // "from" is a reserved word
+    var table: String      // "table" is a reserved word (changed from "where" which is a Swift keyword)
+}
+
+@GraphEdge(from: OrderModel.self, to: SelectModel.self)
+fileprivate struct JoinRelation: Codable, Sendable {
+    var by: String         // "by" is a reserved word
+    var exists: Bool       // "exists" is a reserved word
+}
+
+// Define model at file level for testing mixed fields
+@GraphNode
+fileprivate struct MixedModel: Codable, Sendable {
+    @ID var id: UUID = UUID()
+    var normalField: String
+    var order: Int         // reserved
+    var anotherField: Double
+    var group: String      // reserved
+}
+
 @Suite("Reserved Word Tests")
 struct ReservedWordTests {
-    
-    // Models with reserved words as property names
-    @GraphNode
-    struct OrderModel: Codable, Sendable {
-        @ID var id: UUID = UUID()
-        var group: String       // "group" is a reserved word
-        var order: Int         // "order" is a reserved word  
-        var limit: Double      // "limit" is a reserved word
-        var count: Int         // "count" is a reserved word
-    }
-    
-    @GraphNode
-    struct SelectModel: Codable, Sendable {
-        @ID var id: UUID = UUID()
-        var select: String     // "select" is a reserved word
-        var from: String       // "from" is a reserved word
-        var table: String      // "table" is a reserved word (changed from "where" which is a Swift keyword)
-    }
-    
-    @GraphEdge
-    struct JoinRelation: Codable, Sendable {
-        @Since(\OrderModel.id) var orderID: String
-        @Target(\SelectModel.id) var selectID: String
-        var by: String         // "by" is a reserved word
-        var exists: Bool       // "exists" is a reserved word
-    }
     
     @Test("Models with reserved word properties should generate escaped DDL")
     func testReservedWordEscaping() throws {
@@ -120,16 +128,6 @@ struct ReservedWordTests {
         let rows = try result.mapRows()
         #expect(rows.count == 1)
         #expect(rows[0]["cnt"] as? Int64 == 1)
-    }
-    
-    // Define model at struct level for testing mixed fields
-    @GraphNode
-    struct MixedModel: Codable, Sendable {
-        @ID var id: UUID = UUID()
-        var normalField: String
-        var order: Int         // reserved
-        var anotherField: Double
-        var group: String      // reserved
     }
     
     @Test("Mixed reserved and normal words should work correctly")

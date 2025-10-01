@@ -34,9 +34,9 @@ struct KuzuDecoderUUIDTests {
         let testDate = Date()
         let iso8601 = ISO8601DateFormatter()
         iso8601.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        
+
         // Insert test data
-        try connection.query("""
+        _ = try connection.query("""
             CREATE (t:test {
                 id: '\(testUUID.uuidString)',
                 name: 'Test Name',

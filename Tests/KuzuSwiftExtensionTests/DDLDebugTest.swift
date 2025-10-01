@@ -34,10 +34,8 @@ struct DDLTestPost: Codable, Sendable {
     }
 }
 
-@GraphEdge
+@GraphEdge(from: DDLTestUser.self, to: DDLTestPost.self)
 struct DDLTestAuthored: Codable, Sendable {
-    @Since(\DDLTestUser.email) var authorEmail: String
-    @Target(\DDLTestPost.id) var postID: String
     var authoredAt: Date = Date()
     var metadata: String?
 }

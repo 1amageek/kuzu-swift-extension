@@ -45,12 +45,12 @@ struct User: Codable {
     @ID var id: UUID = UUID()
     var name: String
     var age: Int
-    @Timestamp var createdAt: Date = Date()
+    var createdAt: Date = Date()
 }
 
 @GraphEdge(from: User.self, to: User.self)
 struct Follows: Codable {
-    @Timestamp var since: Date = Date()
+    var since: Date = Date()
 }
 ```
 
@@ -77,21 +77,25 @@ let adults = try await graph.query {
 ```swift
 // Create
 let user = User(name: "Bob", age: 25)
-try await graph.save(user)
+context.insert(user)
+try await context.save()
 
 // Read
-let users = try await graph.fetch(User.self)
-let bob = try await graph.fetchOne(User.self, id: user.id)
+let users = try context.fetch(User.self)
+let bob = try context.fetch(User.self, id: user.id.uuidString).first
 
-// Update
-user.age = 26
-try await graph.save(user)
+// Update (Kuzu is immutable - delete and recreate)
+context.delete(user)
+let updated = User(id: user.id, name: user.name, age: 26)
+context.insert(updated)
+try await context.save()
 
 // Delete
-try await graph.delete(user)
+context.delete(user)
+try await context.save()
 
 // Count
-let count = try await graph.count(User.self)
+let count = try context.count(User.self)
 ```
 
 ### Declarative Query DSL
@@ -134,11 +138,28 @@ try await graph.query {
 #### Edge Operations
 
 ```swift
-// Create edges between nodes
+// Create edges using connect() - recommended approach
+let alice = User(name: "Alice", age: 30)
+let bob = User(name: "Bob", age: 25)
+context.insert(alice)
+context.insert(bob)
+
+let follows = Follows(since: Date())
+context.connect(follows, from: alice, to: bob)  // Auto-extracts IDs
+try await context.save()
+
+// Or specify IDs manually
+context.connect(follows, from: alice.id.uuidString, to: bob.id.uuidString)
+
+// Disconnect edges
+context.disconnect(follows, from: alice, to: bob)
+try await context.save()
+
+// Using Query DSL for complex edge operations
 try await graph.query {
     let alice = User.match().where(\.name == "Alice")
     let bob = User.match().where(\.name == "Bob")
-    
+
     Create.edge(Follows.self, from: alice, to: bob, properties: [
         "since": Date()
     ])
@@ -151,13 +172,6 @@ let followers = try await graph.query {
         .from(User.match())
         .to(user)
         .where("since", .greaterThan, oneMonthAgo)
-}
-
-// Merge edges (create if not exists)
-try await graph.query {
-    Follows.merge(from: alice, to: bob)
-        .onCreate(set: ["since": Date()])
-        .onMatch(set: ["lastInteraction": Date()])
 }
 ```
 
@@ -305,7 +319,8 @@ Delete("edgeAlias", detach: true) // Detach delete for nodes with edges
 For queries not yet expressible in the DSL, use raw Cypher:
 
 ```swift
-let result = try await graph.raw("""
+// raw() is synchronous - no await needed
+let result = try context.raw("""
     MATCH (u:User)-[:FOLLOWS]->(f:User)
     WHERE u.name = $name
     RETURN f
@@ -316,19 +331,15 @@ let followers = try result.map(to: User.self)
 ### Transactions
 
 ```swift
-try await graph.withTransaction { tx in
+try await context.transaction {
     let user = User(name: "Charlie", age: 28)
-    try tx.save(user)
-    
-    // Use Query DSL within transactions
-    try tx.query {
-        Create.edge(Follows.self, 
-            from: User.match().where(\.id == currentUserId),
-            to: User.match().where(\.id == user.id)
-        )
-    }
-    
-    // Automatic rollback on error
+    context.insert(user)
+
+    // Create edges within transaction
+    let follows = Follows(since: Date())
+    context.connect(follows, from: currentUser, to: user)
+
+    // Automatic save and rollback on error
     guard user.age >= 18 else {
         throw ValidationError.tooYoung
     }

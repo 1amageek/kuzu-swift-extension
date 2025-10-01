@@ -12,30 +12,24 @@ struct MigrationEdgeFixTests {
         @ID var id: UUID = UUID()
         var title: String
     }
-    
+
     @GraphNode
-    struct Task: Codable, Sendable {
+    struct TodoTask: Codable, Sendable {
         @ID var id: UUID = UUID()
         var title: String
     }
-    
-    @GraphEdge
+
+    @GraphEdge(from: Session.self, to: TodoTask.self)
     struct HasTask: Codable, Sendable {
-        @Since(\Session.id) var sessionID: String
-        @Target(\Task.id) var taskID: String
         var position: Int
     }
 
-    @GraphEdge
+    @GraphEdge(from: TodoTask.self, to: TodoTask.self)
     struct SubTaskOf: Codable, Sendable {
-        @Since(\Task.id) var parentID: String
-        @Target(\Task.id) var childID: String
     }
 
-    @GraphEdge
+    @GraphEdge(from: TodoTask.self, to: TodoTask.self)
     struct Blocks: Codable, Sendable {
-        @Since(\Task.id) var blockerID: String
-        @Target(\Task.id) var blockedID: String
     }
     
     @Test("Migration with nodes and edges should succeed")
@@ -58,43 +52,43 @@ struct MigrationEdgeFixTests {
         // This should now succeed with our fix
         try migrationManager.migrate(types: [
             Session.self,
-            Task.self,
+            TodoTask.self,
             HasTask.self,
             SubTaskOf.self,
             Blocks.self
         ])
-        
+
         // Verify the tables were created by trying to query them
         // Check Session table exists
         let sessionCount = try context.raw("MATCH (s:Session) RETURN count(s) as cnt", bindings: [:])
         #expect(try sessionCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
-        
-        // Check Task table exists
-        let taskCount = try context.raw("MATCH (t:Task) RETURN count(t) as cnt", bindings: [:])
+
+        // Check TodoTask table exists
+        let taskCount = try context.raw("MATCH (t:TodoTask) RETURN count(t) as cnt", bindings: [:])
         #expect(try taskCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
-        
+
         // We'll verify edge tables work by creating relationships below
-        
+
         // Verify we can insert data into the created schema
         let sessionId = UUID()
         let taskId = UUID()
-        
+
         // Insert a session
         _ = try context.raw(
             "CREATE (s:Session {id: $id, title: $title})",
             bindings: ["id": sessionId.uuidString, "title": "Test Session"]
         )
-        
+
         // Insert a task
         _ = try context.raw(
-            "CREATE (t:Task {id: $id, title: $title})",
+            "CREATE (t:TodoTask {id: $id, title: $title})",
             bindings: ["id": taskId.uuidString, "title": "Test Task"]
         )
-        
+
         // Create relationship
         _ = try context.raw(
             """
-            MATCH (s:Session {id: $sessionId}), (t:Task {id: $taskId})
+            MATCH (s:Session {id: $sessionId}), (t:TodoTask {id: $taskId})
             CREATE (s)-[:HasTask {position: $position}]->(t)
             """,
             bindings: [
@@ -103,11 +97,11 @@ struct MigrationEdgeFixTests {
                 "position": 1
             ]
         )
-        
+
         // Verify the relationship was created
         let result = try context.raw(
             """
-            MATCH (s:Session)-[r:HasTask]->(t:Task)
+            MATCH (s:Session)-[r:HasTask]->(t:TodoTask)
             RETURN s.title as sessionTitle, t.title as taskTitle, r.position as position
             """,
             bindings: [:]
@@ -140,14 +134,14 @@ struct MigrationEdgeFixTests {
         // This should succeed as before
         try migrationManager.migrate(types: [
             Session.self,
-            Task.self
+            TodoTask.self
         ])
-        
+
         // Verify the tables were created
         let sessionCount = try context.raw("MATCH (s:Session) RETURN count(s) as cnt", bindings: [:])
         #expect(try sessionCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
-        
-        let taskCount = try context.raw("MATCH (t:Task) RETURN count(t) as cnt", bindings: [:])
+
+        let taskCount = try context.raw("MATCH (t:TodoTask) RETURN count(t) as cnt", bindings: [:])
         #expect(try taskCount.mapFirstRequired(to: Int64.self, at: 0) == 0)
     }
     
@@ -171,15 +165,15 @@ struct MigrationEdgeFixTests {
         // First migrate nodes
         try migrationManager.migrate(types: [
             Session.self,
-            Task.self
+            TodoTask.self
         ])
-        
+
         // Then migrate with edges - this should detect existing nodes and only add edges
         // The migration manager should handle this gracefully
         do {
             try migrationManager.migrate(types: [
                 Session.self,
-                Task.self,
+                TodoTask.self,
                 HasTask.self,
                 SubTaskOf.self,
                 Blocks.self
@@ -187,37 +181,37 @@ struct MigrationEdgeFixTests {
         } catch {
             // If it fails because tables already exist, that's expected
             // We just need to manually add the edge tables
-            _ = try context.raw("CREATE REL TABLE HasTask (FROM Session TO Task, position INT64)", bindings: [:])
-            _ = try context.raw("CREATE REL TABLE SubTaskOf (FROM Task TO Task)", bindings: [:])
-            _ = try context.raw("CREATE REL TABLE Blocks (FROM Task TO Task)", bindings: [:])
+            _ = try context.raw("CREATE REL TABLE HasTask (FROM Session TO TodoTask, position INT64)", bindings: [:])
+            _ = try context.raw("CREATE REL TABLE SubTaskOf (FROM TodoTask TO TodoTask)", bindings: [:])
+            _ = try context.raw("CREATE REL TABLE Blocks (FROM TodoTask TO TodoTask)", bindings: [:])
         }
-        
+
         // Verify all tables exist by creating and querying a relationship
         let sessionId = UUID()
         let taskId = UUID()
-        
+
         _ = try context.raw(
             "CREATE (s:Session {id: $id, title: $title})",
             bindings: ["id": sessionId.uuidString, "title": "Test Session"]
         )
-        
+
         _ = try context.raw(
-            "CREATE (t:Task {id: $id, title: $title})",
+            "CREATE (t:TodoTask {id: $id, title: $title})",
             bindings: ["id": taskId.uuidString, "title": "Test Task"]
         )
-        
+
         // This will fail if edge tables don't exist
         _ = try context.raw(
             """
-            MATCH (s:Session {id: $sessionId}), (t:Task {id: $taskId})
+            MATCH (s:Session {id: $sessionId}), (t:TodoTask {id: $taskId})
             CREATE (s)-[:HasTask {position: 1}]->(t)
             """,
             bindings: ["sessionId": sessionId.uuidString, "taskId": taskId.uuidString]
         )
-        
+
         // Verify the relationship was created
         let result = try context.raw(
-            "MATCH (s:Session)-[:HasTask]->(t:Task) RETURN count(*) as cnt",
+            "MATCH (s:Session)-[:HasTask]->(t:TodoTask) RETURN count(*) as cnt",
             bindings: [:]
         )
         #expect(try result.mapFirstRequired(to: Int64.self, at: 0) == 1)

@@ -27,22 +27,22 @@ extension GraphContext {
         from: any GraphNodeModel,
         to: any GraphNodeModel,
         edgeType: any GraphEdgeModel.Type
-    ) async throws {
+    ) throws {
         guard let fromId = extractId(from: from),
               let toId = extractId(from: to) else {
             throw GraphError.missingIdentifier
         }
-        
+
         let fromTypeName = String(describing: type(of: from))
         let toTypeName = String(describing: type(of: to))
         let edgeTypeName = String(describing: edgeType)
-        
+
         let cypher = """
             MATCH (from:\(fromTypeName) {id: $fromId}), (to:\(toTypeName) {id: $toId})
             CREATE (from)-[:\(edgeTypeName)]->(to)
             """
-        
-        _ = try await raw(cypher, bindings: [
+
+        _ = try raw(cypher, bindings: [
             "fromId": convertToSendable(fromId),
             "toId": convertToSendable(toId)
         ])
@@ -56,33 +56,33 @@ extension GraphContext {
         to: any GraphNodeModel,
         edgeType: Edge.Type,
         direction: Direction = .outgoing
-    ) async throws -> [Edge] {
+    ) throws -> [Edge] {
         guard let fromId = extractId(from: from),
               let toId = extractId(from: to) else {
             throw GraphError.missingIdentifier
         }
-        
+
         let fromTypeName = String(describing: type(of: from))
         let toTypeName = String(describing: type(of: to))
         let edgeTypeName = String(describing: edgeType)
-        
+
         let pattern = switch direction {
         case .outgoing: "(from)-[e:\(edgeTypeName)]->(to)"
         case .incoming: "(from)<-[e:\(edgeTypeName)]-(to)"
         case .both: "(from)-[e:\(edgeTypeName)]-(to)"
         }
-        
+
         let cypher = """
             MATCH (from:\(fromTypeName) {id: $fromId}), (to:\(toTypeName) {id: $toId})
             MATCH \(pattern)
             RETURN e
             """
-        
-        let result = try await raw(cypher, bindings: [
+
+        let result = try raw(cypher, bindings: [
             "fromId": convertToSendable(fromId),
             "toId": convertToSendable(toId)
         ])
-        
+
         return try result.map(to: Edge.self)
     }
     
@@ -92,37 +92,37 @@ extension GraphContext {
         to: any GraphNodeModel,
         edgeType: any GraphEdgeModel.Type,
         direction: Direction = .outgoing
-    ) async throws -> Bool {
+    ) throws -> Bool {
         guard let fromId = extractId(from: from),
               let toId = extractId(from: to) else {
             throw GraphError.missingIdentifier
         }
-        
+
         let fromTypeName = String(describing: type(of: from))
         let toTypeName = String(describing: type(of: to))
         let edgeTypeName = String(describing: edgeType)
-        
+
         let pattern = switch direction {
         case .outgoing: "(from)-[:\(edgeTypeName)]->(to)"
         case .incoming: "(from)<-[:\(edgeTypeName)]-(to)"
         case .both: "(from)-[:\(edgeTypeName)]-(to)"
         }
-        
+
         let cypher = """
             MATCH (from:\(fromTypeName) {id: $fromId}), (to:\(toTypeName) {id: $toId})
             RETURN EXISTS { MATCH \(pattern) } as exists
             """
-        
-        let result = try await raw(cypher, bindings: [
+
+        let result = try raw(cypher, bindings: [
             "fromId": convertToSendable(fromId),
             "toId": convertToSendable(toId)
         ])
-        
+
         guard let row = try result.mapFirst(),
               let exists = row["exists"] as? Bool else {
             return false
         }
-        
+
         return exists
     }
     
@@ -134,31 +134,31 @@ extension GraphContext {
         via edgeType: Edge.Type,
         direction: Direction = .outgoing,
         nodeType: Node.Type
-    ) async throws -> [Node] {
+    ) throws -> [Node] {
         guard let nodeId = extractId(from: node) else {
             throw GraphError.missingIdentifier
         }
-        
+
         let sourceTypeName = String(describing: type(of: node))
         let targetTypeName = String(describing: nodeType)
         let edgeTypeName = String(describing: edgeType)
-        
+
         let pattern = switch direction {
         case .outgoing: "(source)-[:\(edgeTypeName)]->(target:\(targetTypeName))"
         case .incoming: "(source)<-[:\(edgeTypeName)]-(target:\(targetTypeName))"
         case .both: "(source)-[:\(edgeTypeName)]-(target:\(targetTypeName))"
         }
-        
+
         let cypher = """
             MATCH (source:\(sourceTypeName) {id: $nodeId})
             MATCH \(pattern)
             RETURN target
             """
-        
-        let result = try await raw(cypher, bindings: [
+
+        let result = try raw(cypher, bindings: [
             "nodeId": convertToSendable(nodeId)
         ])
-        
+
         return try result.map(to: Node.self)
     }
     
@@ -167,35 +167,35 @@ extension GraphContext {
         from node: any GraphNodeModel,
         via edgeType: Edge.Type,
         direction: Direction = .outgoing
-    ) async throws -> Int64 {
+    ) throws -> Int64 {
         guard let nodeId = extractId(from: node) else {
             throw GraphError.missingIdentifier
         }
-        
+
         let nodeTypeName = String(describing: type(of: node))
         let edgeTypeName = String(describing: edgeType)
-        
+
         let pattern = switch direction {
         case .outgoing: "(n)-[:\(edgeTypeName)]->()"
         case .incoming: "(n)<-[:\(edgeTypeName)]-()"
         case .both: "(n)-[:\(edgeTypeName)]-()"
         }
-        
+
         let cypher = """
             MATCH (n:\(nodeTypeName) {id: $nodeId})
             MATCH \(pattern)
             RETURN COUNT(*) as count
             """
-        
-        let result = try await raw(cypher, bindings: [
+
+        let result = try raw(cypher, bindings: [
             "nodeId": convertToSendable(nodeId)
         ])
-        
+
         guard let row = try result.mapFirst(),
               let count = row["count"] as? Int64 else {
             return 0
         }
-        
+
         return count
     }
     

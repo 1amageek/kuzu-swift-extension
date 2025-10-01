@@ -214,6 +214,14 @@ If migrating from SQL or SwiftData that use secondary indexes:
 - Property macros use a shared `BasePropertyMacro` protocol for consistency
 - `_metadata` contains index information for Vector and Full-Text Search indexes only
 
+### GraphEdge Definition
+- Edge types use `@GraphEdge(from: NodeType.self, to: NodeType.self)` syntax
+- Generic constraints ensure `From` and `To` are `GraphNodeModel` types (compile-time safety)
+- Edges are created via `context.connect()` - **not** `context.insert()`
+- Kuzu automatically maintains internal source/target node IDs (KuzuInternalId)
+- Edge properties should only contain relationship-specific data (timestamps, weights, etc.)
+- No need to store user-level node IDs in edge properties - Kuzu handles this internally
+
 ### Available Property Macros
 
 **DB Effect (Enforced):**
@@ -281,6 +289,16 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 
 ## Beta 2 Changes
 
+### Recent API Changes (Current)
+- **GraphEdge Macro Simplified** - Reverted to `@GraphEdge(from:to:)` format for clarity and Kuzu compatibility
+- **New Edge Connection API** - Added `connect()`/`disconnect()` methods for explicit edge creation
+  - `context.connect(_ edge, from: fromID, to: toID)` - Create edge between existing nodes
+  - `context.disconnect(_ edge, from: fromID, to: toID)` - Remove edge between nodes
+  - Overloads available to auto-extract IDs from node instances
+- **Removed @Since/@Target Macros** - Simplified edge definition to avoid data redundancy with Kuzu's internal IDs
+- **Batch Edge Operations** - Uses UNWIND pattern for efficient bulk edge creation/deletion
+- **Generic Constraints on GraphEdge** - `From` and `To` parameters now require `GraphNodeModel` conformance for type safety
+
 ### New Features in Beta 2
 - **Enhanced ResultMapper** - Automatic KuzuNode to Swift type mapping
 - **Improved Query DSL** - Added `Return.node()` for direct node returns
@@ -340,6 +358,37 @@ let context = GraphContext(container)
 // Insert and save
 let user = User(name: "Alice", age: 30)
 context.insert(user)
+try await context.save()
+```
+
+### Edge Creation with connect()
+```swift
+// Define edge type
+@GraphEdge(from: User.self, to: Post.self)
+struct Wrote: Codable {
+    var createdAt: Date
+}
+
+// Insert nodes first
+let user = User(name: "Alice", age: 30)
+let post = Post(title: "Hello World", content: "...")
+context.insert(user)
+context.insert(post)
+
+// Create edge connecting the nodes
+let wrote = Wrote(createdAt: Date())
+context.connect(wrote, from: user, to: post)  // Auto-extracts IDs
+
+// Or manually specify IDs
+context.connect(wrote, from: user.id.uuidString, to: post.id.uuidString)
+
+try await context.save()
+```
+
+### Disconnect edges
+```swift
+// Remove edge between nodes
+context.disconnect(wrote, from: user, to: post)
 try await context.save()
 ```
 
@@ -413,7 +462,8 @@ let results = try await context.queryArray(User.self) {
 
 ### Raw Cypher (Beta 2: Enhanced)
 ```swift
-let result = try await context.raw(
+// raw() is synchronous - no await needed
+let result = try context.raw(
     "MATCH (u:User) WHERE u.age > $minAge RETURN u",
     bindings: ["minAge": 25]
 )

@@ -327,7 +327,6 @@ struct KuzuCodableCustomTests {
     
     @Test("Conditional int type")
     func conditionalIntType() throws {
-        let encoder = KuzuEncoder()
         let decoder = KuzuDecoder()
         
         let data: [String: Any?] = [

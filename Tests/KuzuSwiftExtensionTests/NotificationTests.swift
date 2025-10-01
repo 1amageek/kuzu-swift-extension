@@ -19,7 +19,7 @@ struct NotificationTests {
         )
         let context = GraphContext(container)
 
-        var willSaveReceived = false
+        nonisolated(unsafe) var willSaveReceived = false
 
         let observer = NotificationCenter.default.addObserver(
             forName: GraphContext.willSave,
@@ -48,7 +48,7 @@ struct NotificationTests {
         )
         let context = GraphContext(container)
 
-        var didSaveReceived = false
+        nonisolated(unsafe) var didSaveReceived = false
 
         let observer = NotificationCenter.default.addObserver(
             forName: GraphContext.didSave,
@@ -77,7 +77,7 @@ struct NotificationTests {
         )
         let context = GraphContext(container)
 
-        var insertedIds: [String] = []
+        nonisolated(unsafe) var insertedIds: [String] = []
 
         let observer = NotificationCenter.default.addObserver(
             forName: GraphContext.didSave,
@@ -118,7 +118,7 @@ struct NotificationTests {
         context.insert(user2)
         try context.save()
 
-        var deletedIds: [String] = []
+        nonisolated(unsafe) var deletedIds: [String] = []
 
         let observer = NotificationCenter.default.addObserver(
             forName: GraphContext.didSave,
@@ -150,8 +150,8 @@ struct NotificationTests {
         )
         let context = GraphContext(container)
 
-        var willSaveReceived = false
-        var didSaveReceived = false
+        nonisolated(unsafe) var willSaveReceived = false
+        nonisolated(unsafe) var didSaveReceived = false
 
         let willSaveObserver = NotificationCenter.default.addObserver(
             forName: GraphContext.willSave,
@@ -189,7 +189,7 @@ struct NotificationTests {
         )
         let context = GraphContext(container)
 
-        var events: [String] = []
+        nonisolated(unsafe) var events: [String] = []
 
         let willSaveObserver = NotificationCenter.default.addObserver(
             forName: GraphContext.willSave,
@@ -229,8 +229,8 @@ struct NotificationTests {
         let context1 = GraphContext(container)
         let context2 = GraphContext(container)
 
-        var context1SaveCount = 0
-        var context2SaveCount = 0
+        nonisolated(unsafe) var context1SaveCount = 0
+        nonisolated(unsafe) var context2SaveCount = 0
 
         let observer1 = NotificationCenter.default.addObserver(
             forName: GraphContext.didSave,
@@ -271,7 +271,7 @@ struct NotificationTests {
         )
         let context = GraphContext(container)
 
-        var receivedUserInfo: [AnyHashable: Any]?
+        nonisolated(unsafe) var receivedUserInfo: [AnyHashable: Any]?
 
         let observer = NotificationCenter.default.addObserver(
             forName: GraphContext.didSave,

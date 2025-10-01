@@ -20,16 +20,57 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
             return []
         }
 
+        // Extract from/to types from macro arguments
+        guard case .argumentList(let arguments) = node.arguments,
+              arguments.count == 2 else {
+            let diagnostic = Diagnostic(
+                node: node,
+                message: GraphEdgeDiagnostic.missingFromToArguments
+            )
+            context.diagnose(diagnostic)
+            return []
+        }
+
+        // Parse from: and to: arguments
+        var fromType: String?
+        var toType: String?
+
+        for argument in arguments {
+            guard let label = argument.label?.text else { continue }
+            let expr = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if label == "from" {
+                // Keep the full type path from "User.self" -> "User"
+                // This preserves nested types like "MyStruct.User"
+                if expr.hasSuffix(".self") {
+                    fromType = String(expr.dropLast(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    fromType = expr
+                }
+            } else if label == "to" {
+                if expr.hasSuffix(".self") {
+                    toType = String(expr.dropLast(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    toType = expr
+                }
+            }
+        }
+
+        guard let from = fromType, let to = toType else {
+            let diagnostic = Diagnostic(
+                node: node,
+                message: GraphEdgeDiagnostic.missingFromToArguments
+            )
+            context.diagnose(diagnostic)
+            return []
+        }
+
         let structName = structDecl.name.text
         let members = structDecl.memberBlock.members
 
         var columns: [(name: String, type: String, constraints: [String])] = []
         var ddlColumns: [String] = []
         var idProperties: [(name: String, location: SyntaxProtocol)] = []
-
-        // Track @Since and @Target properties for edge metadata
-        var sinceProperty: (name: String, nodeType: String, keyPath: String, swiftType: String)?
-        var targetProperty: (name: String, nodeType: String, keyPath: String, swiftType: String)?
 
         for member in members {
             guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
@@ -49,29 +90,9 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
                 let attrName = attr.attributeName.description.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 switch attrName {
-                case "Since":
-                    if case .argumentList(let args) = attr.arguments,
-                       let firstArg = args.first {
-                        let keyPathExpr = firstArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let parsed = parseKeyPath(keyPathExpr) {
-                            sinceProperty = (propertyName, parsed.nodeType, parsed.property, swiftType)
-                        }
-                    }
-                case "Target":
-                    if case .argumentList(let args) = attr.arguments,
-                       let firstArg = args.first {
-                        let keyPathExpr = firstArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let parsed = parseKeyPath(keyPathExpr) {
-                            targetProperty = (propertyName, parsed.nodeType, parsed.property, swiftType)
-                        }
-                    }
                 case "ID":
                     constraints.append("PRIMARY KEY")
                     idProperties.append((name: propertyName, location: variableDecl))
-                case "Index":
-                    constraints.append("INDEX")
-                case "Unique":
-                    constraints.append("UNIQUE")
                 case "Default":
                     if case .argumentList(let args) = attr.arguments,
                        let firstArg = args.first {
@@ -83,8 +104,9 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
                             constraints.append("DEFAULT \(defaultValue)")
                         }
                     }
-                case "Timestamp":
-                    break
+                case "Transient":
+                    // Skip transient properties
+                    continue
                 default:
                     break
                 }
@@ -99,25 +121,6 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
                 columnDef += " \(constraint)"
             }
             ddlColumns.append(columnDef)
-        }
-
-        // Validate @Since/@Target
-        guard let since = sinceProperty else {
-            let diagnostic = Diagnostic(
-                node: structDecl.name,
-                message: GraphEdgeDiagnostic.missingSinceProperty
-            )
-            context.diagnose(diagnostic)
-            return []
-        }
-
-        guard let target = targetProperty else {
-            let diagnostic = Diagnostic(
-                node: structDecl.name,
-                message: GraphEdgeDiagnostic.missingTargetProperty
-            )
-            context.diagnose(diagnostic)
-            return []
         }
 
         // Validate ID properties - edges can have zero or one ID property
@@ -138,30 +141,18 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
             return []
         }
 
-        // Generate DDL using extracted node types
+        // Generate DDL
         let ddl: String
         if ddlColumns.isEmpty {
-            ddl = "CREATE REL TABLE \(structName) (FROM \(since.nodeType) TO \(target.nodeType))"
+            ddl = "CREATE REL TABLE \(structName) (FROM \(from) TO \(to))"
         } else {
-            ddl = "CREATE REL TABLE \(structName) (FROM \(since.nodeType) TO \(target.nodeType), \(ddlColumns.joined(separator: ", ")))"
+            ddl = "CREATE REL TABLE \(structName) (FROM \(from) TO \(to), \(ddlColumns.joined(separator: ", ")))"
         }
 
         let columnsArray = columns.map { column in
             let constraintsArray = column.constraints.map { "\"\($0)\"" }.joined(separator: ", ")
             return "(name: \"\(column.name)\", type: \"\(column.type)\", constraints: [\(constraintsArray)])"
         }.joined(separator: ", ")
-
-        // Generate EdgeMetadata
-        let edgeMetadataDecl = """
-            EdgeMetadata(
-                sinceProperty: "\(since.name)",
-                sinceNodeType: "\(since.nodeType)",
-                sinceNodeKeyPath: "\(since.keyPath)",
-                targetProperty: "\(target.name)",
-                targetNodeType: "\(target.nodeType)",
-                targetNodeKeyPath: "\(target.keyPath)"
-            )
-            """
 
         return [
             """
@@ -171,25 +162,11 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
             public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
             """,
             """
-            public static let _metadata = GraphMetadata(edgeMetadata: \(raw: edgeMetadataDecl))
+            public static let _metadata = GraphMetadata()
             """
         ]
     }
 
-    /// Parse KeyPath expression like "\User.id" to extract node type and property
-    private static func parseKeyPath(_ keyPath: String) -> (nodeType: String, property: String)? {
-        // Remove leading backslash if present
-        let cleaned = keyPath.hasPrefix("\\") ? String(keyPath.dropFirst()) : keyPath
-
-        // Split by dot
-        let components = cleaned.split(separator: ".")
-        guard components.count == 2 else {
-            return nil
-        }
-
-        return (String(components[0]), String(components[1]))
-    }
-    
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
@@ -199,20 +176,57 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
     ) throws -> [ExtensionDeclSyntax] {
         // Check if the declaration is a struct
         guard declaration.is(StructDeclSyntax.self) else {
-            // Don't generate extension for non-struct types
+            return []
+        }
+
+        // Extract from/to types from macro arguments
+        guard case .argumentList(let arguments) = node.arguments,
+              arguments.count == 2 else {
+            return []
+        }
+
+        var fromType: String?
+        var toType: String?
+
+        for argument in arguments {
+            guard let label = argument.label?.text else { continue }
+            let expr = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if label == "from" {
+                // Keep the full type path from "User.self" -> "User"
+                // This preserves nested types like "MyStruct.User"
+                if expr.hasSuffix(".self") {
+                    fromType = String(expr.dropLast(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    fromType = expr
+                }
+            } else if label == "to" {
+                if expr.hasSuffix(".self") {
+                    toType = String(expr.dropLast(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    toType = expr
+                }
+            }
+        }
+
+        guard let from = fromType, let to = toType else {
             return []
         }
 
         let extensionDecl = ExtensionDeclSyntax(
             extendedType: type,
             inheritanceClause: InheritanceClauseSyntax {
-                InheritedTypeSyntax(
-                    type: TypeSyntax("GraphEdgeModel")
-                )
+                InheritedTypeSyntax(type: TypeSyntax("GraphEdgeModel"))
             }
-        ) {}
+        ) {
+            """
+            public static let _fromType: Any.Type = \(raw: from).self
+            """
+            """
+            public static let _toType: Any.Type = \(raw: to).self
+            """
+        }
 
         return [extensionDecl]
     }
-    
 }
