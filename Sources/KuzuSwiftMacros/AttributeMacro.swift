@@ -7,7 +7,6 @@ import KuzuSwiftProtocols
 ///
 /// Available options:
 /// - `.spotlight`: Enable Full-Text Search indexing (BM25-based)
-/// - `.originalName(String)`: Custom column name in database
 ///
 /// Example:
 /// ```swift
@@ -17,9 +16,20 @@ import KuzuSwiftProtocols
 ///
 ///     @Attribute(.spotlight)
 ///     var content: String  // Full-Text Search index
+/// }
+/// ```
 ///
-///     @Attribute(.originalName("article_title"))
-///     var title: String
+/// For custom column names, use CodingKeys:
+/// ```swift
+/// @GraphNode
+/// struct Article: Codable {
+///     enum CodingKeys: String, CodingKey {
+///         case id
+///         case articleTitle = "title"  // Database column: "title"
+///     }
+///
+///     @ID var id: UUID
+///     var articleTitle: String
 /// }
 /// ```
 @attached(peer)

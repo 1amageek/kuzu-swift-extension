@@ -38,24 +38,34 @@ struct AttributeMacroTests {
         )
     }
 
-    @Test("Attribute with originalName option")
-    func originalNameOption() throws {
+    @Test("CodingKeys with custom column names")
+    func codingKeysColumnMapping() throws {
         assertMacroExpansion(
             """
             @GraphNode
             struct User: Codable {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case userName = "user_name"
+                }
+
                 @ID var id: String
-                @Attribute(.originalName("user_name")) var name: String
+                var userName: String
             }
             """,
             expandedSource: """
             struct User: Codable {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case userName = "user_name"
+                }
+
                 var id: String
-                var name: String
+                var userName: String
 
-                public static let _kuzuDDL: String = "CREATE NODE TABLE User (id STRING PRIMARY KEY, name STRING)"
+                public static let _kuzuDDL: String = "CREATE NODE TABLE User (id STRING PRIMARY KEY, user_name STRING)"
 
-                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "name", type: "STRING", constraints: [])]
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "user_name", type: "STRING", constraints: [])]
 
                 public static let _metadata = GraphMetadata(
                     vectorProperties: [],
@@ -66,7 +76,7 @@ struct AttributeMacroTests {
             extension User: GraphNodeModel {
             }
             """,
-            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Attribute": AttributeMacro.self]
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self]
         )
     }
 }

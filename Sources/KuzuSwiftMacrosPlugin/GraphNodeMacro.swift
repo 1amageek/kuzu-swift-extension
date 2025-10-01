@@ -7,24 +7,35 @@ import SwiftDiagnostics
 public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
 
     /// Extract CodingKeys from the struct if explicitly defined
-    private static func extractCodingKeys(from members: MemberBlockItemListSyntax) -> Set<String>? {
+    /// Returns a dictionary mapping Swift property names to database column names
+    private static func extractCodingKeys(from members: MemberBlockItemListSyntax) -> [String: String]? {
         for member in members {
             guard let enumDecl = member.decl.as(EnumDeclSyntax.self),
                   enumDecl.name.text == "CodingKeys" else {
                 continue
             }
 
-            var keys = Set<String>()
+            var mappings: [String: String] = [:]
             for caseMember in enumDecl.memberBlock.members {
                 guard let caseDecl = caseMember.decl.as(EnumCaseDeclSyntax.self) else {
                     continue
                 }
 
                 for element in caseDecl.elements {
-                    keys.insert(element.name.text)
+                    let propertyName = element.name.text
+
+                    // Check if there's a raw value (e.g., case userName = "user_name")
+                    if let rawValue = element.rawValue?.value.as(StringLiteralExprSyntax.self) {
+                        // Extract the string value from segments
+                        let columnName = rawValue.segments.description.trimmingCharacters(in: .init(charactersIn: "\""))
+                        mappings[propertyName] = columnName
+                    } else {
+                        // No raw value, use property name as column name
+                        mappings[propertyName] = propertyName
+                    }
                 }
             }
-            return keys
+            return mappings
         }
         return nil
     }
@@ -89,9 +100,17 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
 
             // If explicit CodingKeys exist, only process properties listed there
             if let codingKeys = explicitCodingKeys {
-                guard codingKeys.contains(propertyName) else {
+                guard codingKeys.keys.contains(propertyName) else {
                     continue
                 }
+            }
+
+            // Determine the column name (use CodingKeys mapping if available)
+            let columnName: String
+            if let codingKeys = explicitCodingKeys, let mappedName = codingKeys[propertyName] {
+                columnName = mappedName
+            } else {
+                columnName = propertyName
             }
             let swiftType = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
             let kuzuType = MacroUtilities.mapSwiftTypeToKuzuType(swiftType)
@@ -114,9 +133,8 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                             if argExpr.contains(".spotlight") {
                                 constraints.append("FULLTEXT")
                                 // Track Full-Text Search property for index creation
-                                fullTextSearchProperties.append((name: propertyName, stemmer: "porter"))
+                                fullTextSearchProperties.append((name: columnName, stemmer: "porter"))
                             }
-                            // .originalName is handled separately in CodingKeys
                         }
                     }
                 case "Vector":
@@ -143,7 +161,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
 
                         if !dimensions.isEmpty {
                             // Store vector property metadata for index creation
-                            vectorProperties.append((name: propertyName, dimensions: dimensions, metric: metric))
+                            vectorProperties.append((name: columnName, dimensions: dimensions, metric: metric))
 
                             // Detect Swift type to determine correct Kuzu vector type
                             let vectorType: String
@@ -155,10 +173,10 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                                 // Default to FLOAT for backward compatibility
                                 vectorType = "FLOAT[\(dimensions)]"
                             }
-                            columns.append((propertyName, vectorType, constraints))
+                            columns.append((columnName, vectorType, constraints))
                             // Build DDL column with only supported inline constraints
-                            // Escape property name if it's a reserved word
-                            let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
+                            // Escape column name if it's a reserved word
+                            let escapedName = KuzuReservedWords.escapeIfNeeded(columnName)
                             var columnDef = "\(escapedName) \(vectorType)"
                             for constraint in constraints {
                                 if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
@@ -189,17 +207,17 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                 }
             }
             
-            if !variableDecl.attributes.contains(where: { 
+            if !variableDecl.attributes.contains(where: {
                 if let attr = $0.as(AttributeSyntax.self) {
                     return attr.attributeName.description.trimmingCharacters(in: .whitespacesAndNewlines) == "Vector"
                 }
                 return false
             }) {
-                columns.append((propertyName, kuzuType, constraints))
-                
+                columns.append((columnName, kuzuType, constraints))
+
                 // Build DDL column with only supported inline constraints
-                // Escape property name if it's a reserved word
-                let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
+                // Escape column name if it's a reserved word
+                let escapedName = KuzuReservedWords.escapeIfNeeded(columnName)
                 var columnDef = "\(escapedName) \(kuzuType)"
                 for constraint in constraints {
                     if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {

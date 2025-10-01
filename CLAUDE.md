@@ -231,7 +231,22 @@ If migrating from SQL or SwiftData that use secondary indexes:
 - `@Vector(dimensions:metric:)` - HNSW index for similarity search
 - `@Attribute(.spotlight)` - Full-Text Search index with BM25 ranking
 - `@Transient` - Exclude property from database persistence
-- `@Attribute(.originalName)` - Custom column name mapping
+
+**Column Name Mapping:**
+- Use Swift's standard `CodingKeys` enum to map Swift property names to database column names
+- Example:
+  ```swift
+  @GraphNode
+  struct User: Codable {
+      enum CodingKeys: String, CodingKey {
+          case id
+          case userName = "user_name"  // DB column: "user_name"
+      }
+
+      @ID var id: String
+      var userName: String  // Swift property: userName
+  }
+  ```
 
 **No DB Effect:**
 - Regular Date properties (no automatic timestamp tracking)

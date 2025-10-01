@@ -266,4 +266,50 @@ struct GraphNodeMacroTests {
             macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self]
         )
     }
+
+    @Test("GraphNode with CodingKeys column name mapping")
+    func graphNodeWithCodingKeysMapping() throws {
+        assertMacroExpansion(
+            """
+            @GraphNode
+            struct Article: Codable {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case articleTitle = "title"
+                    case emailAddress = "email"
+                }
+
+                @ID var id: String
+                var articleTitle: String
+                var emailAddress: String
+            }
+            """,
+            expandedSource: """
+            struct Article: Codable {
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case articleTitle = "title"
+                    case emailAddress = "email"
+                }
+
+                var id: String
+                var articleTitle: String
+                var emailAddress: String
+
+                public static let _kuzuDDL: String = "CREATE NODE TABLE Article (id STRING PRIMARY KEY, title STRING, email STRING)"
+
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "title", type: "STRING", constraints: []), (name: "email", type: "STRING", constraints: [])]
+
+                public static let _metadata = GraphMetadata(
+                    vectorProperties: [],
+                    fullTextSearchProperties: []
+                )
+            }
+
+            extension Article: GraphNodeModel {
+            }
+            """,
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self]
+        )
+    }
 }

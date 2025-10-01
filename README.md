@@ -423,19 +423,12 @@ struct Article: Codable {
 }
 ```
 
-#### ⚠️ Kuzu Index Limitations
+#### Kuzu Index Limitations
 
 Kuzu **only** supports these 3 index types:
 1. **PRIMARY KEY** (Hash) - via `@ID`
 2. **Vector** (HNSW) - via `@Vector`
 3. **Full-Text Search** - via `@Attribute(.spotlight)`
-
-**NOT supported:**
-- ❌ Regular B-tree indexes on arbitrary properties
-- ❌ UNIQUE constraints on non-PRIMARY-KEY columns
-- ❌ Multi-column indexes
-- ❌ Partial indexes
-- ❌ Automatic timestamp tracking
 
 For frequently queried columns, consider:
 - Using them as `@ID` (PRIMARY KEY)
