@@ -17,4 +17,3 @@ public macro Default(_ value: Any) = #externalMacro(
     module: "KuzuSwiftMacrosPlugin",
     type: "DefaultMacro"
 )
-

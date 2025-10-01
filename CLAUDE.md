@@ -352,6 +352,56 @@ try await context.transaction {
 }
 ```
 
+### Change Tracking (SwiftData-compatible)
+```swift
+// Check for unsaved changes
+if context.hasChanges {
+    try await context.save()
+}
+
+// Get pending changes
+let insertedModels = context.insertedModelsArray
+let deletedModels = context.deletedModelsArray
+let changedModels = context.changedModelsArray  // Empty in Kuzu
+
+// SwiftUI example: Conditional save button
+Button("Save") {
+    try? context.save()
+}
+.disabled(!context.hasChanges)
+```
+
+### Notifications (SwiftData-compatible)
+```swift
+// Listen for save events
+NotificationCenter.default.addObserver(
+    forName: GraphContext.didSave,
+    object: context,
+    queue: nil
+) { notification in
+    if let userInfo = notification.userInfo,
+       let insertedIds = userInfo[GraphContext.NotificationKey.insertedIdentifiers.rawValue] as? [String] {
+        print("Inserted: \(insertedIds)")
+    }
+}
+
+// Lifecycle-based autosave (SwiftUI)
+.onReceive(NotificationCenter.default.publisher(
+    for: UIApplication.willResignActiveNotification
+)) { _ in
+    if context.hasChanges {
+        try? context.save()
+    }
+}
+
+// Lifecycle-based autosave (UIKit)
+func applicationWillResignActive(_ application: UIApplication) {
+    if context.hasChanges {
+        try? context.save()
+    }
+}
+```
+
 ### Query DSL (Beta 2: Enhanced)
 ```swift
 let results = try await context.queryArray(User.self) {

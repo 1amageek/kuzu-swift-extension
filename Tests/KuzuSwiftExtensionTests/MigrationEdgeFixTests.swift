@@ -19,16 +19,24 @@ struct MigrationEdgeFixTests {
         var title: String
     }
     
-    @GraphEdge(from: Session.self, to: Task.self)
+    @GraphEdge
     struct HasTask: Codable, Sendable {
+        @Since(\Session.id) var sessionID: String
+        @Target(\Task.id) var taskID: String
         var position: Int
     }
-    
-    @GraphEdge(from: Task.self, to: Task.self)
-    struct SubTaskOf: Codable, Sendable {}
-    
-    @GraphEdge(from: Task.self, to: Task.self)
-    struct Blocks: Codable, Sendable {}
+
+    @GraphEdge
+    struct SubTaskOf: Codable, Sendable {
+        @Since(\Task.id) var parentID: String
+        @Target(\Task.id) var childID: String
+    }
+
+    @GraphEdge
+    struct Blocks: Codable, Sendable {
+        @Since(\Task.id) var blockerID: String
+        @Target(\Task.id) var blockedID: String
+    }
     
     @Test("Migration with nodes and edges should succeed")
     func testMigrationWithNodesAndEdges() async throws {

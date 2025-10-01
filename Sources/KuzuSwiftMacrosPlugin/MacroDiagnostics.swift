@@ -63,27 +63,24 @@ enum GraphNodeDiagnostic: String, DiagnosticMessage {
 
 enum GraphEdgeDiagnostic: String, DiagnosticMessage {
     case mustBeAppliedToStruct = "graph-edge-must-be-struct"
-    case missingParameters = "graph-edge-missing-parameters"
-    case invalidFromType = "graph-edge-invalid-from-type"
-    case invalidToType = "graph-edge-invalid-to-type"
-    
+    case missingSinceProperty = "graph-edge-missing-since"
+    case missingTargetProperty = "graph-edge-missing-target"
+
     var message: String {
         switch self {
         case .mustBeAppliedToStruct:
             return "@GraphEdge can only be applied to structs"
-        case .missingParameters:
-            return "@GraphEdge requires 'from' and 'to' type parameters"
-        case .invalidFromType:
-            return "The 'from' parameter must be a type annotated with @GraphNode"
-        case .invalidToType:
-            return "The 'to' parameter must be a type annotated with @GraphNode"
+        case .missingSinceProperty:
+            return "@GraphEdge requires at least one property marked with @Since"
+        case .missingTargetProperty:
+            return "@GraphEdge requires at least one property marked with @Target"
         }
     }
-    
+
     var diagnosticID: MessageID {
         MessageID(domain: "KuzuSwiftMacros", id: rawValue)
     }
-    
+
     var severity: DiagnosticSeverity {
         .error
     }

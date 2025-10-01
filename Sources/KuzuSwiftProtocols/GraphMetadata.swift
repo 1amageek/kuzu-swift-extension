@@ -1,5 +1,64 @@
 import Foundation
 
+/// Metadata for edge relationships
+///
+/// Contains information about @Since and @Target properties that define
+/// the source and destination nodes for an edge.
+///
+/// Example:
+/// ```swift
+/// @GraphEdge
+/// struct Authored: Codable {
+///     @Since(\User.id) var author: User
+///     @Target(\Post.id) var post: Post
+/// }
+///
+/// // Generated metadata:
+/// // EdgeMetadata(
+/// //     sinceProperty: "author",
+/// //     sinceNodeType: "User",
+/// //     sinceNodeKeyPath: "id",
+/// //     targetProperty: "post",
+/// //     targetNodeType: "Post",
+/// //     targetNodeKeyPath: "id"
+/// // )
+/// ```
+public struct EdgeMetadata: Sendable {
+    /// Property name marked with @Since
+    public let sinceProperty: String
+
+    /// Node type for the @Since property (e.g., "User")
+    public let sinceNodeType: String
+
+    /// KeyPath on the since node used for matching (e.g., "id")
+    public let sinceNodeKeyPath: String
+
+    /// Property name marked with @Target
+    public let targetProperty: String
+
+    /// Node type for the @Target property (e.g., "Post")
+    public let targetNodeType: String
+
+    /// KeyPath on the target node used for matching (e.g., "id")
+    public let targetNodeKeyPath: String
+
+    public init(
+        sinceProperty: String,
+        sinceNodeType: String,
+        sinceNodeKeyPath: String,
+        targetProperty: String,
+        targetNodeType: String,
+        targetNodeKeyPath: String
+    ) {
+        self.sinceProperty = sinceProperty
+        self.sinceNodeType = sinceNodeType
+        self.sinceNodeKeyPath = sinceNodeKeyPath
+        self.targetProperty = targetProperty
+        self.targetNodeType = targetNodeType
+        self.targetNodeKeyPath = targetNodeKeyPath
+    }
+}
+
 /// Container for all optional metadata associated with a graph model
 ///
 /// This structure aggregates various types of metadata (vector properties, Full-Text Search properties)
@@ -35,17 +94,23 @@ public struct GraphMetadata: Sendable {
     /// Full-Text Search property metadata for Full-Text Search indexes
     public let fullTextSearchProperties: [FullTextSearchPropertyMetadata]
 
-    /// Empty metadata (no vector or Full-Text Search properties)
+    /// Edge relationship metadata (@Since/@Target properties)
+    public let edgeMetadata: EdgeMetadata?
+
+    /// Empty metadata (no vector, Full-Text Search, or edge properties)
     public static let none = GraphMetadata(
         vectorProperties: [],
-        fullTextSearchProperties: []
+        fullTextSearchProperties: [],
+        edgeMetadata: nil
     )
 
     public init(
         vectorProperties: [VectorPropertyMetadata] = [],
-        fullTextSearchProperties: [FullTextSearchPropertyMetadata] = []
+        fullTextSearchProperties: [FullTextSearchPropertyMetadata] = [],
+        edgeMetadata: EdgeMetadata? = nil
     ) {
         self.vectorProperties = vectorProperties
         self.fullTextSearchProperties = fullTextSearchProperties
+        self.edgeMetadata = edgeMetadata
     }
 }

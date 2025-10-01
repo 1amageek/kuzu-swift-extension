@@ -24,8 +24,10 @@ struct ReservedWordTests {
         var table: String      // "table" is a reserved word (changed from "where" which is a Swift keyword)
     }
     
-    @GraphEdge(from: OrderModel.self, to: SelectModel.self)
+    @GraphEdge
     struct JoinRelation: Codable, Sendable {
+        @Since(\OrderModel.id) var orderID: String
+        @Target(\SelectModel.id) var selectID: String
         var by: String         // "by" is a reserved word
         var exists: Bool       // "exists" is a reserved word
     }

@@ -39,22 +39,28 @@ struct KuzuCodableGraphIntegrationTests {
         var replies: [String]?
     }
     
-    @GraphEdge(from: User.self, to: Post.self)
+    @GraphEdge
     struct Author: Codable, Sendable {
+        @Since(\User.id) var userID: String
+        @Target(\Post.id) var postID: String
         var role: String
         var since: Date
         var permissions: Set<String>
     }
-    
-    @GraphEdge(from: User.self, to: Comment.self)
+
+    @GraphEdge
     struct Wrote: Codable, Sendable {
+        @Since(\User.id) var userID: String
+        @Target(\Comment.id) var commentID: String
         var at: Date
         var device: String?
         var location: String?
     }
-    
-    @GraphEdge(from: Post.self, to: Comment.self)
+
+    @GraphEdge
     struct HasComment: Codable, Sendable {
+        @Since(\Post.id) var postID: String
+        @Target(\Comment.id) var commentID: String
         var order: Int
         var isPinned: Bool
     }
@@ -132,6 +138,8 @@ struct KuzuCodableGraphIntegrationTests {
         let decoder = KuzuDecoder()
         
         let author = Author(
+            userID: "user-123",
+            postID: "post-456",
             role: "primary",
             since: Date(),
             permissions: Set(["read", "write", "delete"])
@@ -155,6 +163,8 @@ struct KuzuCodableGraphIntegrationTests {
         let decoder = KuzuDecoder()
         
         let wrote = Wrote(
+            userID: "user-123",
+            commentID: "comment-456",
             at: Date(),
             device: "iPhone",
             location: nil

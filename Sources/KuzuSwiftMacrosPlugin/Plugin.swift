@@ -12,5 +12,7 @@ struct KuzuSwiftMacrosPlugin: CompilerPlugin {
         TransientMacro.self,
         RelationshipMacro.self,
         AttributeMacro.self,
+        SinceMacro.self,
+        TargetMacro.self,
     ]
 }

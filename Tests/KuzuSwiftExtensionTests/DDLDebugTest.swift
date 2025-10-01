@@ -34,15 +34,12 @@ struct DDLTestPost: Codable, Sendable {
     }
 }
 
-@GraphEdge(from: DDLTestUser.self, to: DDLTestPost.self)
+@GraphEdge
 struct DDLTestAuthored: Codable, Sendable {
+    @Since(\DDLTestUser.email) var authorEmail: String
+    @Target(\DDLTestPost.id) var postID: String
     var authoredAt: Date = Date()
     var metadata: String?
-    
-    init(authoredAt: Date = Date(), metadata: String? = nil) {
-        self.authoredAt = authoredAt
-        self.metadata = metadata
-    }
 }
 
 @Suite("DDL Debug Tests")

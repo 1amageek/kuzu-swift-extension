@@ -34,10 +34,10 @@ public final class GraphContext: Sendable {
     )
 
     private struct PendingOperations {
-        // Type name -> Array of models to insert
-        var insertsByType: [String: [any GraphNodeModel]] = [:]
-        // Type name -> Array of models to delete
-        var deletesByType: [String: [any GraphNodeModel]] = [:]
+        // Array of models to insert (Node or Edge)
+        var inserts: [any _KuzuGraphModel & Codable] = []
+        // Array of models to delete (Node or Edge)
+        var deletes: [any _KuzuGraphModel & Codable] = []
     }
 
     /// Primary initializer - Create a context from a container (ModelContext equivalent)
@@ -56,6 +56,85 @@ public final class GraphContext: Sendable {
         }
     }
 
+    // MARK: - Notifications (SwiftData Compatible)
+
+    /// Notification posted before the context saves changes
+    public static let willSave = Notification.Name("GraphContext.willSave")
+
+    /// Notification posted after the context saves changes
+    ///
+    /// The notification's userInfo dictionary contains the persistent identifiers
+    /// of any inserted, updated, or deleted models. Use NotificationKey to access those identifiers.
+    public static let didSave = Notification.Name("GraphContext.didSave")
+
+    /// Keys for accessing data in notification userInfo dictionaries
+    public enum NotificationKey: String {
+        /// A set of values identifying the context's inserted models
+        case insertedIdentifiers
+        /// A set of values identifying the context's deleted models
+        case deletedIdentifiers
+        /// A set of values identifying the context's updated models
+        case updatedIdentifiers
+        /// A set of values identifying the context's invalidated models
+        case invalidatedAllIdentifiers
+        /// A token that indicates which generation of the model store is being used
+        case queryGeneration
+    }
+
+    // MARK: - Change Tracking (SwiftData Compatible)
+
+    /// A Boolean value that indicates whether the context has unsaved changes
+    ///
+    /// SwiftData-compatible API.
+    ///
+    /// Example:
+    /// ```swift
+    /// context.insert(user)
+    /// print(context.hasChanges)  // true
+    ///
+    /// try context.save()
+    /// print(context.hasChanges)  // false
+    /// ```
+    public var hasChanges: Bool {
+        pendingOperations.withLock { ops in
+            !ops.inserts.isEmpty || !ops.deletes.isEmpty
+        }
+    }
+
+    /// The array of inserted models that the context is yet to persist
+    ///
+    /// Returns both Node and Edge models.
+    ///
+    /// SwiftData-compatible API.
+    public var insertedModelsArray: [any _KuzuGraphModel & Codable] {
+        pendingOperations.withLock { ops in
+            ops.inserts
+        }
+    }
+
+    /// The array of registered models that the context will remove from persistent storage during the next save
+    ///
+    /// Returns both Node and Edge models.
+    ///
+    /// SwiftData-compatible API.
+    public var deletedModelsArray: [any _KuzuGraphModel & Codable] {
+        pendingOperations.withLock { ops in
+            ops.deletes
+        }
+    }
+
+    /// The array of registered models that have unsaved changes
+    ///
+    /// Note: Currently returns empty array. In Kuzu, updates are handled via insert (MERGE operation).
+    /// Modified models should be re-inserted.
+    ///
+    /// SwiftData-compatible API.
+    public var changedModelsArray: [any _KuzuGraphModel & Codable] {
+        // In Kuzu, updates are done via MERGE (insert with same ID)
+        // So we don't track separate "changed" models
+        []
+    }
+
     // MARK: - SwiftData-Compatible API
 
     /// Registers a model for insertion during the next save operation
@@ -66,8 +145,19 @@ public final class GraphContext: Sendable {
     /// - Parameter model: The model to insert
     public func insert<T: GraphNodeModel>(_ model: T) {
         pendingOperations.withLock { ops in
-            let typeName = T.modelName
-            ops.insertsByType[typeName, default: []].append(model)
+            ops.inserts.append(model)
+        }
+    }
+
+    /// Registers an edge model for insertion during the next save operation
+    ///
+    /// This method accumulates the edge in memory and does not immediately
+    /// execute a database operation. Call `save()` to commit all pending changes.
+    ///
+    /// - Parameter model: The edge model to insert
+    public func insert<T: GraphEdgeModel>(_ model: T) {
+        pendingOperations.withLock { ops in
+            ops.inserts.append(model)
         }
     }
 
@@ -79,8 +169,19 @@ public final class GraphContext: Sendable {
     /// - Parameter model: The model to delete
     public func delete<T: GraphNodeModel>(_ model: T) {
         pendingOperations.withLock { ops in
-            let typeName = T.modelName
-            ops.deletesByType[typeName, default: []].append(model)
+            ops.deletes.append(model)
+        }
+    }
+
+    /// Registers an edge model for deletion during the next save operation
+    ///
+    /// This method accumulates the edge in memory and does not immediately
+    /// execute a database operation. Call `save()` to commit all pending changes.
+    ///
+    /// - Parameter model: The edge model to delete
+    public func delete<T: GraphEdgeModel>(_ model: T) {
+        pendingOperations.withLock { ops in
+            ops.deletes.append(model)
         }
     }
 
@@ -90,15 +191,14 @@ public final class GraphContext: Sendable {
     /// batch optimization (UNWIND + MERGE/DELETE) for maximum performance.
     /// All operations are executed within a single transaction, providing ACID guarantees.
     ///
+    /// Posts `willSave` notification before saving and `didSave` notification after successful save.
+    ///
     /// - Throws: GraphError if the transaction fails
     public func save() throws {
         let operations = pendingOperations.withLock { ops in
-            let result = (
-                inserts: ops.insertsByType,
-                deletes: ops.deletesByType
-            )
-            ops.insertsByType.removeAll()
-            ops.deletesByType.removeAll()
+            let result = (inserts: ops.inserts, deletes: ops.deletes)
+            ops.inserts.removeAll()
+            ops.deletes.removeAll()
             return result
         }
 
@@ -106,7 +206,63 @@ public final class GraphContext: Sendable {
             return  // Nothing to save
         }
 
-        try executeBatchOperations(operations)
+        // Post willSave notification
+        NotificationCenter.default.post(name: Self.willSave, object: self)
+
+        // Group by type for batch execution
+        let insertsByType = Dictionary(grouping: operations.inserts) {
+            String(describing: type(of: $0))
+        }
+        let deletesByType = Dictionary(grouping: operations.deletes) {
+            String(describing: type(of: $0))
+        }
+
+        // Collect identifiers for didSave notification
+        let insertedIDs = try collectIdentifiers(from: insertsByType)
+        let deletedIDs = try collectIdentifiers(from: deletesByType)
+
+        // Execute the save
+        try executeBatchOperations((inserts: insertsByType, deletes: deletesByType))
+
+        // Post didSave notification with userInfo
+        let userInfo: [String: Any] = [
+            NotificationKey.insertedIdentifiers.rawValue: insertedIDs,
+            NotificationKey.deletedIdentifiers.rawValue: deletedIDs,
+            NotificationKey.updatedIdentifiers.rawValue: []  // Empty for now
+        ]
+        NotificationCenter.default.post(
+            name: Self.didSave,
+            object: self,
+            userInfo: userInfo
+        )
+    }
+
+    /// Collect model identifiers from operations
+    private func collectIdentifiers(from operations: [String: [any _KuzuGraphModel & Codable]]) throws -> [String] {
+        var identifiers: [String] = []
+
+        for (typeName, models) in operations {
+            guard let firstModel = models.first else { continue }
+
+            // Get the model type to access _kuzuColumns
+            let modelType = type(of: firstModel)
+            let graphModelType = modelType as any _KuzuGraphModel.Type
+
+            let columns = graphModelType._kuzuColumns
+            guard let idColumn = columns.first else { continue }
+
+            for model in models {
+                let encodable = model as any Encodable
+                let properties = try encoder.encode(encodable)
+
+                // Get the ID value using the ID column name
+                if let idValue = properties[idColumn.name] {
+                    identifiers.append("\(typeName):\(idValue)")
+                }
+            }
+        }
+
+        return identifiers
     }
 
     /// Discards all pending inserts and deletes without saving them
@@ -115,8 +271,8 @@ public final class GraphContext: Sendable {
     /// but not yet committed with `save()`.
     public func rollback() {
         pendingOperations.withLock { ops in
-            ops.insertsByType.removeAll()
-            ops.deletesByType.removeAll()
+            ops.inserts.removeAll()
+            ops.deletes.removeAll()
         }
     }
 
@@ -154,24 +310,40 @@ public final class GraphContext: Sendable {
 
     private func executeBatchOperations(
         _ operations: (
-            inserts: [String: [any GraphNodeModel]],
-            deletes: [String: [any GraphNodeModel]]
+            inserts: [String: [any _KuzuGraphModel & Codable]],
+            deletes: [String: [any _KuzuGraphModel & Codable]]
         )
     ) throws {
         // Execute in a transaction
         _ = try connection.query("BEGIN TRANSACTION")
 
         do {
-            // Execute batch inserts (UNWIND + MERGE)
+            // Execute batch inserts (UNWIND + MERGE for Nodes, CREATE for Edges)
             for (_, models) in operations.inserts {
                 guard let firstModel = models.first else { continue }
-                try executeBatchInsert(models, firstModel: firstModel)
+
+                // Determine if Node or Edge
+                if firstModel is any GraphNodeModel {
+                    let nodeModels = models as! [any GraphNodeModel]
+                    try executeBatchInsert(nodeModels, firstModel: nodeModels.first!)
+                } else if firstModel is any GraphEdgeModel {
+                    let edgeModels = models as! [any GraphEdgeModel]
+                    try executeBatchEdgeInsert(edgeModels, firstModel: edgeModels.first!)
+                }
             }
 
             // Execute batch deletes (UNWIND + MATCH/DELETE)
             for (_, models) in operations.deletes {
                 guard let firstModel = models.first else { continue }
-                try executeBatchDelete(models, firstModel: firstModel)
+
+                // Determine if Node or Edge
+                if firstModel is any GraphNodeModel {
+                    let nodeModels = models as! [any GraphNodeModel]
+                    try executeBatchDelete(nodeModels, firstModel: nodeModels.first!)
+                } else if firstModel is any GraphEdgeModel {
+                    let edgeModels = models as! [any GraphEdgeModel]
+                    try executeBatchEdgeDelete(edgeModels, firstModel: edgeModels.first!)
+                }
             }
 
             _ = try connection.query("COMMIT")
@@ -292,7 +464,7 @@ public final class GraphContext: Sendable {
         }
 
         // Extract IDs from all models
-        let ids: [any Sendable] = try models.map { model in
+        let iDs: [any Sendable] = try models.map { model in
             let encodable = model as any Encodable
             let properties = try encoder.encode(encodable)
             guard let id = properties[idColumn.name] else {
@@ -310,8 +482,94 @@ public final class GraphContext: Sendable {
 
         // Execute query with parameter binding
         let statement = try connection.prepare(query)
-        let kuzuParams = try encoder.encodeParameters(["ids": ids])
+        let kuzuParams = try encoder.encodeParameters(["ids": iDs])
         _ = try connection.execute(statement, kuzuParams)
+    }
+
+    private func executeBatchEdgeInsert(
+        _ models: [any GraphEdgeModel],
+        firstModel: any GraphEdgeModel
+    ) throws {
+        guard !models.isEmpty else { return }
+
+        // Get type information from the first model
+        let modelType = type(of: firstModel)
+        let graphModelType = modelType as any _KuzuGraphModel.Type
+
+        let columns = graphModelType._kuzuColumns
+        let metadata = graphModelType._metadata
+        let edgeName = String(describing: graphModelType)
+
+        // Get EdgeMetadata
+        guard let edgeMetadata = metadata.edgeMetadata else {
+            throw GraphError.invalidOperation(
+                message: "Edge model must have EdgeMetadata (missing @Since/@Target)"
+            )
+        }
+
+        // Encode all models
+        let items: [[String: any Sendable]] = try models.map { model in
+            let encodable = model as any Encodable
+            return try encoder.encode(encodable)
+        }
+
+        // Get since/target property names and node types from metadata
+        let sinceProperty = edgeMetadata.sinceProperty
+        let targetProperty = edgeMetadata.targetProperty
+        let sinceNodeType = edgeMetadata.sinceNodeType
+        let targetNodeType = edgeMetadata.targetNodeType
+        let sinceNodeKeyPath = edgeMetadata.sinceNodeKeyPath
+        let targetNodeKeyPath = edgeMetadata.targetNodeKeyPath
+
+        // Get edge properties (excluding since/target properties)
+        let edgeProperties = columns.filter { column in
+            column.name != sinceProperty && column.name != targetProperty
+        }
+
+        // Build query
+        let query: String
+        if edgeProperties.isEmpty {
+            query = """
+                UNWIND $items AS item
+                MATCH (src:\(sinceNodeType) {\(sinceNodeKeyPath): item.\(sinceProperty)})
+                MATCH (dst:\(targetNodeType) {\(targetNodeKeyPath): item.\(targetProperty)})
+                CREATE (src)-[:\(edgeName)]->(dst)
+                """
+        } else {
+            let propAssignments = edgeProperties.map { column -> String in
+                let value = column.type == "TIMESTAMP"
+                    ? "timestamp(item.\(column.name))"
+                    : "item.\(column.name)"
+                return "\(column.name): \(value)"
+            }.joined(separator: ", ")
+
+            query = """
+                UNWIND $items AS item
+                MATCH (src:\(sinceNodeType) {\(sinceNodeKeyPath): item.\(sinceProperty)})
+                MATCH (dst:\(targetNodeType) {\(targetNodeKeyPath): item.\(targetProperty)})
+                CREATE (src)-[:\(edgeName) {\(propAssignments)}]->(dst)
+                """
+        }
+
+        // Execute query with parameter binding
+        if !items.isEmpty {
+            let statement = try connection.prepare(query)
+            let kuzuParams = try encoder.encodeParameters(["items": items])
+            _ = try connection.execute(statement, kuzuParams)
+        }
+    }
+
+    private func executeBatchEdgeDelete(
+        _ models: [any GraphEdgeModel],
+        firstModel: any GraphEdgeModel
+    ) throws {
+        guard !models.isEmpty else { return }
+
+        // Edge deletion is complex as it requires identifying specific edge instances
+        // This would need from/to node IDs or edge properties
+        throw GraphError.invalidOperation(
+            message: "Edge deletion via delete() is not yet supported. Edges are deleted when nodes are deleted."
+        )
     }
 
     // MARK: - Raw Query Execution
@@ -445,48 +703,8 @@ public final class GraphContext: Sendable {
     }
 
     // MARK: - Edge Operations
-
-    public func connect<E: GraphEdgeModel & Encodable, From: GraphNodeModel, To: GraphNodeModel>(
-        from source: From,
-        to target: To,
-        edge: E
-    ) throws where From: Encodable, To: Encodable {
-        let sourceProps = try encoder.encode(source)
-        let targetProps = try encoder.encode(target)
-        let edgeProps = try encoder.encode(edge)
-
-        let edgeName = E.edgeName
-        let fromModel = From.modelName
-        let toModel = To.modelName
-
-        // Assume both nodes have id property
-        guard let sourceId = sourceProps["id"],
-              let targetId = targetProps["id"] else {
-            throw GraphError.invalidOperation(message: "Both nodes must have id properties")
-        }
-
-        var query = """
-            MATCH (from:\(fromModel) {id: $fromId}), (to:\(toModel) {id: $toId})
-            CREATE (from)-[e:\(edgeName)
-            """
-
-        if !edgeProps.isEmpty {
-            let propStrings = edgeProps.map { key, _ in "\(key): $edge_\(key)" }
-            query += " {\(propStrings.joined(separator: ", "))}"
-        }
-        query += "]->(to)"
-
-        var bindings: [String: any Sendable] = [
-            "fromId": sourceId,
-            "toId": targetId
-        ]
-
-        for (key, value) in edgeProps {
-            bindings["edge_\(key)"] = value
-        }
-
-        _ = try raw(query, bindings: bindings)
-    }
+    // Note: Edges are inserted using context.insert(edge)
+    // The edge model should contain @Since/@Target properties with node IDs
 
     // MARK: - Helper Methods
     // Note: mapResult was removed as it was unused and overly complex.
