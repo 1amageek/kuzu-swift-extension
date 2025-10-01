@@ -131,27 +131,6 @@ public struct TransientMacro: BasePropertyMacro {
     }
 }
 
-public struct RelationshipMacro: BasePropertyMacro {
-    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
-        // Validate deleteRule parameter if present
-        if case .argumentList(let arguments) = node.arguments,
-           let deleteRuleArg = arguments.first(where: { $0.label?.text == "deleteRule" }) {
-            let deleteRuleExpr = deleteRuleArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-            let validRules = [".cascade", ".nullify", ".deny", ".noAction",
-                            "DeleteRule.cascade", "DeleteRule.nullify", "DeleteRule.deny", "DeleteRule.noAction"]
-            if !validRules.contains(where: { deleteRuleExpr.contains($0) }) {
-                context.diagnose(Diagnostic(
-                    node: deleteRuleArg.expression,
-                    message: MacroExpansionErrorMessage("Invalid deleteRule. Use .cascade, .nullify, .deny, or .noAction")
-                ))
-                return false
-            }
-        }
-
-        return true
-    }
-}
-
 public struct AttributeMacro: BasePropertyMacro {
     static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
         // Validate attribute options if present

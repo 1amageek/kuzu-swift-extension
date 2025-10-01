@@ -10,7 +10,6 @@ struct KuzuSwiftMacrosPlugin: CompilerPlugin {
         VectorMacro.self,
         DefaultMacro.self,
         TransientMacro.self,
-        RelationshipMacro.self,
         AttributeMacro.self,
     ]
 }
