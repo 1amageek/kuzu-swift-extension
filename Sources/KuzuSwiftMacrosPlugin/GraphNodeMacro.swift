@@ -34,6 +34,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         return binding.accessorBlock != nil
     }
 
+
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -58,6 +59,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         var ddlColumns: [String] = []
         var idProperties: [(name: String, location: SyntaxProtocol)] = []
         var vectorProperties: [(name: String, dimensions: String, metric: String)] = []
+        var fullTextSearchProperties: [(name: String, stemmer: String)] = []
 
         for member in members {
             guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
@@ -71,6 +73,17 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
 
             // Skip computed properties (mimicking Codable behavior)
             if isComputedProperty(binding) {
+                continue
+            }
+
+            // Skip @Transient properties
+            let hasTransient = variableDecl.attributes.contains(where: {
+                if let attr = $0.as(AttributeSyntax.self) {
+                    return attr.attributeName.description.trimmingCharacters(in: .whitespacesAndNewlines) == "Transient"
+                }
+                return false
+            })
+            if hasTransient {
                 continue
             }
 
@@ -88,13 +101,28 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             for attribute in variableDecl.attributes {
                 guard let attr = attribute.as(AttributeSyntax.self) else { continue }
                 let attrName = attr.attributeName.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                
+
                 switch attrName {
                 case "ID":
                     constraints.append("PRIMARY KEY")
                     idProperties.append((name: propertyName, location: variableDecl))
                 case "Index":
                     constraints.append("INDEX")
+                case "Attribute":
+                    // Handle @Attribute options
+                    if case .argumentList(let args) = attr.arguments {
+                        for arg in args {
+                            let argExpr = arg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if argExpr.contains(".unique") {
+                                constraints.append("UNIQUE")
+                            } else if argExpr.contains(".spotlight") {
+                                constraints.append("FULLTEXT")
+                                // Track Full-Text Search property for index creation
+                                fullTextSearchProperties.append((name: propertyName, stemmer: "porter"))
+                            }
+                            // .timestamp and .originalName are handled separately
+                        }
+                    }
                 case "Vector":
                     if case .argumentList(let args) = attr.arguments {
                         var dimensions: String = ""
@@ -234,6 +262,11 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             return "VectorPropertyMetadata(propertyName: \"\(property.name)\", dimensions: \(property.dimensions), metric: .\(property.metric))"
         }.joined(separator: ", ")
 
+        // Generate Full-Text Search properties metadata
+        let fullTextSearchPropertiesArray = fullTextSearchProperties.map { property in
+            return "FullTextSearchPropertyMetadata(propertyName: \"\(property.name)\", stemmer: \"\(property.stemmer)\")"
+        }.joined(separator: ", ")
+
         var declarations: [DeclSyntax] = [
             """
             public static let _kuzuDDL: String = "\(raw: ddl)"
@@ -243,14 +276,15 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             """
         ]
 
-        // Add _vectorProperties only if there are vector properties
-        if !vectorProperties.isEmpty {
-            declarations.append(
-                """
-                public static let _vectorProperties: [VectorPropertyMetadata] = [\(raw: vectorPropertiesArray)]
-                """
+        // Generate _metadata property
+        declarations.append(
+            """
+            public static let _metadata = GraphMetadata(
+                vectorProperties: [\(raw: vectorPropertiesArray)],
+                fullTextSearchProperties: [\(raw: fullTextSearchPropertiesArray)]
             )
-        }
+            """
+        )
 
         return declarations
     }
@@ -262,51 +296,8 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        // Check if the declaration is a struct
-        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
-            // Don't generate extension for non-struct types
-            return []
-        }
-
-        let members = structDecl.memberBlock.members
-
-        // Collect vector properties
-        var vectorProperties: [(name: String, dimensions: String, metric: String)] = []
-
-        for member in members {
-            guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
-                  let binding = variableDecl.bindings.first,
-                  let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else {
-                continue
-            }
-
-            let propertyName = pattern.identifier.text
-
-            for attribute in variableDecl.attributes {
-                guard let attr = attribute.as(AttributeSyntax.self) else { continue }
-                let attrName = attr.attributeName.description.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                if attrName == "Vector" {
-                    if case .argumentList(let args) = attr.arguments {
-                        var dimensions: String = ""
-                        var metric: String = "l2"
-
-                        for arg in args {
-                            if arg.label?.text == "dimensions",
-                               let expr = arg.expression.as(IntegerLiteralExprSyntax.self) {
-                                dimensions = expr.literal.text
-                            }
-                        }
-
-                        if !dimensions.isEmpty {
-                            vectorProperties.append((name: propertyName, dimensions: dimensions, metric: metric))
-                        }
-                    }
-                }
-            }
-        }
-
-        // Generate base extension with GraphNodeModel conformance
+        // Generate extension with GraphNodeModel conformance only
+        // All metadata is now in _metadata property
         let baseExtension = ExtensionDeclSyntax(
             extendedType: type,
             inheritanceClause: InheritanceClauseSyntax {
@@ -316,21 +307,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             }
         ) {}
 
-        // If has vector properties, add HasVectorProperties conformance
-        if !vectorProperties.isEmpty {
-            let vectorExtension = ExtensionDeclSyntax(
-                extendedType: type,
-                inheritanceClause: InheritanceClauseSyntax {
-                    InheritedTypeSyntax(
-                        type: TypeSyntax("HasVectorProperties")
-                    )
-                }
-            ) {}
-
-            return [baseExtension, vectorExtension]
-        }
-
         return [baseExtension]
     }
-    
+
 }

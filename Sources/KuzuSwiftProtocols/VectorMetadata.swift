@@ -36,8 +36,3 @@ public enum VectorMetric: String, Sendable, Codable {
     case innerProduct = "ip"
 }
 
-/// Protocol for models with vector properties
-public protocol HasVectorProperties {
-    /// Metadata for all vector properties in this model
-    static var _vectorProperties: [VectorPropertyMetadata] { get }
-}

@@ -205,7 +205,7 @@ public final class GraphContext: Sendable {
         }
 
         // Check if model has vector properties (requires special handling)
-        let hasVectorProperties = graphModelType is any HasVectorProperties.Type
+        let hasVectorProperties = !graphModelType._metadata.vectorProperties.isEmpty
 
         // Build query
         let nonIdColumns = Array(columns.dropFirst())
@@ -359,6 +359,27 @@ public final class GraphContext: Sendable {
             _ = try? connection.query("ROLLBACK")
             throw error
         }
+    }
+
+    /// Execute a block with direct connection access (without transaction)
+    ///
+    /// This method is useful for DDL operations (CREATE_VECTOR_INDEX, etc.)
+    /// that cannot be executed within a transaction.
+    ///
+    /// Example:
+    /// ```swift
+    /// try context.withConnection { connection in
+    ///     _ = try connection.query("CALL CREATE_VECTOR_INDEX(...)")
+    /// }
+    /// ```
+    ///
+    /// - Parameter block: A closure that receives a Connection and returns a result
+    /// - Returns: The result of the block
+    /// - Throws: Any error thrown by the block
+    public func withConnection<T>(
+        _ block: (Connection) throws -> T
+    ) throws -> T {
+        try block(connection)
     }
 
     // MARK: - New Query DSL
@@ -622,11 +643,9 @@ public final class GraphContext: Sendable {
         }
 
         // Step 2: Create vector indexes (if they don't exist)
-        guard let vectorType = type as? any HasVectorProperties.Type else {
-            return
-        }
+        let metadata = type._metadata
 
-        for property in vectorType._vectorProperties {
+        for property in metadata.vectorProperties {
             let indexName = property.indexName(for: tableName)
             let indexKey = "\(tableName).\(indexName)"
 

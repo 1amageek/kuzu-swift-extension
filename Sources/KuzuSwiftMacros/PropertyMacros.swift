@@ -7,33 +7,15 @@ public macro ID() = #externalMacro(
 )
 
 @attached(peer)
-public macro Index() = #externalMacro(
-    module: "KuzuSwiftMacrosPlugin",
-    type: "IndexMacro"
-)
-
-@attached(peer)
 public macro Vector(dimensions: Int) = #externalMacro(
     module: "KuzuSwiftMacrosPlugin",
     type: "VectorMacro"
 )
 
 @attached(peer)
-public macro FullTextSearch() = #externalMacro(
-    module: "KuzuSwiftMacrosPlugin",
-    type: "FullTextSearchMacro"
-)
-
-@attached(peer)
 public macro Timestamp() = #externalMacro(
     module: "KuzuSwiftMacrosPlugin",
     type: "TimestampMacro"
-)
-
-@attached(peer)
-public macro Unique() = #externalMacro(
-    module: "KuzuSwiftMacrosPlugin",
-    type: "UniqueMacro"
 )
 
 @attached(peer)

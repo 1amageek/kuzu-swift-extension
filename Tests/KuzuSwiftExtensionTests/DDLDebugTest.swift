@@ -6,14 +6,12 @@ import struct Foundation.Date
 // Test models defined at module level
 @GraphNode
 struct DDLTestUser: Codable, Sendable {
-    @ID var id: UUID = UUID()
-    @Unique var email: String
+    @ID var email: String  // Using email as PRIMARY KEY for uniqueness
     var name: String
     @Default("active") var status: String = "active"
     var age: Int
-    
+
     init(email: String, name: String, age: Int, status: String = "active") {
-        self.id = UUID()
         self.email = email
         self.name = name
         self.age = age
@@ -25,9 +23,9 @@ struct DDLTestUser: Codable, Sendable {
 struct DDLTestPost: Codable, Sendable {
     @ID var id: UUID = UUID()
     var title: String
-    @FullTextSearch var content: String
+    @Attribute(.spotlight) var content: String
     var authorId: UUID
-    
+
     init(title: String, content: String, authorId: UUID) {
         self.id = UUID()
         self.title = title

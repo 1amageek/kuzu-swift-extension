@@ -48,19 +48,7 @@ public struct IDMacro: BasePropertyMacro {
     }
 }
 
-public struct IndexMacro: BasePropertyMacro {
-    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
-        true // No additional validation needed
-    }
-}
-
 public struct TimestampMacro: BasePropertyMacro {
-    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
-        true // No additional validation needed
-    }
-}
-
-public struct UniqueMacro: BasePropertyMacro {
     static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
         true // No additional validation needed
     }
@@ -126,29 +114,6 @@ public struct VectorMacro: BasePropertyMacro {
     }
 }
 
-public struct FullTextSearchMacro: BasePropertyMacro {
-    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
-        // Validate String type
-        guard let binding = declaration.bindings.first,
-              let typeAnnotation = binding.typeAnnotation?.type else {
-            return false
-        }
-        
-        let typeString = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isStringType = typeString == "String" || typeString == "String?"
-        
-        if !isStringType {
-            context.diagnose(Diagnostic(
-                node: typeAnnotation,
-                message: MacroExpansionErrorMessage("@FullTextSearch can only be applied to String properties")
-            ))
-            return false
-        }
-        
-        return true
-    }
-}
-
 public struct DefaultMacro: BasePropertyMacro {
     static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
         // Extract default value from arguments
@@ -160,7 +125,59 @@ public struct DefaultMacro: BasePropertyMacro {
             ))
             return false
         }
-        
+
+        return true
+    }
+}
+
+public struct TransientMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
+        // No additional validation needed - just marks the property as transient
+        true
+    }
+}
+
+public struct RelationshipMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
+        // Validate deleteRule parameter if present
+        if case .argumentList(let arguments) = node.arguments,
+           let deleteRuleArg = arguments.first(where: { $0.label?.text == "deleteRule" }) {
+            let deleteRuleExpr = deleteRuleArg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            let validRules = [".cascade", ".nullify", ".deny", ".noAction",
+                            "DeleteRule.cascade", "DeleteRule.nullify", "DeleteRule.deny", "DeleteRule.noAction"]
+            if !validRules.contains(where: { deleteRuleExpr.contains($0) }) {
+                context.diagnose(Diagnostic(
+                    node: deleteRuleArg.expression,
+                    message: MacroExpansionErrorMessage("Invalid deleteRule. Use .cascade, .nullify, .deny, or .noAction")
+                ))
+                return false
+            }
+        }
+
+        return true
+    }
+}
+
+public struct AttributeMacro: BasePropertyMacro {
+    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
+        // Validate attribute options if present
+        if case .argumentList(let arguments) = node.arguments {
+            for argument in arguments {
+                let argExpr = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                let validOptions = [".unique", ".spotlight", ".timestamp", ".originalName",
+                                  "AttributeOption.unique", "AttributeOption.spotlight",
+                                  "AttributeOption.timestamp", "AttributeOption.originalName"]
+
+                if !validOptions.contains(where: { argExpr.contains($0) }) {
+                    context.diagnose(Diagnostic(
+                        node: argument.expression,
+                        message: MacroExpansionErrorMessage("Invalid attribute option. Use .unique, .spotlight, .timestamp, or .originalName")
+                    ))
+                    return false
+                }
+            }
+        }
+
         return true
     }
 }

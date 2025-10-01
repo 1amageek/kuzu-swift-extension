@@ -54,13 +54,172 @@ array_distance(vec1, vec2)  // L2 distance
 array_inner_product(vec1, vec2)
 ```
 
+## Kuzu Index and Constraint Limitations
+
+⚠️ **IMPORTANT**: Kuzu has significant limitations on indexes and constraints. Understanding these is critical for proper data modeling.
+
+### ✅ Supported Indexes and Constraints
+
+| Feature | Macro | Database Effect | Performance |
+|---------|-------|-----------------|-------------|
+| **PRIMARY KEY** | `@ID` | Hash Index automatically created | ✅ Fast lookups |
+| **DEFAULT Values** | `@Default(value)` | Default constraint in DDL | ✅ Works as expected |
+| **Vector Index (HNSW)** | `@Vector(dimensions: n)` | HNSW index automatically created | ✅ Fast similarity search |
+| **Full-Text Search** | `@Attribute(.spotlight)` | FTS index automatically created | ✅ Fast text search |
+
+### ❌ NOT Supported (Kuzu Database Limitations)
+
+| Feature | Status | Impact |
+|---------|--------|--------|
+| **Regular Indexes** | ❌ Not supported | Non-PRIMARY-KEY columns use **full table scan** |
+| **UNIQUE Constraints** | ❌ Only on PRIMARY KEY | Cannot enforce uniqueness on other columns |
+| **Multiple PRIMARY KEYs** | ❌ One per table | Composite keys not supported |
+| **B-tree Indexes** | ❌ Not supported | Only Hash (PRIMARY KEY), HNSW (Vector), FTS |
+
+### Performance Implications
+
+```swift
+// ✅ FAST: PRIMARY KEY lookup (Hash Index)
+@GraphNode
+struct User: Codable {
+    @ID var email: String  // Indexed, fast lookups
+    var name: String
+}
+// Query: WHERE u.email = 'alice@example.com' → O(1) lookup
+
+// ❌ SLOW: Regular property filtering (Full Table Scan)
+@GraphNode
+struct User: Codable {
+    @ID var id: Int
+    var age: Int  // NOT indexed, slow queries!
+}
+// Query: WHERE u.age > 30 → O(n) full scan
+```
+
+### Recommended Patterns
+
+#### ✅ Good: Use PRIMARY KEY for frequently queried properties
+```swift
+@GraphNode
+struct User: Codable {
+    @ID var email: String  // Email as PRIMARY KEY → indexed + unique
+    var name: String
+}
+```
+
+#### ✅ Good: Use Vector Index for similarity search
+```swift
+@GraphNode
+struct Photo: Codable {
+    @ID var id: String
+    @Vector(dimensions: 512) var embedding: [Float]  // HNSW index created
+}
+```
+
+#### ✅ Good: Use FTS Index for text search
+```swift
+@GraphNode
+struct Article: Codable {
+    @ID var id: Int
+    @Attribute(.spotlight) var content: String  // FTS index created
+}
+
+// Search
+CALL QUERY_FTS_INDEX('Article', 'article_content_fts_idx', 'quantum computing')
+```
+
+#### ❌ Bad: Expecting indexes on regular properties
+```swift
+@GraphNode
+struct Product: Codable {
+    @ID var id: Int
+    var category: String  // ❌ No index! Queries will be slow
+    var price: Double     // ❌ No index! Range queries will be slow
+}
+
+// ❌ SLOW: Full table scan for every query
+// WHERE p.category = 'Electronics'  → scans all rows
+// WHERE p.price > 100               → scans all rows
+```
+
+#### ⚠️ Workaround: Denormalize or use edges for filtering
+```swift
+// Option 1: Use PRIMARY KEY for main filter
+@GraphNode
+struct Product: Codable {
+    @ID var category: String  // Category as PRIMARY KEY
+    var name: String
+    var price: Double
+}
+
+// Option 2: Model as relationships
+@GraphNode
+struct Category: Codable {
+    @ID var name: String
+}
+
+@GraphNode
+struct Product: Codable {
+    @ID var id: Int
+    var name: String
+}
+
+@GraphEdge(from: Product.self, to: Category.self)
+struct BelongsTo: Codable {}
+
+// Query: Fast category filtering via graph traversal
+// MATCH (p:Product)-[:BelongsTo]->(c:Category {name: 'Electronics'})
+```
+
+### UNIQUE Constraint Limitations
+
+Kuzu **ONLY** supports UNIQUE on PRIMARY KEY. For other columns:
+
+```swift
+// ❌ WILL NOT WORK: Kuzu doesn't enforce uniqueness
+@GraphNode
+struct User: Codable {
+    @ID var id: Int
+    @Attribute(.unique) var email: String  // ⚠️ Metadata only, NOT enforced!
+}
+
+// ✅ SOLUTION: Use email as PRIMARY KEY
+@GraphNode
+struct User: Codable {
+    @ID var email: String  // PRIMARY KEY → automatically UNIQUE + indexed
+    var name: String
+}
+
+// ⚠️ If you need multiple unique columns, enforce at application level:
+func insertUser(_ user: User, context: GraphContext) throws {
+    // Check uniqueness manually
+    let existing = try context.raw("MATCH (u:User {email: $email}) RETURN u",
+                                    bindings: ["email": user.email])
+    if existing.hasNext() {
+        throw UserError.duplicateEmail
+    }
+    context.insert(user)
+}
+```
+
+### Migration from Other Databases
+
+If migrating from SQL or SwiftData that use secondary indexes:
+
+1. **Identify frequently queried columns** → Make them PRIMARY KEY or use graph edges
+2. **Text search needs** → Use `@Attribute(.spotlight)` for FTS
+3. **Similarity search** → Use `@Vector` for embeddings
+4. **Other filters** → Accept full table scan or denormalize data
+5. **UNIQUE requirements** → Use PRIMARY KEY or implement application-level validation
+
 ## Key Components
 
 ### Model System
 - Models are structs annotated with `@GraphNode` or `@GraphEdge(from:to:)`
-- Properties use `@ID`, `@Index`, `@Vector`, `@FullTextSearch`, `@Timestamp` annotations
-- Macros generate `_kuzuDDL` and `_kuzuColumns` static properties conforming to `_KuzuGraphModel`
+- Properties use `@ID`, `@Vector`, `@Attribute`, `@Default`, `@Timestamp`, `@Transient` annotations
+- Macros generate `_kuzuDDL`, `_kuzuColumns`, and `_metadata` static properties conforming to `_KuzuGraphModel`
 - Property macros use a shared `BasePropertyMacro` protocol for consistency
+- `_metadata` contains index information for Vector and FTS indexes only
 
 ### Query DSL
 - `GraphContext.query { }` accepts a `@QueryBuilder` closure

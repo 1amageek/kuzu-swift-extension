@@ -26,9 +26,9 @@ struct VectorIndexTests {
 
     @Test("Vector metadata generation for single property")
     func testVectorMetadataGeneration() {
-        #expect(PhotoAsset._vectorProperties.count == 1)
+        #expect(PhotoAsset._metadata.vectorProperties.count == 1)
 
-        let property = PhotoAsset._vectorProperties[0]
+        let property = PhotoAsset._metadata.vectorProperties[0]
         #expect(property.propertyName == "labColor")
         #expect(property.dimensions == 3)
         #expect(property.metric == .l2)
@@ -36,14 +36,14 @@ struct VectorIndexTests {
 
     @Test("Vector metadata generation for multiple properties")
     func testMultipleVectorProperties() {
-        #expect(MultiVectorModel._vectorProperties.count == 2)
+        #expect(MultiVectorModel._metadata.vectorProperties.count == 2)
 
-        let embeddingProp = MultiVectorModel._vectorProperties.first { $0.propertyName == "embedding" }
+        let embeddingProp = MultiVectorModel._metadata.vectorProperties.first { $0.propertyName == "embedding" }
         #expect(embeddingProp != nil)
         #expect(embeddingProp?.dimensions == 128)
         #expect(embeddingProp?.metric == .l2)
 
-        let colorProp = MultiVectorModel._vectorProperties.first { $0.propertyName == "color" }
+        let colorProp = MultiVectorModel._metadata.vectorProperties.first { $0.propertyName == "color" }
         #expect(colorProp != nil)
         #expect(colorProp?.dimensions == 3)
         #expect(colorProp?.metric == .l2)
@@ -65,14 +65,11 @@ struct VectorIndexTests {
         #expect(indexName2 == "testtable_labcolor_idx")
     }
 
-    @Test("HasVectorProperties protocol conformance")
-    func testHasVectorPropertiesConformance() {
-        // Models with @Vector should conform to HasVectorProperties
-        let isPhotoAssetConforming = PhotoAsset.self is any HasVectorProperties.Type
-        #expect(isPhotoAssetConforming)
-
-        let isMultiVectorConforming = MultiVectorModel.self is any HasVectorProperties.Type
-        #expect(isMultiVectorConforming)
+    @Test("Vector metadata availability")
+    func testVectorMetadataAvailability() {
+        // Models with @Vector should have vector metadata
+        #expect(!PhotoAsset._metadata.vectorProperties.isEmpty)
+        #expect(!MultiVectorModel._metadata.vectorProperties.isEmpty)
     }
 
     // MARK: - Manual Index Creation Tests
@@ -92,8 +89,8 @@ struct VectorIndexTests {
             )
         """)
 
-        // Manually create vector index
-        try context.withRawTransaction { connection in
+        // Manually create vector index (DDL operations must be outside transactions)
+        try context.withConnection { connection in
             try VectorIndexManager.createVectorIndex(
                 table: "ManualTest",
                 column: "embedding",
@@ -104,7 +101,7 @@ struct VectorIndexTests {
         }
 
         // Verify index was created by checking if it exists
-        let hasIndex = try context.withRawTransaction { connection in
+        let hasIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "ManualTest",
                 indexName: "manual_embedding_idx",
@@ -132,7 +129,7 @@ struct VectorIndexTests {
         """)
 
         // Create index first time
-        try context.withRawTransaction { connection in
+        try context.withConnection { connection in
             try VectorIndexManager.createVectorIndex(
                 table: "IdempotentTest",
                 column: "vec",
@@ -143,7 +140,7 @@ struct VectorIndexTests {
         }
 
         // Create same index second time - should not fail
-        try context.withRawTransaction { connection in
+        try context.withConnection { connection in
             try VectorIndexManager.createVectorIndex(
                 table: "IdempotentTest",
                 column: "vec",
@@ -154,7 +151,7 @@ struct VectorIndexTests {
         }
 
         // Verify index still exists
-        let hasIndex = try context.withRawTransaction { connection in
+        let hasIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "IdempotentTest",
                 indexName: "idempotent_vec_idx",
@@ -178,7 +175,7 @@ struct VectorIndexTests {
         let context = GraphContext(container)
 
         // Check if index was automatically created
-        let hasIndex = try context.withRawTransaction { connection in
+        let hasIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -199,7 +196,7 @@ struct VectorIndexTests {
         let context = GraphContext(container)
 
         // Check if both indexes were created
-        let hasEmbeddingIndex = try context.withRawTransaction { connection in
+        let hasEmbeddingIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "MultiVectorModel",
                 indexName: "multivectormodel_embedding_idx",
@@ -207,7 +204,7 @@ struct VectorIndexTests {
             )
         }
 
-        let hasColorIndex = try context.withRawTransaction { connection in
+        let hasColorIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "MultiVectorModel",
                 indexName: "multivectormodel_color_idx",
@@ -232,7 +229,7 @@ struct VectorIndexTests {
         try context.createSchemasIfNotExist(for: [PhotoAsset.self])
 
         // Index should still exist
-        let hasIndex = try context.withRawTransaction { connection in
+        let hasIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -394,7 +391,7 @@ struct VectorIndexTests {
         )
         let context = GraphContext(container)
 
-        let hasIndex = try context.withRawTransaction { connection in
+        let hasIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -414,7 +411,7 @@ struct VectorIndexTests {
         )
         let context = GraphContext(container)
 
-        let hasIndex = try context.withRawTransaction { connection in
+        let hasIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "nonexistent_index",
@@ -435,7 +432,7 @@ struct VectorIndexTests {
         let context = GraphContext(container)
 
         // Check index exists for PhotoAsset
-        let hasPhotoIndex = try context.withRawTransaction { connection in
+        let hasPhotoIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",
@@ -445,7 +442,7 @@ struct VectorIndexTests {
         #expect(hasPhotoIndex)
 
         // Check same index name doesn't exist for different table
-        let hasOtherTableIndex = try context.withRawTransaction { connection in
+        let hasOtherTableIndex = try context.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "OtherTable",
                 indexName: "photoasset_labcolor_idx",

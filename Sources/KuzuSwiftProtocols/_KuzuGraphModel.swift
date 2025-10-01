@@ -4,4 +4,10 @@ import Foundation
 public protocol _KuzuGraphModel: Sendable {
     static var _kuzuDDL: String { get }
     static var _kuzuColumns: [(name: String, type: String, constraints: [String])] { get }
+    static var _metadata: GraphMetadata { get }
+}
+
+public extension _KuzuGraphModel {
+    /// Default implementation returns empty metadata
+    static var _metadata: GraphMetadata { .none }
 }

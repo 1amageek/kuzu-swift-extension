@@ -7,11 +7,11 @@ struct KuzuSwiftMacrosPlugin: CompilerPlugin {
         GraphNodeMacro.self,
         GraphEdgeMacro.self,
         IDMacro.self,
-        IndexMacro.self,
         VectorMacro.self,
-        FullTextSearchMacro.self,
         TimestampMacro.self,
-        UniqueMacro.self,
         DefaultMacro.self,
+        TransientMacro.self,
+        RelationshipMacro.self,
+        AttributeMacro.self,
     ]
 }

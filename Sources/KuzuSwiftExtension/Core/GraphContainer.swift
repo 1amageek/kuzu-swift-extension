@@ -184,12 +184,11 @@ public struct GraphContainer: Sendable {
             }
         }
 
-        // Step 2: Create vector indexes (if they don't exist)
-        guard let vectorType = type as? any HasVectorProperties.Type else {
-            return
-        }
+        // Step 2: Create indexes from metadata
+        let metadata = type._metadata
 
-        for property in vectorType._vectorProperties {
+        // Create vector indexes
+        for property in metadata.vectorProperties {
             let indexName = property.indexName(for: tableName)
             let indexKey = "\(tableName).\(indexName)"
 
@@ -207,5 +206,30 @@ public struct GraphContainer: Sendable {
                 connection: connection
             )
         }
+
+        // Create Full-Text Search indexes
+        for property in metadata.fullTextSearchProperties {
+            let indexName = property.indexName(for: tableName)
+            let indexKey = "\(tableName).\(indexName)"
+
+            // Skip if index already exists
+            if existingIndexes.contains(indexKey) {
+                continue
+            }
+
+            // Create the Full-Text Search index
+            try FullTextSearchIndexManager.createFullTextSearchIndex(
+                table: tableName,
+                column: property.propertyName,
+                indexName: indexName,
+                stemmer: property.stemmer,
+                connection: connection
+            )
+        }
+
+        // Note: Kuzu index limitations
+        // ✅ Supported: PRIMARY KEY (Hash), Vector (HNSW), Full-Text Search
+        // ❌ Not supported: Regular secondary indexes on arbitrary properties
+        // ❌ Not supported: UNIQUE constraints on non-primary-key columns
     }
 }

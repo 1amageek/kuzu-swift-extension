@@ -13,7 +13,7 @@ struct GraphNodeMacroTests {
             @GraphNode
             struct User {
                 @ID var id: String
-                @Index var name: String
+                var name: String
                 var email: String?
                 var age: Int
                 @Timestamp var createdAt: Date
@@ -26,16 +26,16 @@ struct GraphNodeMacroTests {
                 var email: String?
                 var age: Int
                 var createdAt: Date
-            
+
                 public static let _kuzuDDL: String = "CREATE NODE TABLE User (id STRING PRIMARY KEY, name STRING, email STRING, age INT64, createdAt TIMESTAMP)"
-            
-                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "name", type: "STRING", constraints: ["INDEX"]), (name: "email", type: "STRING", constraints: []), (name: "age", type: "INT64", constraints: []), (name: "createdAt", type: "TIMESTAMP", constraints: [])]
+
+                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "name", type: "STRING", constraints: []), (name: "email", type: "STRING", constraints: []), (name: "age", type: "INT64", constraints: []), (name: "createdAt", type: "TIMESTAMP", constraints: [])]
             }
-            
+
             extension User: GraphNodeModel {
             }
             """,
-            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Index": IndexMacro.self, "Timestamp": TimestampMacro.self]
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Timestamp": TimestampMacro.self]
         )
     }
     
@@ -97,15 +97,15 @@ struct GraphNodeMacroTests {
         )
     }
     
-    @Test("GraphNode with FullTextSearch")
-    func graphNodeWithFullTextSearch() throws {
+    @Test("GraphNode with Attribute spotlight")
+    func graphNodeWithAttributeSpotlight() throws {
         assertMacroExpansion(
             """
             @GraphNode
             struct Article {
                 @ID var id: String
                 var title: String
-                @FullTextSearch var content: String
+                @Attribute(.spotlight) var content: String
             }
             """,
             expandedSource: """
@@ -113,27 +113,27 @@ struct GraphNodeMacroTests {
                 var id: String
                 var title: String
                 var content: String
-            
+
                 public static let _kuzuDDL: String = "CREATE NODE TABLE Article (id STRING PRIMARY KEY, title STRING, content STRING)"
-            
+
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "title", type: "STRING", constraints: []), (name: "content", type: "STRING", constraints: ["FULLTEXT"])]
             }
-            
+
             extension Article: GraphNodeModel {
             }
             """,
-            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "FullTextSearch": FullTextSearchMacro.self]
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Attribute": AttributeMacro.self]
         )
     }
     
-    @Test("GraphNode with Unique and Default")
-    func graphNodeWithUniqueAndDefault() throws {
+    @Test("GraphNode with Attribute unique and Default")
+    func graphNodeWithAttributeUniqueAndDefault() throws {
         assertMacroExpansion(
             """
             @GraphNode
             struct Account {
                 @ID var id: String
-                @Unique var username: String
+                @Attribute(.unique) var username: String
                 @Default("active") var status: String
                 var balance: Double
             }
@@ -145,7 +145,7 @@ struct GraphNodeMacroTests {
                 var status: String
                 var balance: Double
 
-                public static let _kuzuDDL: String = "CREATE NODE TABLE Account (id STRING PRIMARY KEY, username STRING UNIQUE, status STRING DEFAULT 'active', balance DOUBLE)"
+                public static let _kuzuDDL: String = "CREATE NODE TABLE Account (id STRING PRIMARY KEY, username STRING, status STRING DEFAULT 'active', balance DOUBLE)"
 
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "username", type: "STRING", constraints: ["UNIQUE"]), (name: "status", type: "STRING", constraints: ["DEFAULT 'active'"]), (name: "balance", type: "DOUBLE", constraints: [])]
             }
@@ -153,7 +153,7 @@ struct GraphNodeMacroTests {
             extension Account: GraphNodeModel {
             }
             """,
-            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Unique": UniqueMacro.self, "Default": DefaultMacro.self]
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Attribute": AttributeMacro.self, "Default": DefaultMacro.self]
         )
     }
 
