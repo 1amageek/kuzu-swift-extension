@@ -337,18 +337,108 @@ try await graph.withTransaction { tx in
 
 ### Property Attributes
 
+All available property macros and their usage:
+
+#### Core Macros
+
+**@ID** - PRIMARY KEY with automatic Hash index
+```swift
+@ID var id: UUID = UUID()          // Hash indexed, O(1) lookup
+@ID var email: String              // PRIMARY KEY can be any type
+```
+
+**@Default(value)** - Default value constraint
+```swift
+@Default("draft") var status: String
+@Default(0) var points: Int
+@Default(Date()) var createdAt: Date
+```
+
+**@Timestamp** - Timestamp metadata (informational only)
+```swift
+@Timestamp var createdAt: Date = Date()
+@Timestamp var updatedAt: Date = Date()
+```
+
+**@Transient** - Exclude from database persistence
+```swift
+@Transient
+var displayName: String {          // Computed property, not stored
+    "\(firstName) \(lastName)"
+}
+```
+
+#### Indexing Macros
+
+**@Vector(dimensions:metric:)** - HNSW index for similarity search
+```swift
+@Vector(dimensions: 384) var embedding: [Float]                    // L2 distance (default)
+@Vector(dimensions: 1536, metric: .cosine) var embedding: [Double] // Cosine similarity
+@Vector(dimensions: 512, metric: .innerProduct) var vec: [Float]   // Inner product
+
+// Supported metrics: .l2, .cosine, .innerProduct
+```
+
+**@Attribute(.spotlight)** - Full-Text Search index
+```swift
+@Attribute(.spotlight) var content: String     // BM25-based full-text search
+@Attribute(.spotlight) var description: String // Automatic stemming and stopword removal
+```
+
+**@Attribute(.unique)** - Unique constraint metadata (informational only)
+```swift
+@Attribute(.unique) var slug: String
+// ⚠️ Note: Kuzu does not enforce UNIQUE on non-PRIMARY-KEY columns
+// This is metadata only. Use @ID for enforced uniqueness.
+```
+
+**@Attribute(.timestamp)** - Same as @Timestamp
+```swift
+@Attribute(.timestamp) var createdAt: Date
+```
+
+**@Attribute(.originalName)** - Custom column name mapping
+```swift
+@Attribute(.originalName("user_id")) var userId: String
+```
+
+#### Complete Example
+
 ```swift
 @GraphNode
 struct Article: Codable {
-    @ID var id: UUID = UUID()
-    @Unique var slug: String
-    @Index var title: String
-    @FullTextSearch var content: String
-    @Vector(dimensions: 1536) var embedding: [Double]
-    @Default("draft") var status: String
-    @Timestamp var createdAt: Date = Date()
+    @ID var id: UUID = UUID()                                      // PRIMARY KEY (Hash indexed)
+    var title: String                                               // Regular property (no index)
+    @Attribute(.spotlight) var content: String                      // Full-Text Search index
+    @Vector(dimensions: 1536, metric: .cosine) var embedding: [Double]  // HNSW index
+    @Default("draft") var status: String                            // Default value
+    @Timestamp var createdAt: Date = Date()                         // Timestamp metadata
+    @Attribute(.unique) var slug: String                            // Unique metadata (not enforced)
+
+    @Transient
+    var displayTitle: String {                                      // Excluded from persistence
+        title.uppercased()
+    }
 }
 ```
+
+#### ⚠️ Kuzu Index Limitations
+
+Kuzu **only** supports these 3 index types:
+1. **PRIMARY KEY** (Hash) - via `@ID`
+2. **Vector** (HNSW) - via `@Vector`
+3. **Full-Text Search** - via `@Attribute(.spotlight)`
+
+**NOT supported:**
+- ❌ Regular B-tree indexes on arbitrary properties
+- ❌ UNIQUE constraints on non-PRIMARY-KEY columns (metadata only)
+- ❌ Multi-column indexes
+- ❌ Partial indexes
+
+For frequently queried columns, consider:
+- Using them as `@ID` (PRIMARY KEY)
+- Modeling as graph relationships for fast traversal
+- Accepting full table scan for non-indexed queries
 
 ## Advanced Features
 
@@ -455,11 +545,15 @@ let related = try await graph.query {
 
 ## Performance Tips
 
-1. **Use Indexes**: Add `@Index` to frequently queried properties
-2. **Batch Operations**: Use `ForEachQuery` for bulk operations
-3. **Limit Results**: Always use `.limit()` for large datasets
-4. **Transactions**: Group related operations for better performance
-5. **Connection Pooling**: Automatically managed with configurable parameters
+⚠️ **Important**: Kuzu supports only 3 index types: PRIMARY KEY (Hash), Vector (HNSW), and Full-Text Search.
+
+1. **Use PRIMARY KEY for lookups**: Use `@ID` on frequently queried properties (Hash indexed, O(1) lookup)
+2. **Use Vector indexes**: Add `@Vector(dimensions: n)` for similarity search with HNSW
+3. **Use Full-Text Search**: Add `@Attribute(.spotlight)` for text search with BM25 ranking
+4. **Batch Operations**: Use `ForEachQuery` for bulk operations
+5. **Limit Results**: Always use `.limit()` for large datasets
+6. **Transactions**: Group related operations for better performance
+7. **Accept full scans**: Non-indexed properties require full table scan (no B-tree indexes)
 
 ## Configuration
 

@@ -22,7 +22,7 @@ The library follows a clean layered architecture:
 
 ## Extension Support
 
-All extensions (Vector, FTS, JSON) are **statically linked** in kuzu-swift and available by default on all platforms. No configuration or loading required.
+All extensions (Vector, Full-Text Search, JSON) are **statically linked** in kuzu-swift and available by default on all platforms. No configuration or loading required.
 
 ### Vector Extension
 The vector extension is statically linked in kuzu-swift, providing:
@@ -65,7 +65,7 @@ array_inner_product(vec1, vec2)
 | **PRIMARY KEY** | `@ID` | Hash Index automatically created | ✅ Fast lookups |
 | **DEFAULT Values** | `@Default(value)` | Default constraint in DDL | ✅ Works as expected |
 | **Vector Index (HNSW)** | `@Vector(dimensions: n)` | HNSW index automatically created | ✅ Fast similarity search |
-| **Full-Text Search** | `@Attribute(.spotlight)` | FTS index automatically created | ✅ Fast text search |
+| **Full-Text Search** | `@Attribute(.spotlight)` | Full-Text Search index automatically created | ✅ Fast text search |
 
 ### ❌ NOT Supported (Kuzu Database Limitations)
 
@@ -74,7 +74,7 @@ array_inner_product(vec1, vec2)
 | **Regular Indexes** | ❌ Not supported | Non-PRIMARY-KEY columns use **full table scan** |
 | **UNIQUE Constraints** | ❌ Only on PRIMARY KEY | Cannot enforce uniqueness on other columns |
 | **Multiple PRIMARY KEYs** | ❌ One per table | Composite keys not supported |
-| **B-tree Indexes** | ❌ Not supported | Only Hash (PRIMARY KEY), HNSW (Vector), FTS |
+| **B-tree Indexes** | ❌ Not supported | Only Hash (PRIMARY KEY), HNSW (Vector), Full-Text Search |
 
 ### Performance Implications
 
@@ -116,12 +116,12 @@ struct Photo: Codable {
 }
 ```
 
-#### ✅ Good: Use FTS Index for text search
+#### ✅ Good: Use Full-Text Search Index for text search
 ```swift
 @GraphNode
 struct Article: Codable {
     @ID var id: Int
-    @Attribute(.spotlight) var content: String  // FTS index created
+    @Attribute(.spotlight) var content: String  // Full-Text Search index created
 }
 
 // Search
@@ -207,7 +207,7 @@ func insertUser(_ user: User, context: GraphContext) throws {
 If migrating from SQL or SwiftData that use secondary indexes:
 
 1. **Identify frequently queried columns** → Make them PRIMARY KEY or use graph edges
-2. **Text search needs** → Use `@Attribute(.spotlight)` for FTS
+2. **Text search needs** → Use `@Attribute(.spotlight)` for Full-Text Search
 3. **Similarity search** → Use `@Vector` for embeddings
 4. **Other filters** → Accept full table scan or denormalize data
 5. **UNIQUE requirements** → Use PRIMARY KEY or implement application-level validation
@@ -219,7 +219,7 @@ If migrating from SQL or SwiftData that use secondary indexes:
 - Properties use `@ID`, `@Vector`, `@Attribute`, `@Default`, `@Timestamp`, `@Transient` annotations
 - Macros generate `_kuzuDDL`, `_kuzuColumns`, and `_metadata` static properties conforming to `_KuzuGraphModel`
 - Property macros use a shared `BasePropertyMacro` protocol for consistency
-- `_metadata` contains index information for Vector and FTS indexes only
+- `_metadata` contains index information for Vector and Full-Text Search indexes only
 
 ### Query DSL
 - `GraphContext.query { }` accepts a `@QueryBuilder` closure
@@ -368,7 +368,7 @@ let users = try result.map(to: User.self)
 
 ### iOS/tvOS/watchOS
 - All extensions are statically linked
-- Vector, FTS, and JSON operations fully supported
+- Vector, Full-Text Search, and JSON operations fully supported
 - HNSW indexes work out of the box
 
 ### macOS
