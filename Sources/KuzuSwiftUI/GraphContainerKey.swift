@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import KuzuSwiftExtension
 
 /// Environment key for accessing GraphContainer in SwiftUI views
 ///

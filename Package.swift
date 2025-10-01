@@ -23,6 +23,9 @@ let package = Package(
         .library(
             name: "KuzuSwiftProtocols",
             targets: ["KuzuSwiftProtocols"]),
+        .library(
+            name: "KuzuSwiftUI",
+            targets: ["KuzuSwiftUI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
@@ -64,7 +67,15 @@ let package = Package(
                 "KuzuSwiftProtocols"
             ]
         ),
-        
+
+        // SwiftUI integration
+        .target(
+            name: "KuzuSwiftUI",
+            dependencies: [
+                "KuzuSwiftExtension"
+            ]
+        ),
+
         // Test targets
         .testTarget(
             name: "KuzuSwiftExtensionTests",

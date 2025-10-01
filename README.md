@@ -33,6 +33,16 @@ dependencies: [
 ]
 ```
 
+**Choose the right library for your project:**
+
+```swift
+// For SwiftUI projects
+.product(name: "KuzuSwiftUI", package: "kuzu-swift-extension")
+
+// For non-SwiftUI projects (UIKit, AppKit, server-side, etc.)
+.product(name: "KuzuSwiftExtension", package: "kuzu-swift-extension")
+```
+
 ## Quick Start
 
 ### 1. Define Your Models
@@ -442,11 +452,98 @@ var updatedAt: Date = Date()  // Update manually when needed
 
 ### SwiftUI Integration
 
+The `KuzuSwiftUI` library provides SwiftData-style SwiftUI integration with environment-based container injection.
+
+#### Setup
+
+```swift
+import SwiftUI
+import KuzuSwiftUI  // Automatically imports KuzuSwiftExtension
+
+@main
+struct MyApp: App {
+    let container = try! GraphContainer(for: User.self, Post.self, Follows.self)
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .graphContainer(container)  // Inject container into environment
+    }
+}
+```
+
+#### Using in Views
+
+```swift
+import SwiftUI
+import KuzuSwiftUI
+
+struct ContentView: View {
+    @Environment(\.graphContext) var context  // Access injected context
+    @State private var users: [User] = []
+
+    var body: some View {
+        List(users) { user in
+            Text(user.name)
+        }
+        .task {
+            await loadUsers()
+        }
+    }
+
+    func loadUsers() async {
+        do {
+            users = try await context.queryArray(User.self) {
+                Match.node(User.self)
+                Return.node("User")
+            }
+        } catch {
+            print("Error loading users: \(error)")
+        }
+    }
+}
+```
+
+#### Creating and Saving Data
+
+```swift
+struct AddUserView: View {
+    @Environment(\.graphContext) var context
+    @State private var name = ""
+    @State private var age = 0
+
+    var body: some View {
+        Form {
+            TextField("Name", text: $name)
+            TextField("Age", value: $age, format: .number)
+
+            Button("Save") {
+                saveUser()
+            }
+            .disabled(!context.hasChanges)  // Enable only when there are changes
+        }
+    }
+
+    func saveUser() {
+        let user = User(name: name, age: age)
+        context.insert(user)
+
+        Task {
+            try? await context.save()
+        }
+    }
+}
+```
+
+#### Full Example with Search
+
 ```swift
 struct UserListView: View {
+    @Environment(\.graphContext) var context
     @State private var users: [User] = []
     @State private var searchText = ""
-    
+
     var body: some View {
         List(users) { user in
             UserRow(user: user)
@@ -457,15 +554,77 @@ struct UserListView: View {
                 await searchUsers(query)
             }
         }
+        .task {
+            await loadAllUsers()
+        }
     }
-    
+
+    func loadAllUsers() async {
+        do {
+            users = try await context.queryArray(User.self) {
+                Match.node(User.self)
+                Return.node("User")
+            }
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+
     func searchUsers(_ query: String) async {
-        let graph = try? await GraphDatabase.shared.context()
-        users = try? await graph?.query {
-            User.match()
-                .where(\.name.contains(query))
-                .limit(50)
-        } ?? []
+        guard !query.isEmpty else {
+            await loadAllUsers()
+            return
+        }
+
+        do {
+            users = try await context.queryArray(User.self) {
+                Match.node(User.self, alias: "u")
+                Where(path(\User.name, on: "u").contains(query))
+                Return.node("u")
+            }
+        } catch {
+            print("Error: \(error)")
+        }
+    }
+}
+```
+
+#### Available Environment Values
+
+```swift
+// Access the container
+@Environment(\.graphContainer) var container: GraphContainer?
+
+// Access the main context (@MainActor bound)
+@Environment(\.graphContext) var context: GraphContext
+```
+
+#### Change Tracking with SwiftUI
+
+```swift
+struct EditorView: View {
+    @Environment(\.graphContext) var context
+    @State private var user: User
+
+    var body: some View {
+        Form {
+            TextField("Name", text: $user.name)
+            TextField("Age", value: $user.age, format: .number)
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    Task {
+                        try? await context.save()
+                    }
+                }
+                .disabled(!context.hasChanges)
+            }
+        }
+        .onChange(of: user) { oldValue, newValue in
+            context.delete(oldValue)
+            context.insert(newValue)
+        }
     }
 }
 ```

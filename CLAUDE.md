@@ -19,6 +19,7 @@ The library follows a clean layered architecture:
 3. **Persistence Layer** - `GraphConfiguration`, `GraphContainer`, `GraphContext` for managing connections
 4. **Query DSL Layer** - Type-safe DSL that compiles to Cypher queries with parameter binding
 5. **Result Processing Layer** - `KuzuEncoder`/`KuzuDecoder`, `ResultMapper` for type conversions
+6. **SwiftUI Integration Layer** - `KuzuSwiftUI` library for SwiftData-style SwiftUI integration (optional)
 
 ## Extension Support
 
@@ -249,6 +250,45 @@ If migrating from SQL or SwiftData that use secondary indexes:
 - Comprehensive error cases with recovery suggestions
 - All errors conform to `LocalizedError`
 
+## Package Structure
+
+The repository provides multiple Swift packages for different use cases:
+
+### Core Libraries
+
+- **KuzuSwiftExtension** - Main library with graph database functionality
+  - Model declarations (`@GraphNode`, `@GraphEdge`)
+  - Persistence layer (`GraphContainer`, `GraphContext`)
+  - Query DSL and result mapping
+  - Use this for all non-SwiftUI projects
+
+- **KuzuSwiftUI** - SwiftUI integration library (optional)
+  - SwiftData-style environment integration
+  - `@Environment(\.graphContainer)` and `@Environment(\.graphContext)`
+  - Scene and View modifiers (`.graphContainer()`)
+  - Only import if using SwiftUI
+
+- **KuzuSwiftMacros** - Macro definitions
+  - Exports `@GraphNode`, `@GraphEdge`, property macros
+  - Automatically included when using `KuzuSwiftExtension`
+
+- **KuzuSwiftProtocols** - Protocol definitions
+  - Low-level protocols used by macros
+  - Rarely imported directly
+
+### Import Guide
+
+```swift
+// For SwiftUI projects
+import KuzuSwiftUI  // Includes KuzuSwiftExtension automatically
+
+// For non-SwiftUI projects (UIKit, AppKit, server-side, etc.)
+import KuzuSwiftExtension
+
+// Rarely needed (macros are re-exported by KuzuSwiftExtension)
+import KuzuSwiftMacros
+```
+
 ## Commands
 
 ```bash
@@ -290,6 +330,10 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 ## Beta 2 Changes
 
 ### Recent API Changes (Current)
+- **KuzuSwiftUI Separation** - SwiftUI integration moved to separate `KuzuSwiftUI` library
+  - Core functionality (`KuzuSwiftExtension`) no longer depends on SwiftUI
+  - Optional import for SwiftUI projects: `import KuzuSwiftUI`
+  - Cleaner separation of concerns and reduced compile times for non-UI code
 - **GraphEdge Macro Simplified** - Reverted to `@GraphEdge(from:to:)` format for clarity and Kuzu compatibility
 - **New Edge Connection API** - Added `connect()`/`disconnect()` methods for explicit edge creation
   - `context.connect(_ edge, from: fromID, to: toID)` - Create edge between existing nodes
@@ -300,6 +344,7 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 - **Generic Constraints on GraphEdge** - `From` and `To` parameters now require `GraphNodeModel` conformance for type safety
 
 ### New Features in Beta 2
+- **Modular SwiftUI Support** - Separate `KuzuSwiftUI` library for optional SwiftUI integration
 - **Enhanced ResultMapper** - Automatic KuzuNode to Swift type mapping
 - **Improved Query DSL** - Added `Return.node()` for direct node returns
 - **Better Node Handling** - Single column KuzuNode results are automatically decoded
@@ -346,6 +391,8 @@ export KUZU_BINARY_CHECKSUM="b13968dea0cc5c97e6e7ab7d500a4a8ddc7ddb420b36e25f28e
 
 ### Basic Usage (SwiftData-style)
 ```swift
+import KuzuSwiftExtension
+
 // Create container with models
 let container = try await GraphContainer(for: User.self, Post.self)
 
@@ -359,6 +406,36 @@ let context = GraphContext(container)
 let user = User(name: "Alice", age: 30)
 context.insert(user)
 try await context.save()
+```
+
+### SwiftUI Integration
+```swift
+import SwiftUI
+import KuzuSwiftUI  // Automatically imports KuzuSwiftExtension
+
+@main
+struct MyApp: App {
+    let container = try! GraphContainer(for: User.self, Post.self)
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .graphContainer(container)
+    }
+}
+
+struct ContentView: View {
+    @Environment(\.graphContext) var context
+
+    var body: some View {
+        Button("Add User") {
+            let user = User(name: "Alice", age: 30)
+            context.insert(user)
+            try? context.save()
+        }
+    }
+}
 ```
 
 ### Edge Creation with connect()

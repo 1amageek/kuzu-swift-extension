@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import KuzuSwiftExtension
 
 @available(iOS 18.0, macOS 15.0, tvOS 18.0, watchOS 11.0, *)
 public extension EnvironmentValues {
