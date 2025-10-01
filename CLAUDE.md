@@ -176,13 +176,6 @@ struct BelongsTo: Codable {}
 Kuzu **ONLY** supports UNIQUE on PRIMARY KEY. For other columns:
 
 ```swift
-// ❌ WILL NOT WORK: Kuzu doesn't enforce uniqueness
-@GraphNode
-struct User: Codable {
-    @ID var id: Int
-    @Attribute(.unique) var email: String  // ⚠️ Metadata only, NOT enforced!
-}
-
 // ✅ SOLUTION: Use email as PRIMARY KEY
 @GraphNode
 struct User: Codable {
@@ -216,10 +209,24 @@ If migrating from SQL or SwiftData that use secondary indexes:
 
 ### Model System
 - Models are structs annotated with `@GraphNode` or `@GraphEdge(from:to:)`
-- Properties use `@ID`, `@Vector`, `@Attribute`, `@Default`, `@Timestamp`, `@Transient` annotations
+- Properties use `@ID`, `@Vector`, `@Attribute`, `@Default`, `@Transient` annotations
 - Macros generate `_kuzuDDL`, `_kuzuColumns`, and `_metadata` static properties conforming to `_KuzuGraphModel`
 - Property macros use a shared `BasePropertyMacro` protocol for consistency
 - `_metadata` contains index information for Vector and Full-Text Search indexes only
+
+### Available Property Macros
+
+**DB Effect (Enforced):**
+- `@ID` - PRIMARY KEY with Hash index (O(1) lookup, automatic UNIQUE)
+- `@Default(value)` - DEFAULT constraint in DDL
+- `@Vector(dimensions:metric:)` - HNSW index for similarity search
+- `@Attribute(.spotlight)` - Full-Text Search index with BM25 ranking
+- `@Transient` - Exclude property from database persistence
+- `@Attribute(.originalName)` - Custom column name mapping
+
+**No DB Effect:**
+- Regular Date properties (no automatic timestamp tracking)
+- Manual uniqueness validation required for non-PRIMARY KEY columns
 
 ### Query DSL
 - `GraphContext.query { }` accepts a `@QueryBuilder` closure

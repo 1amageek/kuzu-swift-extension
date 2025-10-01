@@ -106,21 +106,17 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                 case "ID":
                     constraints.append("PRIMARY KEY")
                     idProperties.append((name: propertyName, location: variableDecl))
-                case "Index":
-                    constraints.append("INDEX")
                 case "Attribute":
                     // Handle @Attribute options
                     if case .argumentList(let args) = attr.arguments {
                         for arg in args {
                             let argExpr = arg.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if argExpr.contains(".unique") {
-                                constraints.append("UNIQUE")
-                            } else if argExpr.contains(".spotlight") {
+                            if argExpr.contains(".spotlight") {
                                 constraints.append("FULLTEXT")
                                 // Track Full-Text Search property for index creation
                                 fullTextSearchProperties.append((name: propertyName, stemmer: "porter"))
                             }
-                            // .timestamp and .originalName are handled separately
+                            // .originalName is handled separately in CodingKeys
                         }
                     }
                 case "Vector":
@@ -168,16 +164,12 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                                 if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
                                     columnDef += " \(constraint)"
                                 }
-                                // UNIQUE and FULLTEXT are ignored as Kuzu doesn't support them inline
+                                // FULLTEXT is metadata only - index created separately by GraphContainer
                             }
                             ddlColumns.append(columnDef)
                         }
                     }
                     continue
-                case "FullTextSearch":
-                    constraints.append("FULLTEXT")
-                case "Unique":
-                    constraints.append("UNIQUE")
                 case "Default":
                     if case .argumentList(let args) = attr.arguments,
                        let firstArg = args.first {
@@ -192,9 +184,6 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                             constraints.append("DEFAULT \(defaultValue)")
                         }
                     }
-                case "Timestamp":
-                    // @Timestamp is metadata only, process property normally
-                    break
                 default:
                     break
                 }
@@ -216,7 +205,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                     if constraint.hasPrefix("PRIMARY KEY") || constraint.hasPrefix("DEFAULT") {
                         columnDef += " \(constraint)"
                     }
-                    // UNIQUE and FULLTEXT are ignored as Kuzu doesn't support them inline
+                    // FULLTEXT is metadata only - index created separately by GraphContainer
                 }
                 ddlColumns.append(columnDef)
             }

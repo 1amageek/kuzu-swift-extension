@@ -48,12 +48,6 @@ public struct IDMacro: BasePropertyMacro {
     }
 }
 
-public struct TimestampMacro: BasePropertyMacro {
-    static func validate(_ node: AttributeSyntax, _ declaration: VariableDeclSyntax, in context: some MacroExpansionContext) -> Bool {
-        true // No additional validation needed
-    }
-}
-
 // MARK: - Complex Property Macros
 
 public struct VectorMacro: BasePropertyMacro {
@@ -164,14 +158,13 @@ public struct AttributeMacro: BasePropertyMacro {
         if case .argumentList(let arguments) = node.arguments {
             for argument in arguments {
                 let argExpr = argument.expression.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                let validOptions = [".unique", ".spotlight", ".timestamp", ".originalName",
-                                  "AttributeOption.unique", "AttributeOption.spotlight",
-                                  "AttributeOption.timestamp", "AttributeOption.originalName"]
+                let validOptions = [".spotlight", ".originalName",
+                                  "AttributeOption.spotlight", "AttributeOption.originalName"]
 
                 if !validOptions.contains(where: { argExpr.contains($0) }) {
                     context.diagnose(Diagnostic(
                         node: argument.expression,
-                        message: MacroExpansionErrorMessage("Invalid attribute option. Use .unique, .spotlight, .timestamp, or .originalName")
+                        message: MacroExpansionErrorMessage("Invalid attribute option. Use .spotlight or .originalName")
                     ))
                     return false
                 }

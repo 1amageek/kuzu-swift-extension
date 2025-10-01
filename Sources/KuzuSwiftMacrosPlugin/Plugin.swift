@@ -8,7 +8,6 @@ struct KuzuSwiftMacrosPlugin: CompilerPlugin {
         GraphEdgeMacro.self,
         IDMacro.self,
         VectorMacro.self,
-        TimestampMacro.self,
         DefaultMacro.self,
         TransientMacro.self,
         RelationshipMacro.self,

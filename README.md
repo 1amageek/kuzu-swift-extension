@@ -351,13 +351,6 @@ All available property macros and their usage:
 ```swift
 @Default("draft") var status: String
 @Default(0) var points: Int
-@Default(Date()) var createdAt: Date
-```
-
-**@Timestamp** - Timestamp metadata (informational only)
-```swift
-@Timestamp var createdAt: Date = Date()
-@Timestamp var updatedAt: Date = Date()
 ```
 
 **@Transient** - Exclude from database persistence
@@ -385,18 +378,6 @@ var displayName: String {          // Computed property, not stored
 @Attribute(.spotlight) var description: String // Automatic stemming and stopword removal
 ```
 
-**@Attribute(.unique)** - Unique constraint metadata (informational only)
-```swift
-@Attribute(.unique) var slug: String
-// ⚠️ Note: Kuzu does not enforce UNIQUE on non-PRIMARY-KEY columns
-// This is metadata only. Use @ID for enforced uniqueness.
-```
-
-**@Attribute(.timestamp)** - Same as @Timestamp
-```swift
-@Attribute(.timestamp) var createdAt: Date
-```
-
 **@Attribute(.originalName)** - Custom column name mapping
 ```swift
 @Attribute(.originalName("user_id")) var userId: String
@@ -412,8 +393,7 @@ struct Article: Codable {
     @Attribute(.spotlight) var content: String                      // Full-Text Search index
     @Vector(dimensions: 1536, metric: .cosine) var embedding: [Double]  // HNSW index
     @Default("draft") var status: String                            // Default value
-    @Timestamp var createdAt: Date = Date()                         // Timestamp metadata
-    @Attribute(.unique) var slug: String                            // Unique metadata (not enforced)
+    var createdAt: Date = Date()                                    // Regular Date property
 
     @Transient
     var displayTitle: String {                                      // Excluded from persistence
@@ -431,14 +411,21 @@ Kuzu **only** supports these 3 index types:
 
 **NOT supported:**
 - ❌ Regular B-tree indexes on arbitrary properties
-- ❌ UNIQUE constraints on non-PRIMARY-KEY columns (metadata only)
+- ❌ UNIQUE constraints on non-PRIMARY-KEY columns
 - ❌ Multi-column indexes
 - ❌ Partial indexes
+- ❌ Automatic timestamp tracking
 
 For frequently queried columns, consider:
 - Using them as `@ID` (PRIMARY KEY)
 - Modeling as graph relationships for fast traversal
 - Accepting full table scan for non-indexed queries
+
+For timestamps, use regular Date properties with default values:
+```swift
+var createdAt: Date = Date()  // Set at initialization
+var updatedAt: Date = Date()  // Update manually when needed
+```
 
 ## Advanced Features
 

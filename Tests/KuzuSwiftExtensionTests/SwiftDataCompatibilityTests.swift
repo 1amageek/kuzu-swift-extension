@@ -17,7 +17,6 @@ fileprivate struct User: Codable {
         "\(name) (@\(username))"
     }
 
-    @Attribute(.timestamp)
     var createdAt: Date
 
     @Default(0)
@@ -32,7 +31,6 @@ fileprivate struct Article: Codable {
     @Attribute(.spotlight)
     var content: String
 
-    @Attribute(.unique)
     var slug: String
 }
 
@@ -88,22 +86,6 @@ struct SwiftDataCompatibilityTests {
         // Verify columns don't include displayName
         let columns = User._kuzuColumns.map { $0.name }
         #expect(!columns.contains("displayName"))
-    }
-
-    @Test("Attribute unique option")
-    func attributeUniqueOption() throws {
-        let container = try GraphContainer(
-            for: Article.self,
-            configuration: GraphConfiguration(databasePath: ":memory:")
-        )
-        let context = GraphContext(container)
-
-        context.insert(Article(id: 1, title: "First", content: "Content 1", slug: "first"))
-        try context.save()
-
-        // Verify unique constraint in columns metadata
-        let slugColumn = Article._kuzuColumns.first { $0.name == "slug" }
-        #expect(slugColumn?.constraints.contains("UNIQUE") == true)
     }
 
     @Test("Attribute spotlight option for full-text search")

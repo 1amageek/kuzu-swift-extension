@@ -16,7 +16,7 @@ struct GraphNodeMacroTests {
                 var name: String
                 var email: String?
                 var age: Int
-                @Timestamp var createdAt: Date
+                var createdAt: Date
             }
             """,
             expandedSource: """
@@ -30,12 +30,17 @@ struct GraphNodeMacroTests {
                 public static let _kuzuDDL: String = "CREATE NODE TABLE User (id STRING PRIMARY KEY, name STRING, email STRING, age INT64, createdAt TIMESTAMP)"
 
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "name", type: "STRING", constraints: []), (name: "email", type: "STRING", constraints: []), (name: "age", type: "INT64", constraints: []), (name: "createdAt", type: "TIMESTAMP", constraints: [])]
+
+                public static let _metadata = GraphMetadata(
+                    vectorProperties: [],
+                    fullTextSearchProperties: []
+                )
             }
 
             extension User: GraphNodeModel {
             }
             """,
-            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Timestamp": TimestampMacro.self]
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self]
         )
     }
     
@@ -126,37 +131,6 @@ struct GraphNodeMacroTests {
         )
     }
     
-    @Test("GraphNode with Attribute unique and Default")
-    func graphNodeWithAttributeUniqueAndDefault() throws {
-        assertMacroExpansion(
-            """
-            @GraphNode
-            struct Account {
-                @ID var id: String
-                @Attribute(.unique) var username: String
-                @Default("active") var status: String
-                var balance: Double
-            }
-            """,
-            expandedSource: """
-            struct Account {
-                var id: String
-                var username: String
-                var status: String
-                var balance: Double
-
-                public static let _kuzuDDL: String = "CREATE NODE TABLE Account (id STRING PRIMARY KEY, username STRING, status STRING DEFAULT 'active', balance DOUBLE)"
-
-                public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "username", type: "STRING", constraints: ["UNIQUE"]), (name: "status", type: "STRING", constraints: ["DEFAULT 'active'"]), (name: "balance", type: "DOUBLE", constraints: [])]
-            }
-
-            extension Account: GraphNodeModel {
-            }
-            """,
-            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Attribute": AttributeMacro.self, "Default": DefaultMacro.self]
-        )
-    }
-
     @Test("GraphNode with computed properties should exclude them")
     func graphNodeWithComputedProperties() throws {
         assertMacroExpansion(
@@ -253,7 +227,7 @@ struct GraphNodeMacroTests {
 
                 @ID var id: String
                 var amount: Double
-                @Timestamp var createdAt: Date
+                var createdAt: Date
                 var computedTax: Double {
                     return amount * 0.1
                 }
@@ -279,12 +253,17 @@ struct GraphNodeMacroTests {
                 public static let _kuzuDDL: String = "CREATE NODE TABLE Order (id STRING PRIMARY KEY, amount DOUBLE, createdAt TIMESTAMP)"
 
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "id", type: "STRING", constraints: ["PRIMARY KEY"]), (name: "amount", type: "DOUBLE", constraints: []), (name: "createdAt", type: "TIMESTAMP", constraints: [])]
+
+                public static let _metadata = GraphMetadata(
+                    vectorProperties: [],
+                    fullTextSearchProperties: []
+                )
             }
 
             extension Order: GraphNodeModel {
             }
             """,
-            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self, "Timestamp": TimestampMacro.self]
+            macros: ["GraphNode": GraphNodeMacro.self, "ID": IDMacro.self]
         )
     }
 }

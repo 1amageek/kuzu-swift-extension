@@ -12,7 +12,7 @@ struct GraphEdgeMacroTests {
             """
             @GraphEdge(from: User.self, to: Post.self)
             struct AuthoredBy {
-                @Timestamp var createdAt: Date
+                var createdAt: Date
                 var metadata: String?
             }
             """,
@@ -20,18 +20,18 @@ struct GraphEdgeMacroTests {
             struct AuthoredBy {
                 var createdAt: Date
                 var metadata: String?
-            
+
                 public static let _kuzuDDL: String = "CREATE REL TABLE AuthoredBy (FROM User TO Post, createdAt TIMESTAMP, metadata STRING)"
-            
+
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "createdAt", type: "TIMESTAMP", constraints: []), (name: "metadata", type: "STRING", constraints: [])]
             }
-            
+
             extension AuthoredBy: GraphEdgeModel {
                 public static let _fromType: Any.Type = User.self
                 public static let _toType: Any.Type = Post.self
             }
             """,
-            macros: ["GraphEdge": GraphEdgeMacro.self, "Timestamp": TimestampMacro.self]
+            macros: ["GraphEdge": GraphEdgeMacro.self]
         )
     }
     
@@ -41,7 +41,7 @@ struct GraphEdgeMacroTests {
             """
             @GraphEdge(from: User.self, to: Company.self)
             struct WorksAt {
-                @Timestamp var startDate: Date
+                var startDate: Date
                 var position: String
                 @Default("full-time") var employmentType: String
                 var salary: Double?
@@ -53,7 +53,7 @@ struct GraphEdgeMacroTests {
                 var position: String
                 var employmentType: String
                 var salary: Double?
-            
+
                 public static let _kuzuDDL: String = "CREATE REL TABLE WorksAt (FROM User TO Company, startDate TIMESTAMP, position STRING, employmentType STRING DEFAULT 'full-time', salary DOUBLE)"
             
                 public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [(name: "startDate", type: "TIMESTAMP", constraints: []), (name: "position", type: "STRING", constraints: []), (name: "employmentType", type: "STRING", constraints: ["DEFAULT 'full-time'"]), (name: "salary", type: "DOUBLE", constraints: [])]
@@ -64,7 +64,7 @@ struct GraphEdgeMacroTests {
                 public static let _toType: Any.Type = Company.self
             }
             """,
-            macros: ["GraphEdge": GraphEdgeMacro.self, "Timestamp": TimestampMacro.self, "Default": DefaultMacro.self]
+            macros: ["GraphEdge": GraphEdgeMacro.self, "Default": DefaultMacro.self]
         )
     }
     

@@ -4,22 +4,22 @@ import KuzuSwiftProtocols
 /// Configures attribute-level options for properties
 ///
 /// Use this macro to customize property behavior with various options.
-/// This is compatible with SwiftData's @Attribute macro.
+///
+/// Available options:
+/// - `.spotlight`: Enable Full-Text Search indexing (BM25-based)
+/// - `.originalName(String)`: Custom column name in database
 ///
 /// Example:
 /// ```swift
 /// @GraphNode
-/// struct User: Codable {
+/// struct Article: Codable {
 ///     @ID var id: UUID
 ///
-///     @Attribute(.unique)
-///     var email: String
-///
 ///     @Attribute(.spotlight)
-///     var bio: String
+///     var content: String  // Full-Text Search index
 ///
-///     @Attribute(.originalName("user_name"))
-///     var name: String
+///     @Attribute(.originalName("article_title"))
+///     var title: String
 /// }
 /// ```
 @attached(peer)

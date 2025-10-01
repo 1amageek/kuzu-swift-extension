@@ -13,12 +13,6 @@ public macro Vector(dimensions: Int) = #externalMacro(
 )
 
 @attached(peer)
-public macro Timestamp() = #externalMacro(
-    module: "KuzuSwiftMacrosPlugin",
-    type: "TimestampMacro"
-)
-
-@attached(peer)
 public macro Default(_ value: Any) = #externalMacro(
     module: "KuzuSwiftMacrosPlugin",
     type: "DefaultMacro"

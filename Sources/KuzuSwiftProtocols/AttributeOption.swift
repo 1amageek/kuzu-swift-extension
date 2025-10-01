@@ -2,15 +2,10 @@ import Foundation
 
 /// Attribute options for customizing property behavior
 public enum AttributeOption: Sendable {
-    /// Mark as unique (single-property uniqueness)
-    case unique
-
-    /// Enable full-text search (replaces @FullTextSearch)
+    /// Enable full-text search indexing with BM25 ranking
+    /// Creates a Full-Text Search index on the property
     case spotlight
 
-    /// Timestamp tracking (replaces @Timestamp)
-    case timestamp
-
-    /// Custom storage name (originalName parameter)
+    /// Custom storage name for the property in the database
     case originalName(String)
 }
