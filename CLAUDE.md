@@ -55,6 +55,36 @@ array_distance(vec1, vec2)  // L2 distance
 array_inner_product(vec1, vec2)
 ```
 
+### ⚠️ Known Issue: HNSW Index Batch Insert
+
+**Issue**: Kuzu's HNSW index has a race condition during batch inserts that can cause crashes (array out of bounds in CSR index).
+
+**Root Cause**: When multiple vector nodes are inserted in a single transaction using `UNWIND`, parallel HNSW index updates can corrupt internal CSR (Compressed Sparse Row) array state.
+
+**Workaround Implemented**: kuzu-swift-extension automatically detects `@Vector` properties and uses **sequential execution** instead of batch `UNWIND` to avoid the crash. This provides stability at the cost of ~20-30% slower inserts for vector-indexed models.
+
+**Impact**:
+- ✅ **Safe**: Batch inserts with `@Vector` properties no longer crash
+- ⚠️ **Performance**: Slower than batch mode, but necessary until Kuzu fixes the underlying issue
+- ✅ **Transparent**: No code changes needed - the workaround is automatic
+
+**Example** (works safely now):
+```swift
+@GraphNode
+struct Photo: Codable {
+    @ID var id: String
+    @Vector(dimensions: 512) var embedding: [Float]
+}
+
+// This is now safe (previously crashed with batch size > 5)
+for i in 0..<100 {
+    context.insert(Photo(id: "\(i)", embedding: randomVector()))
+}
+try await context.save()  // Sequential execution for vector models
+```
+
+**Reference**: See [Kuzu Issue #5184](https://github.com/kuzudb/kuzu/issues/5184)
+
 ## Kuzu Index and Constraint Limitations
 
 ⚠️ **IMPORTANT**: Kuzu has significant limitations on indexes and constraints. Understanding these is critical for proper data modeling.

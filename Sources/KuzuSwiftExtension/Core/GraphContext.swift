@@ -492,35 +492,46 @@ public final class GraphContext: Sendable {
         // Build query
         let nonIdColumns = Array(columns.dropFirst())
 
-        let query: String
+        // ⚠️ WORKAROUND: Vector properties require sequential execution to avoid HNSW index crash
+        // Issue: Kuzu's HNSW index has race condition in CSR array access during batch DELETE+CREATE
+        // When UNWIND processes multiple items, parallel HNSW index updates cause array out of bounds
+        // See: https://github.com/kuzudb/kuzu/issues/5184
         if hasVectorProperties {
-            // For models with vector indexes, use DELETE + CREATE instead of MERGE
-            // This avoids the "Cannot set property in table because it is used in indexes" error
-            if nonIdColumns.isEmpty {
-                query = """
-                    UNWIND $items AS item
-                    OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
-                    DELETE n
-                    WITH item
-                    CREATE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
-                    """
-            } else {
-                let allAssignments = ([idColumn] + nonIdColumns).map { column -> String in
-                    let value = column.type == "TIMESTAMP"
-                        ? "timestamp(item.\(column.name))"
-                        : "item.\(column.name)"
-                    return "\(column.name): \(value)"
-                }.joined(separator: ", ")
+            // Execute DELETE + CREATE sequentially for each item
+            for item in items {
+                let singleQuery: String
 
-                query = """
-                    UNWIND $items AS item
-                    OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
-                    DELETE n
-                    WITH item
-                    CREATE (n:\(modelName) {\(allAssignments)})
-                    """
+                if nonIdColumns.isEmpty {
+                    singleQuery = """
+                        OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): $\(idColumn.name)})
+                        DELETE n
+                        CREATE (n:\(modelName) {\(idColumn.name): $\(idColumn.name)})
+                        """
+                } else {
+                    let allAssignments = ([idColumn] + nonIdColumns).map { column -> String in
+                        let value = column.type == "TIMESTAMP"
+                            ? "timestamp($\(column.name))"
+                            : "$\(column.name)"
+                        return "\(column.name): \(value)"
+                    }.joined(separator: ", ")
+
+                    singleQuery = """
+                        OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): $\(idColumn.name)})
+                        DELETE n
+                        CREATE (n:\(modelName) {\(allAssignments)})
+                        """
+                }
+
+                let statement = try connection.prepare(singleQuery)
+                let kuzuParams = try encoder.encodeParameters(item)
+                _ = try connection.execute(statement, kuzuParams)
             }
-        } else if nonIdColumns.isEmpty {
+            return
+        }
+
+        // Normal path (no vector indexes): Use UNWIND + MERGE for batch efficiency
+        let query: String
+        if nonIdColumns.isEmpty {
             query = """
                 UNWIND $items AS item
                 MERGE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
