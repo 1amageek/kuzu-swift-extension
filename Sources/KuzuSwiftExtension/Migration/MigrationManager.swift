@@ -55,7 +55,7 @@ public struct MigrationManager {
                 case .node:
                     nodes.append(NodeSchema(
                         name: tableName,
-                        columns: tableInfo.columns.map { Column(name: $0.name, type: $0.type, constraints: $0.constraints) },
+                        columns: tableInfo.columns.map { Column(name: $0.columnName, type: $0.type, constraints: $0.constraints) },
                         ddl: tableInfo.ddl
                     ))
                 case .edge:
@@ -63,7 +63,7 @@ public struct MigrationManager {
                         name: tableName,
                         from: tableInfo.fromType ?? "",
                         to: tableInfo.toType ?? "",
-                        columns: tableInfo.columns.map { Column(name: $0.name, type: $0.type, constraints: $0.constraints) },
+                        columns: tableInfo.columns.map { Column(name: $0.columnName, type: $0.type, constraints: $0.constraints) },
                         ddl: tableInfo.ddl
                     ))
                 }
@@ -82,10 +82,10 @@ public struct MigrationManager {
             case node
             case edge
         }
-        
+
         let tableType: TableType
         let ddl: String
-        let columns: [(name: String, type: String, constraints: [String])]
+        let columns: [(propertyName: String, columnName: String, type: String, constraints: [String])]
         let fromType: String?
         let toType: String?
     }
@@ -95,7 +95,7 @@ public struct MigrationManager {
         tableRow: [String: Any],
         schemaRows: [[String: Any]]
     ) throws -> TableInfo {
-        var columns: [(name: String, type: String, constraints: [String])] = []
+        var columns: [(propertyName: String, columnName: String, type: String, constraints: [String])] = []
         var tableType: TableInfo.TableType = .node
         var fromType: String?
         var toType: String?
@@ -134,8 +134,10 @@ public struct MigrationManager {
                 constraints.append("NOT NULL")
             }
             
+            // For existing database schemas, we assume propertyName == columnName
             columns.append((
-                name: columnName,
+                propertyName: columnName,
+                columnName: columnName,
                 type: dataType,
                 constraints: constraints
             ))
@@ -162,12 +164,12 @@ public struct MigrationManager {
     private func reconstructDDL(
         tableName: String,
         tableType: TableInfo.TableType,
-        columns: [(name: String, type: String, constraints: [String])],
+        columns: [(propertyName: String, columnName: String, type: String, constraints: [String])],
         fromType: String?,
         toType: String?
     ) -> String {
         let columnDefs = columns.map { column in
-            var def = "\(column.name) \(column.type)"
+            var def = "\(column.columnName) \(column.type)"
             if !column.constraints.isEmpty {
                 def += " " + column.constraints.joined(separator: " ")
             }

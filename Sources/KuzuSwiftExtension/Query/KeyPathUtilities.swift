@@ -17,10 +17,27 @@ internal struct KeyPathUtilities {
         }
         return keyPathString
     }
-    
+
     /// Extracts property name from a PartialKeyPath
     static func propertyName<T>(from keyPath: PartialKeyPath<T>, on type: T.Type) -> String {
         let keyPathString = String(describing: keyPath)
         return extractPropertyName(from: keyPathString)
+    }
+
+    /// Converts a Swift property name to database column name using CodingKeys mapping
+    /// - Parameters:
+    ///   - keyPath: KeyPath to the property
+    ///   - type: The GraphNodeModel type
+    /// - Returns: The database column name (respects CodingKeys mapping)
+    static func columnName<T: GraphNodeModel>(from keyPath: PartialKeyPath<T>) -> String {
+        let propertyName = self.propertyName(from: keyPath, on: T.self)
+
+        // Look up the column name in _kuzuColumns
+        if let column = T._kuzuColumns.first(where: { $0.propertyName == propertyName }) {
+            return column.columnName
+        }
+
+        // Fallback: if not found, assume property name == column name
+        return propertyName
     }
 }

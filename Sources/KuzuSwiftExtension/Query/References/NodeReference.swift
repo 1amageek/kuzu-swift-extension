@@ -30,8 +30,8 @@ public struct NodeReference<Model: GraphNodeModel & Decodable>: AliasedComponent
     
     /// Dynamic member lookup for property access
     public subscript<Value>(dynamicMember keyPath: KeyPath<Model, Value>) -> PropertyReference {
-        let propertyName = String(describing: keyPath).components(separatedBy: ".").last ?? ""
-        return PropertyReference(alias: alias, property: propertyName)
+        let columnName = KeyPathUtilities.columnName(from: keyPath)
+        return PropertyReference(alias: alias, property: columnName)
     }
     
     // MARK: - Query Operations
@@ -44,8 +44,8 @@ public struct NodeReference<Model: GraphNodeModel & Decodable>: AliasedComponent
     
     /// Add a WHERE condition using KeyPath
     public func `where`<Value: Sendable>(_ keyPath: KeyPath<Model, Value>, _ op: ComparisonOperator, _ value: Value) -> NodeReference {
-        let propertyName = String(describing: keyPath).components(separatedBy: ".").last ?? ""
-        let propRef = PropertyReference(alias: alias, property: propertyName)
+        let columnName = KeyPathUtilities.columnName(from: keyPath)
+        let propRef = PropertyReference(alias: alias, property: columnName)
         let comparison = ComparisonExpression(lhs: propRef, op: op, rhs: .value(value))
         let predicate = Predicate(node: .comparison(comparison))
         return self.where(predicate)
@@ -53,8 +53,8 @@ public struct NodeReference<Model: GraphNodeModel & Decodable>: AliasedComponent
     
     /// Add ORDER BY clause
     public func orderBy<Value>(_ keyPath: KeyPath<Model, Value>, _ direction: SortDirection = .ascending) -> NodeReference {
-        let propertyName = String(describing: keyPath).components(separatedBy: ".").last ?? ""
-        let operation = NodeOperation.orderBy(property: propertyName, direction: direction)
+        let columnName = KeyPathUtilities.columnName(from: keyPath)
+        let operation = NodeOperation.orderBy(property: columnName, direction: direction)
         return NodeReference(alias: alias, predicate: predicate, isOptional: isOptional, operations: operations + [operation])
     }
     
@@ -72,8 +72,8 @@ public struct NodeReference<Model: GraphNodeModel & Decodable>: AliasedComponent
     
     /// Set property values
     public func set<Value: Sendable>(_ keyPath: KeyPath<Model, Value>, to value: Value) -> NodeReference {
-        let propertyName = String(describing: keyPath).components(separatedBy: ".").last ?? ""
-        let operation = NodeOperation.set(property: propertyName, value: value)
+        let columnName = KeyPathUtilities.columnName(from: keyPath)
+        let operation = NodeOperation.set(property: columnName, value: value)
         return NodeReference(alias: alias, predicate: predicate, isOptional: isOptional, operations: operations + [operation])
     }
     

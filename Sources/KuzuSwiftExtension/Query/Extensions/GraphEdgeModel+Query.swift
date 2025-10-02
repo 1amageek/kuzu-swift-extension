@@ -177,9 +177,9 @@ public struct MergeEdge<Model: GraphEdgeModel>: QueryComponent {
                 
                 // Check if this is a timestamp property
                 let columns = Model._kuzuColumns
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
-                
+
                 if columnType == "TIMESTAMP" {
                     propStrings.append("\(alias).\(key) = timestamp($\(paramName))")
                 } else {
@@ -188,19 +188,19 @@ public struct MergeEdge<Model: GraphEdgeModel>: QueryComponent {
             }
             query += " ON CREATE SET \(propStrings.joined(separator: ", "))"
         }
-        
+
         // Add ON MATCH SET
         if !onMatchProperties.isEmpty {
             var propStrings: [String] = []
             for (key, value) in onMatchProperties {
                 let paramName = OptimizedParameterGenerator.semantic(alias: "\(alias)_match_set", property: key)
                 parameters[paramName] = value
-                
+
                 // Check if this is a timestamp property
                 let columns = Model._kuzuColumns
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
-                
+
                 if columnType == "TIMESTAMP" {
                     propStrings.append("\(alias).\(key) = timestamp($\(paramName))")
                 } else {

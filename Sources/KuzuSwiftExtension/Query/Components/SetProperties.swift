@@ -22,11 +22,11 @@ public struct SetProperties: QueryComponent {
         for (key, value) in properties {
             let paramName = OptimizedParameterGenerator.semantic(alias: nodeRef.alias, property: key)
             parameters[paramName] = value
-            
+
             // Check if this is a timestamp property
-            let columnInfo = columns.first { $0.name == key }
+            let columnInfo = columns.first { $0.columnName == key }
             let columnType = columnInfo?.type ?? ""
-            
+
             if columnType == "TIMESTAMP" {
                 propStrings.append("\(nodeRef.alias).\(key) = timestamp($\(paramName))")
             } else {
@@ -44,8 +44,8 @@ public struct SetProperties: QueryComponent {
         _ keyPath: KeyPath<Model, Value>,
         to value: Value
     ) -> SetProperties {
-        let propertyName = String(describing: keyPath).components(separatedBy: ".").last ?? ""
-        return node(nodeRef, properties: [propertyName: value])
+        let columnName = KeyPathUtilities.columnName(from: keyPath)
+        return node(nodeRef, properties: [columnName: value])
     }
     
     /// Set properties on an edge
@@ -59,11 +59,11 @@ public struct SetProperties: QueryComponent {
         for (key, value) in properties {
             let paramName = OptimizedParameterGenerator.semantic(alias: edgeRef.alias, property: key)
             parameters[paramName] = value
-            
+
             // Check if this is a timestamp property
-            let columnInfo = columns.first { $0.name == key }
+            let columnInfo = columns.first { $0.columnName == key }
             let columnType = columnInfo?.type ?? ""
-            
+
             if columnType == "TIMESTAMP" {
                 propStrings.append("\(edgeRef.alias).\(key) = timestamp($\(paramName))")
             } else {

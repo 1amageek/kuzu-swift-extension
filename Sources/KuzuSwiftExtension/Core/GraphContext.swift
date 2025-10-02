@@ -233,13 +233,13 @@ public final class GraphContext: Sendable {
         // Encode nodes to get their IDs
         let encodable = from as any Encodable
         let fromProperties = try encoder.encode(encodable)
-        guard let fromID = fromProperties[fromIDColumn.name] as? String else {
+        guard let fromID = fromProperties[fromIDColumn.columnName] as? String else {
             throw KuzuError.invalidConfiguration(message: "Could not extract ID from source node")
         }
 
         let toEncodable = to as any Encodable
         let toProperties = try encoder.encode(toEncodable)
-        guard let toID = toProperties[toIDColumn.name] as? String else {
+        guard let toID = toProperties[toIDColumn.columnName] as? String else {
             throw KuzuError.invalidConfiguration(message: "Could not extract ID from target node")
         }
 
@@ -370,7 +370,7 @@ public final class GraphContext: Sendable {
                 let properties = try encoder.encode(encodable)
 
                 // Get the ID value using the ID column name
-                if let idValue = properties[idColumn.name] {
+                if let idValue = properties[idColumn.columnName] {
                     identifiers.append("\(typeName):\(idValue)")
                 }
             }
@@ -498,29 +498,26 @@ public final class GraphContext: Sendable {
         // See: https://github.com/kuzudb/kuzu/issues/5184
         if hasVectorProperties {
             // Execute DELETE + CREATE sequentially for each item
+            // Issue 1: Kuzu's HNSW index has race condition in CSR array access during batch operations
+            // Issue 2: Vector properties with indexes cannot be updated via SET - must DELETE + INSERT
+            // See: https://github.com/kuzudb/kuzu/issues/5184
             for item in items {
+                let allColumns = [idColumn] + nonIdColumns
                 let singleQuery: String
 
-                if nonIdColumns.isEmpty {
-                    singleQuery = """
-                        OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): $\(idColumn.name)})
-                        DELETE n
-                        CREATE (n:\(modelName) {\(idColumn.name): $\(idColumn.name)})
-                        """
-                } else {
-                    let allAssignments = ([idColumn] + nonIdColumns).map { column -> String in
-                        let value = column.type == "TIMESTAMP"
-                            ? "timestamp($\(column.name))"
-                            : "$\(column.name)"
-                        return "\(column.name): \(value)"
-                    }.joined(separator: ", ")
+                // Build property list for CREATE
+                let propertyAssignments = allColumns.map { column -> String in
+                    let value = column.type == "TIMESTAMP"
+                        ? "timestamp($\(column.propertyName))"
+                        : "$\(column.propertyName)"
+                    return "\(column.columnName): \(value)"
+                }.joined(separator: ", ")
 
-                    singleQuery = """
-                        OPTIONAL MATCH (n:\(modelName) {\(idColumn.name): $\(idColumn.name)})
-                        DELETE n
-                        CREATE (n:\(modelName) {\(allAssignments)})
-                        """
-                }
+                singleQuery = """
+                    OPTIONAL MATCH (n:\(modelName) {\(idColumn.columnName): $\(idColumn.propertyName)})
+                    DELETE n
+                    CREATE (m:\(modelName) {\(propertyAssignments)})
+                    """
 
                 let statement = try connection.prepare(singleQuery)
                 let kuzuParams = try encoder.encodeParameters(item)
@@ -534,26 +531,26 @@ public final class GraphContext: Sendable {
         if nonIdColumns.isEmpty {
             query = """
                 UNWIND $items AS item
-                MERGE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
+                MERGE (n:\(modelName) {\(idColumn.columnName): item.\(idColumn.propertyName)})
                 """
         } else {
             let createAssignments = nonIdColumns.map { column -> String in
                 let value = column.type == "TIMESTAMP"
-                    ? "timestamp(item.\(column.name))"
-                    : "item.\(column.name)"
-                return "n.\(column.name) = \(value)"
+                    ? "timestamp(item.\(column.propertyName))"
+                    : "item.\(column.propertyName)"
+                return "n.\(column.columnName) = \(value)"
             }.joined(separator: ", ")
 
             let updateAssignments = nonIdColumns.map { column -> String in
                 let value = column.type == "TIMESTAMP"
-                    ? "timestamp(item.\(column.name))"
-                    : "item.\(column.name)"
-                return "n.\(column.name) = \(value)"
+                    ? "timestamp(item.\(column.propertyName))"
+                    : "item.\(column.propertyName)"
+                return "n.\(column.columnName) = \(value)"
             }.joined(separator: ", ")
 
             query = """
                 UNWIND $items AS item
-                MERGE (n:\(modelName) {\(idColumn.name): item.\(idColumn.name)})
+                MERGE (n:\(modelName) {\(idColumn.columnName): item.\(idColumn.propertyName)})
                 ON CREATE SET \(createAssignments)
                 ON MATCH SET \(updateAssignments)
                 """
@@ -588,7 +585,7 @@ public final class GraphContext: Sendable {
         let iDs: [any Sendable] = try models.map { model in
             let encodable = model as any Encodable
             let properties = try encoder.encode(encodable)
-            guard let id = properties[idColumn.name] else {
+            guard let id = properties[idColumn.columnName] else {
                 throw GraphError.invalidOperation(message: "Model missing ID property")
             }
             return id
@@ -597,7 +594,7 @@ public final class GraphContext: Sendable {
         // Build UNWIND + MATCH/DELETE query
         let query = """
             UNWIND $ids AS id
-            MATCH (n:\(modelName) {\(idColumn.name): id})
+            MATCH (n:\(modelName) {\(idColumn.columnName): id})
             DELETE n
             """
 
@@ -651,9 +648,9 @@ public final class GraphContext: Sendable {
             } else {
                 let propAssignments = columns.map { column -> String in
                     let value = column.type == "TIMESTAMP"
-                        ? "timestamp(item.\(column.name))"
-                        : "item.\(column.name)"
-                    return "\(column.name): \(value)"
+                        ? "timestamp(item.\(column.propertyName))"
+                        : "item.\(column.propertyName)"
+                    return "\(column.columnName): \(value)"
                 }.joined(separator: ", ")
 
                 query = """

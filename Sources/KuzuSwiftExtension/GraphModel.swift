@@ -37,7 +37,7 @@ public extension GraphContext {
         }
 
         let query = """
-            MATCH (n:\(type.modelName) {\(idColumn.name): $id})
+            MATCH (n:\(type.modelName) {\(idColumn.columnName): $id})
             RETURN n
             """
 
@@ -96,8 +96,8 @@ public extension GraphContext {
         let sourceProperties = try extractProperties(from: source, columns: From._kuzuColumns)
         let targetProperties = try extractProperties(from: target, columns: To._kuzuColumns)
 
-        let fromId = sourceProperties[fromIdColumn.name]
-        let toId = targetProperties[toIdColumn.name]
+        let fromId = sourceProperties[fromIdColumn.propertyName]
+        let toId = targetProperties[toIdColumn.propertyName]
 
         let edgeColumns = Edge._kuzuColumns
         let edgeProperties = try extractProperties(from: edge, columns: edgeColumns)
@@ -115,8 +115,8 @@ public extension GraphContext {
         .joined(separator: ", ")
 
         let query = """
-            MATCH (from:\(From.modelName) {\(fromIdColumn.name): $fromId})
-            MATCH (to:\(To.modelName) {\(toIdColumn.name): $toId})
+            MATCH (from:\(From.modelName) {\(fromIdColumn.columnName): $fromId})
+            MATCH (to:\(To.modelName) {\(toIdColumn.columnName): $toId})
             CREATE (from)-[:\(String(describing: Edge.self)) {\(edgePropertyList)}]->(to)
             """
 
@@ -147,8 +147,8 @@ public extension GraphContext {
             let targetProperties = try encoder.encode(rel.to)
             let edgeProperties = try encoder.encode(rel.edge)
 
-            guard let fromId = sourceProperties[fromIdColumn.name],
-                  let toId = targetProperties[toIdColumn.name] else {
+            guard let fromId = sourceProperties[fromIdColumn.propertyName],
+                  let toId = targetProperties[toIdColumn.propertyName] else {
                 throw GraphError.invalidOperation(message: "Nodes must have ID properties")
             }
 
@@ -168,9 +168,9 @@ public extension GraphContext {
         // Build edge property list
         let edgePropertyList = edgeColumns.map { column -> String in
             let value = column.type == "TIMESTAMP"
-                ? "timestamp(item.edge_\(column.name))"
-                : "item.edge_\(column.name)"
-            return "\(column.name): \(value)"
+                ? "timestamp(item.edge_\(column.propertyName))"
+                : "item.edge_\(column.propertyName)"
+            return "\(column.columnName): \(value)"
         }.joined(separator: ", ")
 
         let edgePropsClause = edgePropertyList.isEmpty ? "" : " {\(edgePropertyList)}"
@@ -178,8 +178,8 @@ public extension GraphContext {
         // UNWIND + CREATE for batch relationship creation
         let query = """
             UNWIND $items AS item
-            MATCH (from:\(From.modelName) {\(fromIdColumn.name): item.fromId})
-            MATCH (to:\(To.modelName) {\(toIdColumn.name): item.toId})
+            MATCH (from:\(From.modelName) {\(fromIdColumn.columnName): item.fromId})
+            MATCH (to:\(To.modelName) {\(toIdColumn.columnName): item.toId})
             CREATE (from)-[:\(String(describing: Edge.self))\(edgePropsClause)]->(to)
             """
 
@@ -189,7 +189,7 @@ public extension GraphContext {
 
 // MARK: - Private Helpers
 
-private func extractProperties(from instance: Any, columns: [(name: String, type: String, constraints: [String])]) throws -> [String: any Sendable] {
+private func extractProperties(from instance: Any, columns: [(propertyName: String, columnName: String, type: String, constraints: [String])]) throws -> [String: any Sendable] {
     guard let encodable = instance as? any Encodable else {
         throw GraphError.invalidConfiguration(
             message: "Model must conform to Encodable. Type: \(type(of: instance))"
@@ -199,10 +199,10 @@ private func extractProperties(from instance: Any, columns: [(name: String, type
     let encoder = KuzuEncoder()
     let allProperties = try encoder.encode(encodable)
 
-    // Filter to only include properties defined in columns
+    // Filter to only include properties defined in columns, using propertyName from encoding
     var filteredProperties: [String: any Sendable] = [:]
     for (key, value) in allProperties {
-        if columns.contains(where: { $0.name == key }) {
+        if columns.contains(where: { $0.propertyName == key }) {
             filteredProperties[key] = value
         }
     }

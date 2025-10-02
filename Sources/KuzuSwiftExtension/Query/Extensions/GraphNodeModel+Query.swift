@@ -42,8 +42,8 @@ public extension GraphNodeModel {
     
     /// Merge (upsert) a node
     static func merge(on keyPath: KeyPath<Self, some Equatable>, equals value: any Sendable) -> MergeNode<Self> {
-        let propertyName = String(describing: keyPath).components(separatedBy: ".").last ?? ""
-        return MergeNode<Self>(matchProperties: [propertyName: value])
+        let columnName = KeyPathUtilities.columnName(from: keyPath)
+        return MergeNode<Self>(matchProperties: [columnName: value])
     }
     
     /// Merge (upsert) a node with multiple match properties
@@ -156,11 +156,11 @@ public struct CreateNode<Model: GraphNodeModel>: QueryComponent {
         for (key, value) in properties {
             let paramName = OptimizedParameterGenerator.semantic(alias: alias, property: key)
             parameters[paramName] = value
-            
+
             // Check if this is a timestamp property
-            let columnInfo = columns.first { $0.name == key }
+            let columnInfo = columns.first { $0.columnName == key }
             let columnType = columnInfo?.type ?? ""
-            
+
             if columnType == "TIMESTAMP" {
                 propStrings.append("\(key): timestamp($\(paramName))")
             } else {

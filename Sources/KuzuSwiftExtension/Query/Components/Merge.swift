@@ -34,7 +34,7 @@ public struct Merge: QueryComponent {
                 parameters[paramName] = value
                 
                 // Check if this is a timestamp property
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
                 
                 if columnType == "TIMESTAMP" {
@@ -55,7 +55,7 @@ public struct Merge: QueryComponent {
                 parameters[paramName] = value
                 
                 // Check if this is a timestamp property
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
                 
                 if columnType == "TIMESTAMP" {
@@ -75,7 +75,7 @@ public struct Merge: QueryComponent {
                 parameters[paramName] = value
                 
                 // Check if this is a timestamp property
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
                 
                 if columnType == "TIMESTAMP" {
@@ -115,7 +115,7 @@ public struct Merge: QueryComponent {
                 parameters[paramName] = value
                 
                 // Check if this is a timestamp property
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
                 
                 if columnType == "TIMESTAMP" {
@@ -136,7 +136,7 @@ public struct Merge: QueryComponent {
                 parameters[paramName] = value
                 
                 // Check if this is a timestamp property
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
                 
                 if columnType == "TIMESTAMP" {
@@ -156,7 +156,7 @@ public struct Merge: QueryComponent {
                 parameters[paramName] = value
                 
                 // Check if this is a timestamp property
-                let columnInfo = columns.first { $0.name == key }
+                let columnInfo = columns.first { $0.columnName == key }
                 let columnType = columnInfo?.type ?? ""
                 
                 if columnType == "TIMESTAMP" {

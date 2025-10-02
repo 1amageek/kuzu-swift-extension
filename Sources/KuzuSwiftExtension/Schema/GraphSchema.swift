@@ -27,7 +27,7 @@ public struct GraphSchema {
                 
                 nodes.append(NodeSchema(
                     name: name,
-                    columns: columns.map { Column(name: $0.name, type: $0.type, constraints: $0.constraints) },
+                    columns: columns.map { Column(name: $0.columnName, type: $0.type, constraints: $0.constraints) },
                     ddl: ddl
                 ))
             } else if ddl.contains("CREATE REL TABLE") {
@@ -35,13 +35,13 @@ public struct GraphSchema {
                 // Skip if already processed (duplicate model)
                 guard !seenEdgeNames.contains(name) else { continue }
                 seenEdgeNames.insert(name)
-                
+
                 let (from, to) = extractRelationship(from: ddl)
                 edges.append(EdgeSchema(
                     name: name,
                     from: from,
                     to: to,
-                    columns: columns.map { Column(name: $0.name, type: $0.type, constraints: $0.constraints) },
+                    columns: columns.map { Column(name: $0.columnName, type: $0.type, constraints: $0.constraints) },
                     ddl: ddl
                 ))
             }

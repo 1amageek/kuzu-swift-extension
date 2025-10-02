@@ -84,7 +84,7 @@ struct SwiftDataCompatibilityTests {
         #expect(!User._kuzuDDL.contains("displayName"))
 
         // Verify columns don't include displayName
-        let columns = User._kuzuColumns.map { $0.name }
+        let columns = User._kuzuColumns.map { $0.columnName }
         #expect(!columns.contains("displayName"))
     }
 
@@ -96,7 +96,7 @@ struct SwiftDataCompatibilityTests {
         )
 
         // Verify spotlight (FULLTEXT) constraint in columns metadata
-        let contentColumn = Article._kuzuColumns.first { $0.name == "content" }
+        let contentColumn = Article._kuzuColumns.first { $0.columnName == "content" }
         #expect(contentColumn?.constraints.contains("FULLTEXT") == true)
 
         // Verify Full-Text Search metadata is generated
@@ -112,7 +112,7 @@ struct SwiftDataCompatibilityTests {
         )
 
         // Verify DEFAULT constraint
-        let pointsColumn = User._kuzuColumns.first { $0.name == "points" }
+        let pointsColumn = User._kuzuColumns.first { $0.columnName == "points" }
         #expect(pointsColumn?.constraints.contains("DEFAULT 0") == true)
     }
 

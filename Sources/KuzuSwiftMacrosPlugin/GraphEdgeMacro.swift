@@ -6,6 +6,40 @@ import SwiftDiagnostics
 
 public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
 
+    /// Extract CodingKeys from the struct if explicitly defined
+    /// Returns a dictionary mapping Swift property names to database column names
+    private static func extractCodingKeys(from members: MemberBlockItemListSyntax) -> [String: String]? {
+        for member in members {
+            guard let enumDecl = member.decl.as(EnumDeclSyntax.self),
+                  enumDecl.name.text == "CodingKeys" else {
+                continue
+            }
+
+            var mappings: [String: String] = [:]
+            for caseMember in enumDecl.memberBlock.members {
+                guard let caseDecl = caseMember.decl.as(EnumCaseDeclSyntax.self) else {
+                    continue
+                }
+
+                for element in caseDecl.elements {
+                    let propertyName = element.name.text
+
+                    // Check if there's a raw value (e.g., case userName = "user_name")
+                    if let rawValue = element.rawValue?.value.as(StringLiteralExprSyntax.self) {
+                        // Extract the string value from segments
+                        let columnName = rawValue.segments.description.trimmingCharacters(in: .init(charactersIn: "\""))
+                        mappings[propertyName] = columnName
+                    } else {
+                        // No raw value, use property name as column name
+                        mappings[propertyName] = propertyName
+                    }
+                }
+            }
+            return mappings
+        }
+        return nil
+    }
+
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -68,9 +102,12 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
         let structName = structDecl.name.text
         let members = structDecl.memberBlock.members
 
-        var columns: [(name: String, type: String, constraints: [String])] = []
+        // Extract explicit CodingKeys if present (same as GraphNodeMacro)
+        let explicitCodingKeys = extractCodingKeys(from: members)
+
+        var columns: [(propertyName: String, columnName: String, type: String, constraints: [String])] = []
         var ddlColumns: [String] = []
-        var idProperties: [(name: String, location: SyntaxProtocol)] = []
+        var idProperties: [(propertyName: String, columnName: String, location: SyntaxProtocol)] = []
 
         for member in members {
             guard let variableDecl = member.decl.as(VariableDeclSyntax.self),
@@ -81,6 +118,38 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
             }
 
             let propertyName = pattern.identifier.text
+
+            // Skip computed properties
+            if binding.accessorBlock != nil {
+                continue
+            }
+
+            // Skip @Transient properties
+            let hasTransient = variableDecl.attributes.contains(where: {
+                if let attr = $0.as(AttributeSyntax.self) {
+                    return attr.attributeName.description.trimmingCharacters(in: .whitespacesAndNewlines) == "Transient"
+                }
+                return false
+            })
+            if hasTransient {
+                continue
+            }
+
+            // If explicit CodingKeys exist, only process properties listed there
+            if let codingKeys = explicitCodingKeys {
+                guard codingKeys.keys.contains(propertyName) else {
+                    continue
+                }
+            }
+
+            // Determine the column name (use CodingKeys mapping if available)
+            let columnName: String
+            if let codingKeys = explicitCodingKeys, let mappedName = codingKeys[propertyName] {
+                columnName = mappedName
+            } else {
+                columnName = propertyName
+            }
+
             let swiftType = typeAnnotation.description.trimmingCharacters(in: .whitespacesAndNewlines)
 
             var constraints: [String] = []
@@ -92,7 +161,7 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
                 switch attrName {
                 case "ID":
                     constraints.append("PRIMARY KEY")
-                    idProperties.append((name: propertyName, location: variableDecl))
+                    idProperties.append((propertyName: propertyName, columnName: columnName, location: variableDecl))
                 case "Default":
                     if case .argumentList(let args) = attr.arguments,
                        let firstArg = args.first {
@@ -113,9 +182,9 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
             }
 
             let kuzuType = MacroUtilities.mapSwiftTypeToKuzuType(swiftType)
-            columns.append((propertyName, kuzuType, constraints))
+            columns.append((propertyName: propertyName, columnName: columnName, type: kuzuType, constraints: constraints))
 
-            let escapedName = KuzuReservedWords.escapeIfNeeded(propertyName)
+            let escapedName = KuzuReservedWords.escapeIfNeeded(columnName)
             var columnDef = "\(escapedName) \(kuzuType)"
             for constraint in constraints {
                 columnDef += " \(constraint)"
@@ -125,10 +194,10 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
 
         // Validate ID properties - edges can have zero or one ID property
         if idProperties.count > 1 {
-            let notes = idProperties.map { (propertyName, location) in
+            let notes = idProperties.map { (propName, colName, location) in
                 Note(
                     node: Syntax(location),
-                    message: MacroExpansionNoteMessage("Property '\(propertyName)' is marked with @ID")
+                    message: MacroExpansionNoteMessage("Property '\(propName)' (column: '\(colName)') is marked with @ID")
                 )
             }
 
@@ -151,7 +220,7 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
 
         let columnsArray = columns.map { column in
             let constraintsArray = column.constraints.map { "\"\($0)\"" }.joined(separator: ", ")
-            return "(name: \"\(column.name)\", type: \"\(column.type)\", constraints: [\(constraintsArray)])"
+            return "(propertyName: \"\(column.propertyName)\", columnName: \"\(column.columnName)\", type: \"\(column.type)\", constraints: [\(constraintsArray)])"
         }.joined(separator: ", ")
 
         return [
@@ -159,7 +228,7 @@ public struct GraphEdgeMacro: MemberMacro, ExtensionMacro {
             public static let _kuzuDDL: String = "\(raw: ddl)"
             """,
             """
-            public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
+            public static let _kuzuColumns: [(propertyName: String, columnName: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
             """,
             """
             public static let _metadata = GraphMetadata()

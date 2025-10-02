@@ -125,7 +125,7 @@ struct FTSIndexTests {
     @Test("Full-Text Search columns have FULLTEXT constraint")
     func fullTextSearchColumnConstraint() {
         // Verify FULLTEXT constraint is in columns metadata
-        let contentColumn = Document._kuzuColumns.first { $0.name == "content" }
+        let contentColumn = Document._kuzuColumns.first { $0.columnName == "content" }
         #expect(contentColumn?.constraints.contains("FULLTEXT") == true)
     }
 }

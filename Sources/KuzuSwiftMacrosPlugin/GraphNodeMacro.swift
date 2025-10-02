@@ -66,9 +66,9 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         // Extract explicit CodingKeys if present
         let explicitCodingKeys = extractCodingKeys(from: members)
 
-        var columns: [(name: String, type: String, constraints: [String])] = []
+        var columns: [(propertyName: String, columnName: String, type: String, constraints: [String])] = []
         var ddlColumns: [String] = []
-        var idProperties: [(name: String, location: SyntaxProtocol)] = []
+        var idProperties: [(propertyName: String, columnName: String, location: SyntaxProtocol)] = []
         var vectorProperties: [(name: String, dimensions: String, metric: String)] = []
         var fullTextSearchProperties: [(name: String, stemmer: String)] = []
 
@@ -124,7 +124,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                 switch attrName {
                 case "ID":
                     constraints.append("PRIMARY KEY")
-                    idProperties.append((name: propertyName, location: variableDecl))
+                    idProperties.append((propertyName: propertyName, columnName: columnName, location: variableDecl))
                 case "Attribute":
                     // Handle @Attribute options
                     if case .argumentList(let args) = attr.arguments {
@@ -173,7 +173,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                                 // Default to FLOAT for backward compatibility
                                 vectorType = "FLOAT[\(dimensions)]"
                             }
-                            columns.append((columnName, vectorType, constraints))
+                            columns.append((propertyName: propertyName, columnName: columnName, type: vectorType, constraints: constraints))
                             // Build DDL column with only supported inline constraints
                             // Escape column name if it's a reserved word
                             let escapedName = KuzuReservedWords.escapeIfNeeded(columnName)
@@ -213,7 +213,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
                 }
                 return false
             }) {
-                columns.append((columnName, kuzuType, constraints))
+                columns.append((propertyName: propertyName, columnName: columnName, type: kuzuType, constraints: constraints))
 
                 // Build DDL column with only supported inline constraints
                 // Escape column name if it's a reserved word
@@ -241,10 +241,10 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         
         if idProperties.count > 1 {
             // Create notes for all ID properties
-            let notes = idProperties.map { (propertyName, location) in
+            let notes = idProperties.map { (propName, colName, location) in
                 Note(
                     node: Syntax(location),
-                    message: MacroExpansionNoteMessage("Property '\(propertyName)' is marked with @ID")
+                    message: MacroExpansionNoteMessage("Property '\(propName)' (column: '\(colName)') is marked with @ID")
                 )
             }
             
@@ -258,10 +258,10 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
         }
         
         let ddl = "CREATE NODE TABLE \(structName) (\(ddlColumns.joined(separator: ", ")))"
-        
+
         let columnsArray = columns.map { column in
             let constraintsArray = column.constraints.map { "\"\($0)\"" }.joined(separator: ", ")
-            return "(name: \"\(column.name)\", type: \"\(column.type)\", constraints: [\(constraintsArray)])"
+            return "(propertyName: \"\(column.propertyName)\", columnName: \"\(column.columnName)\", type: \"\(column.type)\", constraints: [\(constraintsArray)])"
         }.joined(separator: ", ")
 
         // Generate vector properties metadata
@@ -279,7 +279,7 @@ public struct GraphNodeMacro: MemberMacro, ExtensionMacro {
             public static let _kuzuDDL: String = "\(raw: ddl)"
             """,
             """
-            public static let _kuzuColumns: [(name: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
+            public static let _kuzuColumns: [(propertyName: String, columnName: String, type: String, constraints: [String])] = [\(raw: columnsArray)]
             """
         ]
 

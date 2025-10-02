@@ -32,14 +32,14 @@ public enum QueryHelpers {
     ///   - isAssignment: If true, generates "column = value" format; if false, generates "column: value" format
     /// - Returns: Array of formatted property assignment strings
     public static func buildPropertyAssignments(
-        columns: [(name: String, type: String, constraints: [String])],
+        columns: [(propertyName: String, columnName: String, type: String, constraints: [String])],
         parameterPrefix: String = "",
         isAssignment: Bool = false
     ) -> [String] {
         columns.map { column in
-            let paramName = parameterPrefix.isEmpty ? column.name : "\(parameterPrefix)_\(column.name)"
+            let paramName = parameterPrefix.isEmpty ? column.propertyName : "\(parameterPrefix)_\(column.propertyName)"
             return buildPropertyAssignment(
-                columnName: column.name,
+                columnName: column.columnName,
                 columnType: column.type,
                 parameterName: paramName,
                 isAssignment: isAssignment
