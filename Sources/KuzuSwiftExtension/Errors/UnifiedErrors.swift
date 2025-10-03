@@ -5,6 +5,7 @@ public enum KuzuError: LocalizedError {
     // MARK: - Connection & Infrastructure
     case connectionFailed(reason: String)
     case databaseNotFound(path: String)
+    case databaseInitializationFailed(String)
     case invalidConfiguration(message: String)
     case connectionPoolExhausted
     case connectionTimeout(duration: TimeInterval)
@@ -14,6 +15,9 @@ public enum KuzuError: LocalizedError {
     case contextNotAvailable(reason: String)
     case wrapped(underlyingError: Error)
     case kuzuError(error: Error, query: String?)
+
+    // MARK: - Schema Management
+    case indexCreationFailed(table: String, index: String, reason: String)
     
     // MARK: - Model Operations
     case missingIdentifier
@@ -51,6 +55,8 @@ public enum KuzuError: LocalizedError {
             return "Failed to connect to database: \(reason)"
         case .databaseNotFound(let path):
             return "Database not found at path: \(path)"
+        case .databaseInitializationFailed(let message):
+            return "Database initialization failed: \(message)"
         case .invalidConfiguration(let message):
             return "Invalid configuration: \(message)"
         case .connectionPoolExhausted:
@@ -117,6 +123,10 @@ public enum KuzuError: LocalizedError {
         case .columnNotFound(let column):
             return "Column '\(column)' not found in query result"
             
+        // Schema Management
+        case .indexCreationFailed(let table, let index, let reason):
+            return "Failed to create index '\(index)' on table '\(table)': \(reason)"
+
         // Schema & Constraints
         case .missingRequiredProperty(let property):
             return "Missing required property: \(property)"
@@ -132,6 +142,8 @@ public enum KuzuError: LocalizedError {
             return "Check database path and permissions"
         case .databaseNotFound:
             return "Ensure the database file exists or use ':memory:' for in-memory database"
+        case .databaseInitializationFailed:
+            return "Check database path, permissions, and ensure no corrupted database files exist. The database may need to be removed and recreated."
         case .invalidConfiguration:
             return "Review your GraphConfiguration settings"
         case .connectionPoolExhausted:
@@ -188,6 +200,8 @@ public enum KuzuError: LocalizedError {
             return "Provide all required properties when creating nodes/edges"
         case .constraintViolation:
             return "Check for duplicate keys or invalid relationships"
+        case .indexCreationFailed:
+            return "Ensure the table exists, column type is correct for the index type, and no conflicting indexes exist"
         }
     }
 }

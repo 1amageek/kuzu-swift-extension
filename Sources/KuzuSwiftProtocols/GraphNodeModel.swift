@@ -6,7 +6,8 @@ public protocol GraphNodeModel: _KuzuGraphModel, Codable {
 }
 
 public extension GraphNodeModel {
+    /// modelName uses the unified name property from _KuzuGraphModel
     static var modelName: String {
-        String(describing: Self.self)
+        name
     }
 }

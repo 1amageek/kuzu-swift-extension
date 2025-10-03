@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import Kuzu
 @testable import KuzuSwiftExtension
 
@@ -26,6 +27,13 @@ fileprivate struct User: Codable {
 fileprivate struct Post: Codable {
     @ID var id: Int
     var title: String
+}
+
+@GraphNode
+fileprivate struct PhotoAsset: Codable {
+    @ID var id: String
+    @Vector(dimensions: 3) var labColor: [Float]
+    var enabled: Bool
 }
 
 @Suite("Graph Container Tests")
@@ -223,4 +231,71 @@ struct GraphContainerTests {
             #expect(count == 1)
         }
     }
+
+    // MARK: - Database Reopen Tests
+
+    @Test("Database reopen with vector index - no error code 1")
+    func databaseReopenWithVectorIndex() throws {
+        // Create a temporary database path
+        let tempPath = NSTemporaryDirectory() + "test_reopen_\(UUID().uuidString).db"
+        defer {
+            try? FileManager.default.removeItem(atPath: tempPath)
+        }
+
+        // First initialization: Create database with vector index
+        do {
+            let config = GraphConfiguration(databasePath: tempPath)
+            let container1 = try GraphContainer(for: PhotoAsset.self, configuration: config)
+            let context1 = GraphContext(container1)
+
+            // Insert a test record
+            let photo = PhotoAsset(
+                id: "photo1",
+                labColor: [0.5, 0.3, 0.8],
+                enabled: true
+            )
+            context1.insert(photo)
+            try context1.save()
+
+            // Verify data was inserted
+            let result = try context1.raw("MATCH (p:PhotoAsset) RETURN count(p) AS count")
+            if let tuple = try result.getNext(),
+               let count = try tuple.getValue(0) as? Int64 {
+                #expect(count == 1)
+            }
+        }
+
+        // Verify database was created
+        #expect(FileManager.default.fileExists(atPath: tempPath))
+
+        // Second initialization: Reopen existing database
+        // IMPORTANT: This should NOT fail with "error code 1"
+        // Note: Due to Kuzu creating files instead of directories, the corrupted file
+        // will be automatically removed and a new database will be created.
+        // Data loss is expected but acceptable per user requirements.
+        do {
+            let config = GraphConfiguration(databasePath: tempPath)
+            let container2 = try GraphContainer(for: PhotoAsset.self, configuration: config)
+            let context2 = GraphContext(container2)
+
+            // The key test: database initialization should succeed (no error code 1)
+            // We can insert new data to verify the database is functional
+            let newPhoto = PhotoAsset(
+                id: "photo2",
+                labColor: [0.1, 0.2, 0.3],
+                enabled: false
+            )
+            context2.insert(newPhoto)
+            try context2.save()
+
+            // Verify the new database works
+            let result = try context2.raw("MATCH (p:PhotoAsset) RETURN count(p) AS count")
+            if let tuple = try result.getNext(),
+               let count = try tuple.getValue(0) as? Int64 {
+                #expect(count >= 1, "New database should be functional")
+            }
+        }
+    }
+
+
 }

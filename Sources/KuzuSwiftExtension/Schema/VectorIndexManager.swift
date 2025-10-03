@@ -57,7 +57,7 @@ struct VectorIndexManager {
                 metric := '\(metric.rawValue)'
             )
             """
-
+        print(query)
         do {
             _ = try connection.query(query)
         } catch {

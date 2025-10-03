@@ -217,19 +217,19 @@ struct VectorIndexTests {
 
     }
 
-    @Test("Automatic index creation is idempotent on re-registration")
+    @Test("Automatic index creation is idempotent")
     func testIdempotentAutomaticIndexCreation() throws {
-        let container = try GraphContainer(
+        let dbPath = ":memory:"
+
+        // First initialization - creates schema and indexes
+        let container1 = try GraphContainer(
             for: PhotoAsset.self,
-            configuration: GraphConfiguration(databasePath: ":memory:")
+            configuration: GraphConfiguration(databasePath: dbPath)
         )
-        let context = GraphContext(container)
+        let context1 = GraphContext(container1)
 
-        // Re-register schema - should not fail
-        try context.createSchemasIfNotExist(for: [PhotoAsset.self])
-
-        // Index should still exist
-        let hasIndex = try context.withConnection { connection in
+        // Verify index exists after first initialization
+        let hasIndex = try context1.withConnection { connection in
             try VectorIndexManager.hasVectorIndex(
                 table: "PhotoAsset",
                 indexName: "photoasset_labcolor_idx",

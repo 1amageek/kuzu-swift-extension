@@ -8,7 +8,8 @@ public protocol GraphEdgeModel: _KuzuGraphModel, Codable {
 }
 
 public extension GraphEdgeModel {
+    /// edgeName uses the unified name property from _KuzuGraphModel
     static var edgeName: String {
-        String(describing: Self.self)
+        name
     }
 }

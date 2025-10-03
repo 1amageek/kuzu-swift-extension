@@ -39,39 +39,52 @@ public struct GraphContainer: Sendable {
     ) throws {
         self.models = forTypes
         self.configuration = configuration
-        self.database = try Database(configuration.databasePath)
+        do {
+            // Create SystemConfig with explicit iOS-optimized settings
+            // Based on kuzu-swift-demo approach
+            let systemConfig = SystemConfig(
+                bufferPoolSize: UInt64(configuration.options.bufferPoolSize),
+                maxNumThreads: UInt64(configuration.options.maxNumThreadsPerQuery ?? 1),
+                enableCompression: true,
+                readOnly: false,
+                autoCheckpoint: true,
+                checkpointThreshold: 1024 * 1024
+            )
+            self.database = try Database(configuration.databasePath, systemConfig)
+        } catch {
+            throw error
+        }
 
         // SwiftData pattern: Automatically create schemas for registered models
         if !forTypes.isEmpty {
-            try Self.createSchemas(database: database, models: forTypes)
+            let schemaManager = SchemaManager(forTypes)
+            try schemaManager.ensureSchema(in: database)
         }
     }
 
-    /// Create a container for specified model types (array version)
-    /// Equivalent to: ModelContainer(for: givenSchema)
-    /// - Parameters:
-    ///   - models: The model types to manage (array)
-    ///   - configuration: Database configuration
-    public init(
-        for models: [any _KuzuGraphModel.Type],
-        configuration: GraphConfiguration = GraphConfiguration()
-    ) throws {
-        self.models = models
-        self.configuration = configuration
-        self.database = try Database(configuration.databasePath)
-
-        // SwiftData pattern: Automatically create schemas for registered models
-        if !models.isEmpty {
-            try Self.createSchemas(database: database, models: models)
-        }
-    }
 
     /// Create a container without models (for manual schema management)
     /// - Parameter configuration: Database configuration
     internal init(configuration: GraphConfiguration) throws {
         self.models = []
         self.configuration = configuration
-        self.database = try Database(configuration.databasePath)
+
+        do {
+            // Create SystemConfig with explicit iOS-optimized settings
+            // Based on kuzu-swift-demo approach
+            let systemConfig = SystemConfig(
+                bufferPoolSize: UInt64(configuration.options.bufferPoolSize),
+                maxNumThreads: UInt64(configuration.options.maxNumThreadsPerQuery ?? 1),
+                enableCompression: true,
+                readOnly: false,
+                autoCheckpoint: true,
+                checkpointThreshold: 1024 * 1024
+            )
+
+            self.database = try Database(configuration.databasePath, systemConfig)
+        } catch {
+            throw error
+        }
     }
 
     /// Main context bound to the main actor (SwiftData ModelContainer.mainContext equivalent)
@@ -87,149 +100,5 @@ public struct GraphContainer: Sendable {
     @MainActor
     public var mainContext: GraphContext {
         GraphContext(self)
-    }
-
-    // MARK: - Schema Management (SwiftData Pattern)
-
-    /// Automatically create schemas for registered models
-    /// - Parameters:
-    ///   - database: Database instance
-    ///   - models: Models to create schemas for
-    private static func createSchemas(
-        database: Database,
-        models: [any _KuzuGraphModel.Type]
-    ) throws {
-        let connection = try Connection(database)
-
-        // Fetch existing tables and indexes once
-        let existingTables = try fetchExistingTables(connection)
-        let existingIndexes = try fetchExistingIndexes(connection)
-
-        // Create schema and indexes for each model
-        for model in models {
-            try createSchemaForModel(
-                model,
-                existingTables: existingTables,
-                existingIndexes: existingIndexes,
-                connection: connection
-            )
-        }
-    }
-
-    /// Fetch existing table names from the database
-    private static func fetchExistingTables(_ connection: Connection) throws -> Set<String> {
-        var tables = Set<String>()
-
-        do {
-            let result = try connection.query("SHOW TABLES")
-            while result.hasNext() {
-                if let row = try result.getNext(),
-                   let name = try row.getValue(0) as? String {
-                    tables.insert(name)
-                }
-            }
-        } catch {
-            // If SHOW TABLES fails, return empty set
-            // This allows graceful handling of new databases
-            return []
-        }
-
-        return tables
-    }
-
-    /// Fetch existing vector indexes from the database
-    private static func fetchExistingIndexes(_ connection: Connection) throws -> Set<String> {
-        var indexes = Set<String>()
-
-        do {
-            let result = try connection.query("CALL SHOW_INDEXES() RETURN *")
-            while result.hasNext() {
-                if let row = try result.getNext(),
-                   let tableName = try row.getValue(0) as? String,
-                   let indexName = try row.getValue(1) as? String {
-                    // Format: "TableName.indexName" for unique identification
-                    indexes.insert("\(tableName).\(indexName)")
-                }
-            }
-        } catch {
-            // If SHOW_INDEXES fails, return empty set
-            // This allows graceful handling when no indexes exist
-            return []
-        }
-
-        return indexes
-    }
-
-    /// Create schema and indexes for a single model
-    private static func createSchemaForModel(
-        _ type: any _KuzuGraphModel.Type,
-        existingTables: Set<String>,
-        existingIndexes: Set<String>,
-        connection: Connection
-    ) throws {
-        let tableName = String(describing: type)
-
-        // Step 1: Create table (if it doesn't exist)
-        if !existingTables.contains(tableName) {
-            do {
-                _ = try connection.query(type._kuzuDDL)
-            } catch {
-                // Ignore "already exists" error (race condition handling)
-                let errorMessage = String(describing: error).lowercased()
-                if !errorMessage.contains("already exists") &&
-                   !errorMessage.contains("catalog") &&
-                   !errorMessage.contains("binder exception") {
-                    throw error
-                }
-            }
-        }
-
-        // Step 2: Create indexes from metadata
-        let metadata = type._metadata
-
-        // Create vector indexes
-        for property in metadata.vectorProperties {
-            let indexName = property.indexName(for: tableName)
-            let indexKey = "\(tableName).\(indexName)"
-
-            // Skip if index already exists
-            if existingIndexes.contains(indexKey) {
-                continue
-            }
-
-            // Create the index
-            try VectorIndexManager.createVectorIndex(
-                table: tableName,
-                column: property.propertyName,
-                indexName: indexName,
-                metric: property.metric,
-                connection: connection
-            )
-        }
-
-        // Create Full-Text Search indexes
-        for property in metadata.fullTextSearchProperties {
-            let indexName = property.indexName(for: tableName)
-            let indexKey = "\(tableName).\(indexName)"
-
-            // Skip if index already exists
-            if existingIndexes.contains(indexKey) {
-                continue
-            }
-
-            // Create the Full-Text Search index
-            try FullTextSearchIndexManager.createFullTextSearchIndex(
-                table: tableName,
-                column: property.propertyName,
-                indexName: indexName,
-                stemmer: property.stemmer,
-                connection: connection
-            )
-        }
-
-        // Note: Kuzu index limitations
-        // ✅ Supported: PRIMARY KEY (Hash), Vector (HNSW), Full-Text Search
-        // ❌ Not supported: Regular secondary indexes on arbitrary properties
-        // ❌ Not supported: UNIQUE constraints on non-primary-key columns
     }
 }

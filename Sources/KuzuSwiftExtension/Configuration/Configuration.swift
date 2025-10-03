@@ -35,15 +35,17 @@ public struct GraphConfiguration: Sendable {
         #if os(iOS) || os(tvOS) || os(watchOS)
         // iOS/tvOS/watchOS: Use Documents directory (like SQLite)
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return documentsURL.appendingPathComponent("kuzu.db").path
+        // Use path(percentEncoded:) for iOS 16+ compatibility
+        // Note: Place database in a subdirectory to work around Kuzu file creation issue
+        return documentsURL.appendingPathComponent("KuzuDatabase").path(percentEncoded: false)
         #elseif os(macOS)
         // macOS: Use Application Support with bundle identifier
         let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let bundleID = Bundle.main.bundleIdentifier ?? "com.kuzu.default"
         let dbURL = appSupportURL.appendingPathComponent(bundleID).appendingPathComponent("kuzu.db")
-        // Create directory if needed
-        try? FileManager.default.createDirectory(at: dbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        return dbURL.path
+        // Note: Parent directory creation is now handled by GraphContainer.prepareDatabasePath()
+        // Use path(percentEncoded:) for consistency
+        return dbURL.path(percentEncoded: false)
         #else
         // Default to in-memory for other platforms
         return ":memory:"
