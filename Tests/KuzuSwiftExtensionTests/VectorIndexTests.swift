@@ -2,25 +2,31 @@ import Testing
 import Foundation
 @testable import KuzuSwiftExtension
 
+// MARK: - Test Models
+
+@GraphNode
+fileprivate struct PhotoAsset: Codable {
+    @ID var id: String
+    @Vector(dimensions: 3) var labColor: [Float]
+    var enabled: Bool = true
+}
+
+@GraphNode
+fileprivate struct MultiVectorModel: Codable {
+    @ID var id: String
+    @Vector(dimensions: 128) var embedding: [Float]
+    @Vector(dimensions: 3) var color: [Float]
+    var name: String
+}
+
+@GraphNode
+fileprivate struct SimpleNode: Codable {
+    @ID var id: String
+    var name: String
+}
+
 @Suite("Vector Index Tests")
 struct VectorIndexTests {
-
-    // MARK: - Test Models
-
-    @GraphNode
-    struct PhotoAsset: Codable {
-        @ID var id: String
-        @Vector(dimensions: 3) var labColor: [Float]
-        var enabled: Bool = true
-    }
-
-    @GraphNode
-    struct MultiVectorModel: Codable {
-        @ID var id: String
-        @Vector(dimensions: 128) var embedding: [Float]
-        @Vector(dimensions: 3) var color: [Float]
-        var name: String
-    }
 
     // MARK: - Metadata Tests
 
@@ -487,6 +493,114 @@ struct VectorIndexTests {
                     CAST([1.0, 2.0, 3.0, 4.0, 5.0] AS FLOAT[5]), 5)
                 RETURN node
             """)
+        }
+
+    }
+
+    @Test("VectorIndex database with explicit transaction and checkpoint")
+    func testVectorIndexWithTransactionAndCheckpoint() throws {
+        let dbPath = NSTemporaryDirectory() + "test_vector_transaction_\(UUID().uuidString)"
+        defer {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + ".wal")
+        }
+
+        // Step 1: Create database and insert data in transaction
+        try autoreleasepool {
+            var container: GraphContainer? = try GraphContainer(
+                for: PhotoAsset.self,
+                configuration: GraphConfiguration(databasePath: dbPath)
+            )
+            var context: GraphContext? = GraphContext(container!)
+
+            // Insert via transaction
+            try context!.transaction {
+                let photo1 = PhotoAsset(id: "photo1", labColor: [50.0, 10.0, 20.0], enabled: true)
+                let photo2 = PhotoAsset(id: "photo2", labColor: [51.0, 11.0, 21.0], enabled: true)
+                context!.insert(photo1)
+                context!.insert(photo2)
+            }
+
+            // Verify before checkpoint
+            let count1 = try context!.raw("MATCH (p:PhotoAsset) RETURN count(p)")
+            if count1.hasNext(), let row = try count1.getNext(),
+               let count = try row.getValue(0) as? Int64 {
+                #expect(count == 2, "Should have 2 photos before checkpoint")
+            }
+
+            // Checkpoint
+            _ = try context!.raw("CHECKPOINT")
+
+            // Explicit close (matches TestVectorContentView flow)
+            context = nil
+            container = nil
+        }
+
+        // Step 2: Reopen and verify
+        do {
+            let container2 = try GraphContainer(
+                for: PhotoAsset.self,
+                configuration: GraphConfiguration(databasePath: dbPath)
+            )
+            let context2 = GraphContext(container2)
+
+            let count2 = try context2.raw("MATCH (p:PhotoAsset) RETURN count(p)")
+            if count2.hasNext(), let row = try count2.getNext(),
+               let count = try row.getValue(0) as? Int64 {
+                #expect(count == 2, "Should have 2 photos after reopen")
+            }
+
+        } catch {
+            #if os(iOS) || os(tvOS) || os(watchOS)
+            Issue.record("KNOWN BUG: VectorIndex checkpoint corrupts database on iOS/tvOS/watchOS - \(error)")
+            throw error
+            #else
+            Issue.record("Unexpected error on macOS/Linux: \(error)")
+            throw error
+            #endif
+        }
+
+    }
+
+    @Test("Database checkpoint without VectorIndex succeeds on all platforms")
+    func testCheckpointWithoutVectorIndexSucceeds() throws {
+        let dbPath = NSTemporaryDirectory() + "test_simple_checkpoint_\(UUID().uuidString)"
+        defer {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + ".wal")
+        }
+
+        // Step 1: Create database WITHOUT VectorIndex
+        try autoreleasepool {
+            var container: GraphContainer? = try GraphContainer(
+                for: SimpleNode.self,
+                configuration: GraphConfiguration(databasePath: dbPath)
+            )
+            var context: GraphContext? = GraphContext(container!)
+
+            let node = SimpleNode(id: "node1", name: "Test")
+            context!.insert(node)
+            try context!.save()
+
+            // Checkpoint
+            _ = try context!.raw("CHECKPOINT")
+
+            // Explicit close (matches TestVectorContentView flow)
+            context = nil
+            container = nil
+        }
+
+        // Step 2: Reopen - should succeed on ALL platforms
+        let container2 = try GraphContainer(
+            for: SimpleNode.self,
+            configuration: GraphConfiguration(databasePath: dbPath)
+        )
+        let context2 = GraphContext(container2)
+
+        let count = try context2.raw("MATCH (n:SimpleNode) RETURN count(n)")
+        if count.hasNext(), let row = try count.getNext(),
+           let c = try row.getValue(0) as? Int64 {
+            #expect(c == 1, "Data should persist on all platforms without VectorIndex")
         }
 
     }

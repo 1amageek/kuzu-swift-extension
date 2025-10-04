@@ -24,8 +24,8 @@ import Synchronization
 public final class GraphContext: Sendable {
     let container: GraphContainer
     let configuration: GraphConfiguration
-    private let encoder: KuzuEncoder
-    private let decoder: KuzuDecoder
+    internal let encoder: KuzuEncoder
+    internal let decoder: KuzuDecoder
     private let connection: Connection
 
     // Pending operations protected by Mutex
