@@ -51,7 +51,10 @@
       "Read(//Users/1amageek/Library/Developer/CoreSimulator/Devices/29638F9F-0340-400F-BC17-6AD05414F59E/data/Containers/Data/Application/4C8ECFE2-871D-4C2C-8F06-F67AFB5D0341/Documents/**)",
       "Read(//private/var/folders/**)",
       "Bash(while read f)",
-      "Bash(do echo \"=== $f ===\")"
+      "Bash(do echo \"=== $f ===\")",
+      "Read(//Users/1amageek/Desktop/kuzu/extension/vector/src/index/**)",
+      "Read(//Users/1amageek/Desktop/kuzu/src/include/extension/**)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "additionalDirectories": [

@@ -67,16 +67,20 @@ struct Follows: Codable {
 ### 2. Start Using Immediately
 
 ```swift
-// Zero configuration - just start using
-let graph = try await GraphDatabase.shared.context()
+// Create container with models
+let container = try GraphContainer(for: User.self, Post.self)
+
+// Use context for operations
+let context = container.mainContext
 
 // Save data
 let alice = User(name: "Alice", age: 30)
-try await graph.save(alice)
+context.insert(alice)
+try context.save()
 
 // Query with type-safe DSL
-let adults = try await graph.query {
-    User.where(\.age >= 18)
+let adults = try context.query {
+    User.match().where(\.age >= 18)
 }
 ```
 
@@ -88,7 +92,7 @@ let adults = try await graph.query {
 // Create
 let user = User(name: "Bob", age: 25)
 context.insert(user)
-try await context.save()
+try context.save()
 
 // Read
 let users = try context.fetch(User.self)
@@ -98,11 +102,11 @@ let bob = try context.fetch(User.self, id: user.id.uuidString).first
 context.delete(user)
 let updated = User(id: user.id, name: user.name, age: 26)
 context.insert(updated)
-try await context.save()
+try context.save()
 
 // Delete
 context.delete(user)
-try await context.save()
+try context.save()
 
 // Count
 let count = try context.count(User.self)
@@ -110,13 +114,31 @@ let count = try context.count(User.self)
 
 ### Declarative Query DSL
 
-The Query DSL provides comprehensive, type-safe query building:
+The Query DSL provides comprehensive, type-safe query building. Two styles are supported:
+
+**Style 1: Static methods (concise)**
+```swift
+let users = try context.query {
+    User.match().where(\.age >= 18)
+}
+```
+
+**Style 2: Explicit clause construction**
+```swift
+let users = try context.query {
+    Match.node(User.self, alias: "u")
+    Where(path(\User.age, on: "u") >= 18)
+    Return.node("u")
+}
+```
+
+Both styles are valid and can be mixed.
 
 #### Node Operations
 
 ```swift
 // Match nodes with conditions
-let users = try await graph.query {
+let users = try context.query {
     User.match()
         .where(\.age >= 18)
         .orderBy(\.name)
@@ -124,13 +146,13 @@ let users = try await graph.query {
 }
 
 // Optional match for nullable results
-let maybeUsers = try await graph.query {
+let maybeUsers = try context.query {
     User.optional()
         .where(\.city == "Tokyo")
 }
 
 // Create nodes declaratively
-try await graph.query {
+try context.query {
     Create.node(User.self, properties: [
         "name": "Charlie",
         "age": 28
@@ -138,7 +160,7 @@ try await graph.query {
 }
 
 // Merge (upsert) operations
-try await graph.query {
+try context.query {
     User.merge(on: \.email, equals: "alice@example.com")
         .onCreate(set: ["createdAt": Date()])
         .onMatch(set: ["lastLogin": Date()])
@@ -148,6 +170,14 @@ try await graph.query {
 #### Edge Operations
 
 ```swift
+// Kuzu automatically manages internal node IDs
+// Edge properties should only contain relationship-specific data
+@GraphEdge(from: User.self, to: Post.self)
+struct Wrote: Codable {
+    var createdAt: Date  // ✅ Relationship metadata only
+    // ❌ Don't store: var userId, var postId (Kuzu handles internally)
+}
+
 // Create edges using connect() - recommended approach
 let alice = User(name: "Alice", age: 30)
 let bob = User(name: "Bob", age: 25)
@@ -156,17 +186,17 @@ context.insert(bob)
 
 let follows = Follows(since: Date())
 context.connect(follows, from: alice, to: bob)  // Auto-extracts IDs
-try await context.save()
+try context.save()
 
 // Or specify IDs manually
 context.connect(follows, from: alice.id.uuidString, to: bob.id.uuidString)
 
 // Disconnect edges
 context.disconnect(follows, from: alice, to: bob)
-try await context.save()
+try context.save()
 
 // Using Query DSL for complex edge operations
-try await graph.query {
+try context.query {
     let alice = User.match().where(\.name == "Alice")
     let bob = User.match().where(\.name == "Bob")
 
@@ -176,7 +206,7 @@ try await graph.query {
 }
 
 // Match edges with conditions
-let followers = try await graph.query {
+let followers = try context.query {
     let user = User.match().where(\.id == userId)
     Follows.match()
         .from(User.match())
@@ -189,27 +219,27 @@ let followers = try await graph.query {
 
 ```swift
 // Count
-let userCount = try await graph.query {
+let userCount = try context.query {
     Count<User>(nodeRef: User.match())
 }
 
 // Average
-let avgAge = try await graph.query {
+let avgAge = try context.query {
     Average(nodeRef: User.match(), keyPath: \User.age)
 }
 
 // Sum
-let totalLikes = try await graph.query {
+let totalLikes = try context.query {
     Sum(Post.match(), keyPath: \Post.likes)
 }
 
 // Min/Max
-let oldest = try await graph.query {
+let oldest = try context.query {
     Max(nodeRef: User.match(), keyPath: \User.age)
 }
 
 // Collect nodes into array
-let allUsers = try await graph.query {
+let allUsers = try context.query {
     Collect(nodeRef: User.match())
 }
 ```
@@ -218,18 +248,18 @@ let allUsers = try await graph.query {
 
 ```swift
 // Multiple operations in one query
-try await graph.query {
+try context.query {
     // Match existing nodes
     let alice = User.match().where(\.name == "Alice")
     let bob = User.match().where(\.name == "Bob")
-    
+
     // Create new edge
     Create.edge(Follows.self, from: alice, to: bob)
-    
+
     // Update properties
     SetProperties(alice.alias)
         .set("lastActive", to: Date())
-    
+
     // Delete old edges
     let oldFollows = Follows.match()
         .where("since", .lessThan, oneYearAgo)
@@ -251,7 +281,7 @@ let queries = users.map { user in
     User.merge(on: \.id, equals: user.id)
         .onCreate(set: ["name": user.name])
 }
-try await graph.query {
+try context.query {
     ForEachQuery(queries)
 }
 ```
@@ -262,18 +292,18 @@ The library uses Swift 6.2's parameter pack features for type-safe tuple queries
 
 ```swift
 // Single component - returns the component's Result type
-let users: [User] = try await graph.query {
+let users: [User] = try context.query {
     User.match().where(\.active == true)
 }
 
 // Two components - returns a tuple (T1.Result, T2.Result)
-let (users, posts) = try await graph.query {
+let (users, posts) = try context.query {
     User.match().where(\.active == true)
     Post.match().where(\.published == true)
 }
 
 // Three or more components - returns an expanded tuple
-let (users, posts, comments) = try await graph.query {
+let (users, posts, comments) = try context.query {
     User.match().where(\.active == true)
     Post.match().where(\.published == true)
     Comment.match().orderBy(\.createdAt, .descending)
@@ -341,7 +371,7 @@ let followers = try result.map(to: User.self)
 ### Transactions
 
 ```swift
-try await context.transaction {
+try context.transaction {
     let user = User(name: "Charlie", age: 28)
     context.insert(user)
 
@@ -399,9 +429,23 @@ var displayName: String {          // Computed property, not stored
 @Attribute(.spotlight) var description: String // Automatic stemming and stopword removal
 ```
 
-**@Attribute(.originalName)** - Custom column name mapping
+#### Column Name Mapping
+
+Use Swift's standard `CodingKeys` enum to map property names to database column names:
+
 ```swift
-@Attribute(.originalName("user_id")) var userId: String
+@GraphNode
+struct User: Codable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userName = "user_name"  // Maps to DB column "user_name"
+        case emailAddress = "email"   // Maps to DB column "email"
+    }
+
+    @ID var id: String
+    var userName: String      // Swift property name
+    var emailAddress: String  // Swift property name
+}
 ```
 
 #### Complete Example
@@ -440,6 +484,44 @@ For timestamps, use regular Date properties with default values:
 var createdAt: Date = Date()  // Set at initialization
 var updatedAt: Date = Date()  // Update manually when needed
 ```
+
+#### Index Performance Characteristics
+
+- **PRIMARY KEY (@ID)**: O(1) Hash index lookup
+- **Vector (@Vector)**: HNSW index for approximate nearest neighbor search
+- **Full-Text (@Attribute(.spotlight))**: BM25 ranking for text search
+- **Other properties**: Full table scan (no B-tree indexes available)
+
+For frequently queried non-PRIMARY KEY columns, consider:
+- Using them as PRIMARY KEY if possible
+- Modeling as graph edges for fast traversal
+- Accepting full table scan for infrequent queries
+
+## Extension Support
+
+All extensions (Vector, Full-Text Search, JSON) are statically linked in kuzu-swift and available by default on all platforms. No configuration required.
+
+### Vector Operations
+
+Vector columns use HNSW indexes for similarity search:
+
+```swift
+@GraphNode
+struct Photo: Codable {
+    @ID var id: String
+    @Vector(dimensions: 512) var embedding: [Float]
+}
+
+// HNSW index is automatically created
+// Use vector search functions in queries
+let similar = try context.raw("""
+    CALL QUERY_VECTOR_INDEX('Photo', 'photo_embedding_idx',
+        CAST($query AS FLOAT[512]), 10)
+    RETURN node, distance ORDER BY distance
+    """, bindings: ["query": queryVector])
+```
+
+⚠️ **Known Limitation**: HNSW index has a batch insert issue (race condition in CSR array). The library automatically uses sequential execution for `@Vector` properties to prevent crashes (20-30% slower but safe).
 
 ## Advanced Features
 
@@ -481,16 +563,13 @@ struct ContentView: View {
             Text(user.name)
         }
         .task {
-            await loadUsers()
+            loadUsers()
         }
     }
 
-    func loadUsers() async {
+    func loadUsers() {
         do {
-            users = try await context.queryArray(User.self) {
-                Match.node(User.self)
-                Return.node("User")
-            }
+            users = try context.fetch(User.self)
         } catch {
             print("Error loading users: \(error)")
         }
@@ -521,10 +600,7 @@ struct AddUserView: View {
     func saveUser() {
         let user = User(name: name, age: age)
         context.insert(user)
-
-        Task {
-            try? await context.save()
-        }
+        try? context.save()
     }
 }
 ```
@@ -543,38 +619,29 @@ struct UserListView: View {
         }
         .searchable(text: $searchText)
         .onChange(of: searchText) { _, query in
-            Task {
-                await searchUsers(query)
-            }
+            searchUsers(query)
         }
         .task {
-            await loadAllUsers()
+            loadAllUsers()
         }
     }
 
-    func loadAllUsers() async {
+    func loadAllUsers() {
         do {
-            users = try await context.queryArray(User.self) {
-                Match.node(User.self)
-                Return.node("User")
-            }
+            users = try context.fetch(User.self)
         } catch {
             print("Error: \(error)")
         }
     }
 
-    func searchUsers(_ query: String) async {
+    func searchUsers(_ query: String) {
         guard !query.isEmpty else {
-            await loadAllUsers()
+            loadAllUsers()
             return
         }
 
         do {
-            users = try await context.queryArray(User.self) {
-                Match.node(User.self, alias: "u")
-                Where(path(\User.name, on: "u").contains(query))
-                Return.node("u")
-            }
+            users = try context.fetch(User.self, where: "name", equals: query)
         } catch {
             print("Error: \(error)")
         }
@@ -607,9 +674,7 @@ struct EditorView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    Task {
-                        try? await context.save()
-                    }
+                    try? context.save()
                 }
                 .disabled(!context.hasChanges)
             }
@@ -628,24 +693,24 @@ struct EditorView: View {
 
 ```swift
 // Find mutual friends
-let mutualFriends = try await graph.query {
+let mutualFriends = try context.query {
     let user1 = User.match().where(\.id == userId1)
     let user2 = User.match().where(\.id == userId2)
     let mutual = User.match(alias: "mutual")
-    
+
     Follows.match().from(user1).to(mutual)
     Follows.match().from(user2).to(mutual)
-    
+
     Collect(nodeRef: mutual)
 }
 
 // Find influencers
-let influencers = try await graph.query {
+let influencers = try context.query {
     let user = User.match(alias: "u")
     let follower = User.match(alias: "follower")
-    
+
     Follows.match().from(follower).to(user)
-    
+
     Count<User>(nodeRef: follower)
         .groupBy(user)
         .having(count > 1000)
@@ -657,15 +722,15 @@ let influencers = try await graph.query {
 
 ```swift
 // Product recommendations
-let recommendations = try await graph.query {
+let recommendations = try context.query {
     let product = Product.match().where(\.id == productId)
     let buyer = User.match(alias: "buyer")
     let otherProduct = Product.match(alias: "other")
         .where(\.id != productId)
-    
+
     Purchase.match().from(buyer).to(product)
     Purchase.match().from(buyer).to(otherProduct)
-    
+
     Collect(nodeRef: otherProduct)
         .groupBy(otherProduct)
         .orderBy(count, .descending)
@@ -677,15 +742,15 @@ let recommendations = try await graph.query {
 
 ```swift
 // Find related articles
-let related = try await graph.query {
+let related = try context.query {
     let article = Article.match().where(\.id == articleId)
     let tag = Tag.match(alias: "tag")
     let relatedArticle = Article.match(alias: "related")
         .where(\.id != articleId)
-    
+
     HasTag.match().from(article).to(tag)
     HasTag.match().from(relatedArticle).to(tag)
-    
+
     Count<Tag>(nodeRef: tag)
         .groupBy(relatedArticle)
         .orderBy(count, .descending)
@@ -709,7 +774,7 @@ let related = try await graph.query {
 
 ```swift
 // SwiftData-style: Create container with models
-let container = try await GraphContainer(for: User.self, Post.self)
+let container = try GraphContainer(for: User.self, Post.self)
 
 // Use mainContext (recommended for UI code, @MainActor bound)
 let context = container.mainContext
@@ -725,7 +790,7 @@ let config = GraphConfiguration(
         connectionTimeout: 30.0
     )
 )
-let container = try await GraphContainer(
+let container = try GraphContainer(
     for: User.self, Post.self,
     configuration: config
 )
@@ -734,15 +799,18 @@ let container = try await GraphContainer(
 ## Testing
 
 ```swift
-// Automatically uses in-memory database in tests
+// Use in-memory database for tests
 @Test
-func testUserCreation() async throws {
-    let graph = try await GraphDatabase.test.context()
-    
+func testUserCreation() throws {
+    let config = GraphConfiguration(databasePath: ":memory:")
+    let container = try GraphContainer(for: User.self, configuration: config)
+    let context = container.mainContext
+
     let user = User(name: "Test", age: 25)
-    try await graph.save(user)
-    
-    let fetched = try await graph.fetchOne(User.self, id: user.id)
+    context.insert(user)
+    try context.save()
+
+    let fetched = try context.fetchOne(User.self, id: user.id)
     #expect(fetched?.name == "Test")
 }
 ```
@@ -762,12 +830,12 @@ The library handles type conversions automatically:
 
 ```swift
 do {
-    let results = try await graph.query { /* ... */ }
+    let results = try context.query { /* ... */ }
 } catch KuzuError.compilationFailed(let query, let reason) {
     print("Query compilation failed: \(reason)")
 } catch KuzuError.noResults {
     print("No results found")
-} catch GraphError.transactionFailed(let reason) {
+} catch KuzuError.transactionFailed(let reason) {
     print("Transaction failed: \(reason)")
 }
 ```

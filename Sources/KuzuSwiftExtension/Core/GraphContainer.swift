@@ -6,9 +6,9 @@ import Kuzu
 /// SwiftData ModelContainer equivalent for Kuzu graph database.
 /// Automatically creates schemas and indexes for registered models on initialization.
 ///
-/// Thread Safety: This struct conforms to Sendable because:
-/// - All properties are immutable (let)
+/// Thread Safety: This class conforms to @unchecked Sendable because:
 /// - Database is internally thread-safe (verified via Kuzu documentation)
+/// - All properties are immutable after initialization
 ///
 /// The underlying Kuzu C++ library guarantees thread-safe access to Database instances.
 ///
@@ -19,12 +19,22 @@ import Kuzu
 ///     configuration: GraphConfiguration(databasePath: ":memory:")
 /// )
 /// ```
-public struct GraphContainer: Sendable {
+public final class GraphContainer: @unchecked Sendable {
     /// The registered model types (equivalent to ModelContainer.schema)
     public let models: [any _KuzuGraphModel.Type]
 
     /// The configuration for this container
     public let configuration: GraphConfiguration
+
+    /// The current status of vector indexes loading.
+    ///
+    /// This property queries the database for the current loading status.
+    /// SwiftUI views can observe this property to show loading indicators or error states.
+    ///
+    /// - Returns: The current `VectorIndexesStatus` (`.loading`, `.ready`, or `.failed(Error)`)
+    public var vectorIndexesStatus: VectorIndexesStatus {
+        database.vectorIndexesStatus
+    }
 
     internal let database: Database
 
@@ -100,5 +110,46 @@ public struct GraphContainer: Sendable {
     @MainActor
     public var mainContext: GraphContext {
         GraphContext(self)
+    }
+
+    // MARK: - Vector Index Loading
+
+    /// Registers a callback to be invoked when vector indexes finish loading.
+    ///
+    /// The callback is invoked on a background thread when loading completes.
+    /// If indexes are already loaded when this method is called, the callback
+    /// will be invoked immediately on the calling thread.
+    ///
+    /// - Parameter completion: A closure that receives a `Result<Void, Error>`.
+    ///   - `.success` if all indexes loaded successfully
+    ///   - `.failure` if loading failed
+    ///
+    /// - Note: Only one callback can be registered at a time. Calling this method
+    ///         again will replace the previous callback.
+    ///
+    /// Example usage in SwiftUI:
+    /// ```swift
+    /// @main
+    /// struct MyApp: App {
+    ///     let container = try! GraphContainer(for: Photo.self)
+    ///     @State private var isIndexReady = false
+    ///
+    ///     var body: some Scene {
+    ///         WindowGroup {
+    ///             ContentView()
+    ///                 .task {
+    ///                     container.onVectorIndexesLoaded { result in
+    ///                         Task { @MainActor in
+    ///                             isIndexReady = result.map { true } ?? false
+    ///                         }
+    ///                     }
+    ///                 }
+    ///         }
+    ///         .graphContainer(container)
+    ///     }
+    /// }
+    /// ```
+    public func onVectorIndexesLoaded(_ completion: @escaping (Result<Void, Error>) -> Void) {
+        database.onVectorIndexesLoaded(completion)
     }
 }

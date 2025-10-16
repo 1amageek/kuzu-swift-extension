@@ -29,7 +29,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
-        .package(url: "https://github.com/1amageek/kuzu-swift.git", branch: "main"),
+        .package(path: "/Users/1amageek/Desktop/kuzu-swift"),
         .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.2.1")
     ],
     targets: [

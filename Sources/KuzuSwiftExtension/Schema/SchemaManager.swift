@@ -51,24 +51,52 @@ public final class SchemaManager: Sendable {
     /// - Parameter database: Database instance to initialize
     /// - Throws: KuzuError if schema creation fails
     public func ensureSchema(in database: Database) throws {
+        let schemaStart = Date()
+        print("[KUZU TIMING] SchemaManager.ensureSchema() START")
+
+        let t1 = Date()
         let connection = try Connection(database)
+        let t2 = Date()
+        print("[KUZU TIMING] Connection creation: \(t2.timeIntervalSince(t1) * 1000)ms")
 
         // Fetch existing tables and indexes once
+        let t3 = Date()
         let existingTables = try fetchExistingTables(connection)
+        let t4 = Date()
+        print("[KUZU TIMING] fetchExistingTables: \(t4.timeIntervalSince(t3) * 1000)ms")
+
+        let t5 = Date()
         let existingIndexes = try fetchExistingIndexes(connection)
+        let t6 = Date()
+        print("[KUZU TIMING] fetchExistingIndexes: \(t6.timeIntervalSince(t5) * 1000)ms")
 
         // Create tables and indexes for each model
         for model in models {
             let tableName = model.name
+            let modelStart = Date()
 
             // Only create table if it doesn't exist
             if !existingTables.contains(tableName) {
+                let tableStart = Date()
                 try createTable(for: model, connection: connection)
+                let tableEnd = Date()
+                print("[KUZU TIMING] createTable(\(tableName)): \(tableEnd.timeIntervalSince(tableStart) * 1000)ms")
+            } else {
+                print("[KUZU TIMING] Table \(tableName) already exists, skipping creation")
             }
 
             // Create indexes (will skip if already exist)
+            let indexStart = Date()
             try createIndexes(for: model, existingIndexes: existingIndexes, connection: connection)
+            let indexEnd = Date()
+            print("[KUZU TIMING] createIndexes(\(tableName)): \(indexEnd.timeIntervalSince(indexStart) * 1000)ms")
+
+            let modelEnd = Date()
+            print("[KUZU TIMING] Total for model \(tableName): \(modelEnd.timeIntervalSince(modelStart) * 1000)ms")
         }
+
+        let schemaEnd = Date()
+        print("[KUZU TIMING] SchemaManager.ensureSchema() TOTAL: \(schemaEnd.timeIntervalSince(schemaStart) * 1000)ms")
     }
 
     // MARK: - Existence Checks

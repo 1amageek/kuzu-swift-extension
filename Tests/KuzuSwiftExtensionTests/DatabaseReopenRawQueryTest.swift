@@ -293,15 +293,22 @@ struct DatabaseReopenRawQueryTests {
         let documentsPath = NSTemporaryDirectory() + "TestDocuments"
         let dbPath = (documentsPath as NSString).appendingPathComponent("KuzuDatabase")
 
+        // Helper to clean up all database-related files
+        func cleanupDatabase() {
+            try? FileManager.default.removeItem(atPath: dbPath)
+            try? FileManager.default.removeItem(atPath: dbPath + ".wal")
+            try? FileManager.default.removeItem(atPath: dbPath + ".lock")
+        }
+
         // Ensure parent directory exists
         try? FileManager.default.createDirectory(atPath: documentsPath, withIntermediateDirectories: true)
 
         // Clean up before test (ensure clean start)
-        try? FileManager.default.removeItem(atPath: dbPath)
+        cleanupDatabase()
 
         // Clean up after test
         defer {
-            try? FileManager.default.removeItem(atPath: dbPath)
+            cleanupDatabase()
             try? FileManager.default.removeItem(atPath: documentsPath)
         }
 
@@ -394,12 +401,19 @@ struct DatabaseReopenRawQueryTests {
         // Use a FIXED path to simulate real app behavior
         let fixedPath = NSTemporaryDirectory() + "persistent_vector_test.db"
 
+        // Helper to clean up all database-related files
+        func cleanupDatabase() {
+            try? FileManager.default.removeItem(atPath: fixedPath)
+            try? FileManager.default.removeItem(atPath: fixedPath + ".wal")
+            try? FileManager.default.removeItem(atPath: fixedPath + ".lock")
+        }
+
         // Clean up before test (ensure clean start)
-        try? FileManager.default.removeItem(atPath: fixedPath)
+        cleanupDatabase()
 
         // Clean up after test
         defer {
-            try? FileManager.default.removeItem(atPath: fixedPath)
+            cleanupDatabase()
         }
 
         print("\n========== PERSISTENT PATH TEST - FIRST LAUNCH ==========")
