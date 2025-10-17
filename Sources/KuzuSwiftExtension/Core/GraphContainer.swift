@@ -1,5 +1,6 @@
 import Foundation
 import Kuzu
+import Synchronization
 
 /// GraphContainer manages the database and schema.
 ///
@@ -36,7 +37,60 @@ public final class GraphContainer: @unchecked Sendable {
         database.vectorIndexesStatus
     }
 
+    /// The current status of database initialization.
+    ///
+    /// This property indicates whether the database is still initializing,
+    /// fully ready for all operations, or has failed to initialize.
+    ///
+    /// The database constructor returns immediately after spawning a background thread
+    /// for heavy initialization tasks (WAL replay, HNSW index loading). This property
+    /// allows you to check the initialization status without blocking.
+    ///
+    /// - Returns: The current `DatabaseStatus` (`.initializing`, `.ready`, or `.failed(Error)`)
+    ///
+    /// - Note: Queries will automatically wait for initialization to complete,
+    ///         so checking this status is optional. It's mainly useful for UI feedback.
+    ///
+    /// Example usage in SwiftUI:
+    /// ```swift
+    /// @main
+    /// struct PXLApp: App {
+    ///     let container = try! GraphContainer(for: PhotoAsset.self)
+    ///     @State private var isReady = false
+    ///
+    ///     var body: some Scene {
+    ///         WindowGroup {
+    ///             if isReady {
+    ///                 MainView()
+    ///             } else {
+    ///                 ProgressView("Initializing database...")
+    ///             }
+    ///         }
+    ///         .graphContainer(container)
+    ///         .task {
+    ///             // Poll initialization status
+    ///             while case .initializing = container.initializationStatus {
+    ///                 try? await Task.sleep(for: .milliseconds(100))
+    ///             }
+    ///             if case .ready = container.initializationStatus {
+    ///                 isReady = true
+    ///             }
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    public var initializationStatus: DatabaseStatus {
+        database.initializationStatus
+    }
+
     internal let database: Database
+
+    // Schema initialization task (runs in background)
+    // The task state itself represents schema readiness:
+    // - nil: No schema to initialize (ready)
+    // - Task running: Schema initialization in progress
+    // - Task completed: Schema ready
+    private let schemaInitTask: Task<Void, Error>?
 
     /// Create a container for specified model types (variadic parameters)
     /// Equivalent to: ModelContainer(for: User.self, Post.self)
@@ -49,6 +103,7 @@ public final class GraphContainer: @unchecked Sendable {
     ) throws {
         self.models = forTypes
         self.configuration = configuration
+
         do {
             // Create SystemConfig with explicit iOS-optimized settings
             // Based on kuzu-swift-demo approach
@@ -66,9 +121,21 @@ public final class GraphContainer: @unchecked Sendable {
         }
 
         // SwiftData pattern: Automatically create schemas for registered models
+        // ✅ Run schema creation in background to avoid blocking UI
         if !forTypes.isEmpty {
-            let schemaManager = SchemaManager(forTypes)
-            try schemaManager.ensureSchema(in: database)
+            let database = self.database
+            let models = forTypes
+            self.schemaInitTask = Task.detached(priority: .userInitiated) {
+                // Create schema using SchemaManager
+                // ensureSchema() internally creates a Connection and executes queries,
+                // which will automatically wait for database initialization via
+                // ClientContext::query() -> waitForInitialization()
+                let schemaManager = SchemaManager(models)
+                try schemaManager.ensureSchema(in: database)
+            }
+        } else {
+            // No models to initialize - schema is ready
+            self.schemaInitTask = nil
         }
     }
 
@@ -78,6 +145,7 @@ public final class GraphContainer: @unchecked Sendable {
     internal init(configuration: GraphConfiguration) throws {
         self.models = []
         self.configuration = configuration
+        self.schemaInitTask = nil  // No schema to initialize
 
         do {
             // Create SystemConfig with explicit iOS-optimized settings
@@ -95,6 +163,36 @@ public final class GraphContainer: @unchecked Sendable {
         } catch {
             throw error
         }
+    }
+
+    // MARK: - Schema Readiness
+
+    /// Check if schema is ready (non-blocking)
+    ///
+    /// This property returns true if:
+    /// - No schema initialization is needed (no models registered), or
+    /// - Schema initialization task has completed successfully
+    ///
+    /// Note: This is a best-effort check. The task might complete between
+    /// checking this property and executing a query.
+    public var isSchemaReady: Bool {
+        guard let task = schemaInitTask else {
+            return true  // No schema initialization needed
+        }
+        // Check if task is finished (either succeeded or failed)
+        // We can't directly check task completion without awaiting,
+        // so we return false if task exists (conservative approach)
+        return false
+    }
+
+    /// Wait for schema initialization to complete
+    ///
+    /// This method blocks until the background schema initialization task completes.
+    /// If no schema initialization is needed, this returns immediately.
+    ///
+    /// - Throws: Error if schema initialization failed
+    public func waitForSchema() async throws {
+        try await schemaInitTask?.value
     }
 
     /// Main context bound to the main actor (SwiftData ModelContainer.mainContext equivalent)

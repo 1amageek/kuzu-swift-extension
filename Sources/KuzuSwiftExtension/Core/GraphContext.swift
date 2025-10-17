@@ -715,6 +715,10 @@ public final class GraphContext: Sendable {
 
     @discardableResult
     public func raw(_ query: String, bindings: [String: any Sendable] = [:]) throws -> QueryResult {
+        // Note: Database initialization is automatically handled by C++ layer
+        // via ClientContext::waitForInitialization() on first query
+        // Schema creation runs in background Task - if user queries before
+        // schema is ready, they'll get a "table not found" error
         if bindings.isEmpty {
             return try connection.query(query)
         } else {
